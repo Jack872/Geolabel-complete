@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:10               # 使用 PostgreSQL 10 系列（含 10.23）
+    container_name: geolabel-postgres
+    environment:
+      POSTGRES_DB: geolabel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 88888888
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - geolabel-net
+
+  # Redis 缓存
+  redis:
+    image: redis:7
+    container_name: geolabel-redis
+    command: redis-server --requirepass 123321
+    ports:
+      - "6379:6379"
+    networks:
+      - geolabel-net
+
+  # GeoServer 地图服务
+  geoserver:
+    image: kartoza/geoserver:latest
+    container_name: geolabel-geoserver
+    environment:
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: geoserver
+    ports:
+      - "8081:8080"
+    volumes:
+      - geoserver_data:/opt/geoserver/data_dir
+    networks:
+      - geolabel-net
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: geolabel-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"  # Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - geolabel-net
+
+  # Spring Boot 后端应用（需自行构建镜像）
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geolabel-app
+    ports:
+      - "1290:1290"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/geolabel
+      SPRING_REDIS_HOST: redis
+      GEOSERVER_URL: http://geoserver:8080/geoserver
+      MINIO_ENDPOINT: http://minio:9000
+    depends_on:
+      - postgres
+      - redis
+      - geoserver
+      - minio
+    networks:
+      - geolabel-net
+
+volumes:
+  postgres_data:
+  geoserver_data:
+  minio_data:
+
+networks:
+  geolabel-net:
+    driver: bridge

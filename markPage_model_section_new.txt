@@ -1,0 +1,150 @@
+            {(
+              <div className="model-section">
+                <h4 className="section-title">模型辅助工具</h4>
+                <div className="model-tools">
+                  {/* 自训练模型区域 */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ 
+                      fontSize: '13px', 
+                      fontWeight: '600', 
+                      color: '#2c3e50',
+                      marginBottom: 8,
+                      paddingBottom: 6,
+                      borderBottom: '2px solid #3498db'
+                    }}>
+                      自训练模型
+                    </div>
+                    
+                    <Select
+                      placeholder="选择训练模型"
+                      style={{ width: '100%', marginBottom: 10 }}
+                      onChange={(value) => {
+                        console.log('选择的模型ID:', value);
+                        setSelectedModelId(value);
+                      }}
+                      value={selectedModelId}
+                      allowClear
+                    >
+                      {modelList.map(model => (
+                        <Select.Option key={model.id} value={model.id}>
+                          {model.name} ({model.type})
+                        </Select.Option>
+                      ))}
+                    </Select>
+
+                    {/* 调试提示 */}
+                    {selectedModelId && (
+                      <div style={{ 
+                        padding: '8px', 
+                        background: '#e6f7ff', 
+                        border: '1px solid #91d5ff',
+                        borderRadius: '4px',
+                        marginBottom: '10px',
+                        fontSize: '12px',
+                        color: '#0050b3'
+                      }}>
+                        ✓ 已选择模型ID: {selectedModelId}
+                      </div>
+                    )}
+
+                    {/* 当选择了模型后显示参数输入区域 */}
+                    {selectedModelId && (
+                      <div className="parameter-inputs" style={{ marginBottom: 10 }}>
+                        <div className="parameter-row">
+                          <div className="parameter-item">
+                            <label>置信度阈值:</label>
+                            <Input
+                              placeholder="例如: 0.3"
+                              value={param1}
+                              onChange={(e) => setParam1(e.target.value)}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div className="parameter-item">
+                            <label>切片尺寸:</label>
+                            <Input
+                              placeholder="例如: 640"
+                              value={param2}
+                              onChange={(e) => setParam2(e.target.value)}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                        <div className="parameter-row">
+                          <div className="parameter-item">
+                            <label>边界平滑:</label>
+                            <Input
+                              placeholder="例如: 10"
+                              value={param3}
+                              onChange={(e) => setParam3(e.target.value)}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div className="parameter-item">
+                            <label>其他参数:</label>
+                            <Input
+                              placeholder="例如: 1"
+                              value={param4}
+                              onChange={(e) => setParam4(e.target.value)}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                        <div className="parameter-row">
+                          <div className="parameter-item full-width">
+                            <label>类别映射 (JSON格式):</label>
+                            <Input.TextArea
+                              placeholder='例如: {"0": 3, "1": 5}'
+                              value={categoryMapping}
+                              onChange={(e) => setCategoryMapping(e.target.value)}
+                              rows={3}
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 生成标注按钮 */}
+                    <button
+                      className="model-btn generate-btn"
+                      onClick={handleModelInference}
+                      disabled={!selectedModelId}
+                      style={{
+                        width: '100%',
+                        marginBottom: 10,
+                        opacity: selectedModelId ? 1 : 0.5,
+                        cursor: selectedModelId ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      生成标注
+                    </button>
+                  </div>
+
+                  {/* 辅助模型区域 - 只在地物分类任务中显示 */}
+                  {taskInfo?.data[0].type === '地物分类' && (
+                    <div>
+                      <div style={{ 
+                        fontSize: '13px', 
+                        fontWeight: '600', 
+                        color: '#2c3e50',
+                        marginBottom: 8,
+                        paddingBottom: 6,
+                        borderBottom: '2px solid #9b59b6'
+                      }}>
+                        辅助模型
+                      </div>
+                      
+                      <div className="quick-tools">
+                        <button className="model-btn extract-btn" onClick={handleExtractTarget}>
+                          XGBoost模型
+                        </button>
+                        <button className="model-btn sam-btn" onClick={handleSamPreAnnotation}>
+                          SAM模型
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
