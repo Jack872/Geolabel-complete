@@ -1,0 +1,50 @@
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.audit-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;   // ⭐ 地图高度来源
+  position: relative;
+  overflow: hidden;
+}
+
+/* 左侧地图区域 */
+.map-wrapper {
+  flex: 1 1 auto;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+
+  #map-container,
+  .ol-viewport,
+  .ol-map {
+    height: 100% !important;
+    width: 100% !important;
+  }
+}
+
+/* 右侧审核面板 */
+.audit-sidebar {
+  width: 360px;
+  height: 100%;
+  background: #fff;
+  border-left: 1px solid #e5e5e5;
+  overflow-y: auto;
+  padding: 12px;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.05);
+  z-index: 999;
+}
+
+/* 滚动条美化 */
+.audit-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.audit-sidebar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}

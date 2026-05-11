@@ -1,0 +1,290 @@
+// 模型管理页面样式
+.model-manage-container {
+  .ant-pro-table {
+    .ant-table {
+      font-size: 14px;
+      
+      .ant-table-thead > tr > th {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: 600;
+        text-align: center;
+        padding: 16px 8px;
+        border-bottom: none;
+      }
+      
+      .ant-table-tbody > tr {
+        transition: all 0.3s ease;
+        
+        &:hover {
+          background: #f0f5ff;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        
+        > td {
+          padding: 16px 8px;
+          vertical-align: middle;
+        }
+      }
+    }
+  }
+  
+  // 工具栏按钮样式
+  .ant-pro-table-list-toolbar-right {
+    .ant-btn {
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      
+      &.ant-btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+        }
+      }
+      
+      &.ant-btn-default {
+        border: 2px solid #667eea;
+        color: #667eea;
+        
+        &:hover {
+          background: #667eea;
+          color: white;
+          transform: translateY(-2px);
+        }
+      }
+    }
+  }
+}
+
+// 训练抽屉样式
+.train-drawer {
+  .ant-drawer-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-bottom: none;
+    
+    .ant-drawer-title {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .ant-drawer-close {
+      color: white;
+      
+      &:hover {
+        color: rgba(255, 255, 255, 0.8);
+      }
+    }
+  }
+  
+  .ant-drawer-body {
+    background: #f5f7fa;
+    padding: 24px;
+  }
+  
+  .step-section {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    
+    .step-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #667eea;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      
+      .step-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 50%;
+        font-size: 14px;
+        font-weight: bold;
+      }
+    }
+    
+    .step-description {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+  }
+  
+  // 任务表格样式
+  .ant-pro-table-list-toolbar {
+    display: none;
+  }
+  
+  .ant-table-small {
+    .ant-table-thead > tr > th {
+      background: #f5f7fa;
+      color: #2c3e50;
+      font-weight: 600;
+      padding: 12px 8px;
+    }
+    
+    .ant-table-tbody > tr {
+      &:hover {
+        background: #f0f5ff;
+      }
+    }
+  }
+}
+
+// 模型上传弹窗样式
+.model-upload-modal {
+  .ant-modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-bottom: none;
+    
+    .ant-modal-title {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+  }
+  
+  .ant-modal-close {
+    color: white;
+    
+    &:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
+  }
+  
+  .ant-form {
+    .ant-form-item-label > label {
+      font-weight: 500;
+      color: #2c3e50;
+    }
+    
+    .ant-input,
+    .ant-input-textarea,
+    .ant-select-selector {
+      border-radius: 6px;
+      border: 1px solid #d9d9d9;
+      transition: all 0.3s ease;
+      
+      &:hover {
+        border-color: #667eea;
+      }
+      
+      &:focus,
+      &.ant-input-focused,
+      &.ant-select-focused {
+        border-color: #667eea;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+      }
+    }
+    
+    .ant-upload {
+      .ant-btn {
+        border-radius: 6px;
+        border: 2px dashed #d9d9d9;
+        transition: all 0.3s ease;
+        
+        &:hover {
+          border-color: #667eea;
+          color: #667eea;
+        }
+      }
+    }
+  }
+  
+  .ant-modal-footer {
+    border-top: 1px solid #f0f0f0;
+    padding: 16px 24px;
+    
+    .ant-btn {
+      border-radius: 6px;
+      font-weight: 500;
+      
+      &.ant-btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        
+        &:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        &:disabled {
+          background: #d9d9d9;
+          opacity: 0.6;
+        }
+      }
+    }
+  }
+}
+
+// 标签样式
+.ant-tag {
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-weight: 500;
+  border: none;
+  
+  &.ant-tag-green {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+  }
+  
+  &.ant-tag-blue {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+  }
+  
+  &.ant-tag-gold {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+  }
+}
+
+// 删除按钮样式
+.ant-btn-dangerous {
+  border-radius: 6px;
+  
+  &.ant-btn-primary {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    border: none;
+    
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(235, 51, 73, 0.4);
+    }
+  }
+}
+
+// 响应式设计
+@media (max-width: 768px) {
+  .train-drawer {
+    .ant-drawer-content-wrapper {
+      width: 100% !important;
+    }
+    
+    .step-section {
+      padding: 16px;
+      
+      .step-title {
+        font-size: 14px;
+      }
+    }
+  }
+}

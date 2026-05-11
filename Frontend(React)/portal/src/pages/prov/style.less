@@ -1,0 +1,360 @@
+// 溯源管理页面样式
+.prov-container {
+  padding: 20px;
+  background: #f0f2f5;
+  min-height: 100vh;
+
+  .dataset-list {
+    .ant-card-body {
+      padding: 0;
+      height: 780px;
+      overflow-y: auto;
+    }
+
+    .dataset-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-left: 4px solid transparent;
+
+      &:hover {
+        background: #f5f5f5;
+      }
+
+      &.selected {
+        background: #e6f7ff;
+        border-left-color: #1890ff;
+      }
+
+      .dataset-meta {
+        .ant-typography {
+          margin-bottom: 4px;
+        }
+      }
+    }
+  }
+
+  .prov-workspace {
+    .prov-header {
+      margin-bottom: 16px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+      .prov-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #1890ff;
+
+        .anticon {
+          font-size: 18px;
+        }
+      }
+
+      .prov-actions {
+        .ant-btn {
+          margin-left: 8px;
+        }
+      }
+    }
+
+    .prov-content {
+      .prov-main {
+        height: 650px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+        .ant-card-head {
+          border-bottom: 1px solid #f0f0f0;
+
+          .ant-card-head-title {
+            padding: 16px 0;
+          }
+
+          .ant-tabs-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+
+            .anticon {
+              font-size: 14px;
+            }
+          }
+        }
+
+        .ant-card-body {
+          padding: 0;
+          height: calc(100% - 57px);
+        }
+      }
+
+      .prov-details {
+        height: 650px;
+      }
+    }
+  }
+
+  .empty-state {
+    height: 830px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+}
+
+// 关系图谱样式
+.provenance-graph {
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+  position: relative;
+
+  .graph-legend {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .legend-icon {
+        width: 16px;
+        height: 16px;
+        border-radius: 2px;
+        margin-right: 8px;
+        border: 2px solid;
+
+        &.activity {
+          background: #fff7e6;
+          border-color: #ffa940;
+        }
+
+        &.entity {
+          background: #e6f7ff;
+          border-color: #1890ff;
+          border-radius: 50%;
+        }
+      }
+
+      .legend-text {
+        color: #666;
+        font-weight: 500;
+      }
+    }
+  }
+
+  .prov-model-info {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-size: 11px;
+    color: #666;
+    max-width: 200px;
+  }
+}
+
+// 时间轴样式
+.prov-timeline {
+  padding: 20px;
+  overflow-y: auto;
+  height: 600px;
+
+  .ant-timeline {
+    .ant-timeline-item {
+      .ant-timeline-item-label {
+        width: 120px;
+        text-align: right;
+        font-size: 12px;
+        color: #666;
+        font-weight: 500;
+      }
+
+      .ant-timeline-item-dot {
+        border-color: #1890ff;
+        background: #fff;
+
+        .anticon {
+          color: #1890ff;
+        }
+      }
+
+      .timeline-card {
+        width: 100%;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: 1px solid #f0f0f0;
+
+        &:hover {
+          border-color: #1890ff;
+          box-shadow: 0 4px 12px rgba(24, 144, 255, 0.15);
+        }
+
+        .card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+
+          .action-title {
+            font-weight: 600;
+            color: #1890ff;
+          }
+
+          .agent-tag {
+            font-size: 11px;
+          }
+        }
+
+        .card-content {
+          .description {
+            margin-bottom: 8px;
+            color: #666;
+            font-size: 13px;
+            line-height: 1.4;
+          }
+
+          .prov-info {
+            background: #f8f9fa;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 8px;
+          }
+
+          .parameters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+
+            .ant-tag {
+              margin: 0;
+              font-size: 11px;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// 详情面板样式
+.details-panel {
+  height: 650px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  .ant-card-head {
+    .ant-card-head-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .ant-card-extra {
+      .ant-tag {
+        font-weight: 500;
+      }
+    }
+  }
+
+  .ant-card-body {
+    padding: 16px;
+    height: calc(100% - 57px);
+    overflow-y: auto;
+
+    .ant-descriptions {
+      .ant-descriptions-item-label {
+        font-weight: 500;
+        color: #666;
+      }
+
+      .ant-descriptions-item-content {
+        color: #333;
+      }
+    }
+
+    .prov-model-tag {
+      background: #f0f9ff;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      margin-left: 6px;
+    }
+
+    .attributes-section {
+      margin-top: 16px;
+
+      .ant-divider {
+        margin: 12px 0;
+        font-size: 12px;
+        color: #666;
+      }
+
+      .attributes-content {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 6px;
+        max-height: 300px;
+        overflow: auto;
+        border: 1px solid #e9ecef;
+
+        pre {
+          font-size: 11px;
+          line-height: 1.4;
+          margin: 0;
+          color: #495057;
+          font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        }
+      }
+    }
+  }
+
+  .empty-detail {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+  }
+}
+
+// 响应式设计
+@media (max-width: 1200px) {
+  .prov-container {
+    .prov-content {
+      .prov-main {
+        height: 500px;
+      }
+      .prov-details {
+        height: 500px;
+        margin-top: 16px;
+      }
+    }
+  }
+}

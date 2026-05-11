@@ -1,0 +1,15 @@
+affine
+fastapi
+numpy
+opencv-python-headless
+psycopg2-binary
+pydantic
+pyproj
+rasterio
+requests
+samgeo
+shapely
+torch
+transformers
+ultralytics
+uvicorn[standard]

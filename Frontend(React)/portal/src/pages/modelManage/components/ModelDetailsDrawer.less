@@ -1,0 +1,97 @@
+.model-details-drawer {
+  .ant-drawer-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-bottom: none;
+    
+    .ant-drawer-title {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .ant-drawer-close {
+      color: white;
+      
+      &:hover {
+        color: rgba(255, 255, 255, 0.8);
+      }
+    }
+  }
+  
+  .ant-drawer-body {
+    background: #f5f7fa;
+    padding: 24px;
+  }
+  
+  .info-card,
+  .metrics-card,
+  .params-card {
+    margin-bottom: 16px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    
+    .ant-card-head {
+      background: linear-gradient(135deg, #f5f7fa 0%, #e8eaf6 100%);
+      border-bottom: 2px solid #667eea;
+      
+      .ant-card-head-title {
+        font-weight: 600;
+        color: #2c3e50;
+      }
+    }
+    
+    .ant-descriptions-item-label {
+      font-weight: 500;
+      color: #666;
+      background: #fafafa;
+    }
+    
+    .ant-descriptions-item-content {
+      color: #2c3e50;
+    }
+  }
+  
+  .metrics-card {
+    .metric-item {
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+      transition: all 0.3s ease;
+      
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      .ant-statistic-title {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 8px;
+      }
+      
+      .ant-statistic-content {
+        font-size: 24px;
+        font-weight: 600;
+      }
+      
+      .ant-progress {
+        margin-top: 12px;
+      }
+    }
+  }
+  
+  .ant-tag {
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-weight: 500;
+    border: none;
+  }
+  
+  .ant-alert {
+    border-radius: 8px;
+    
+    .ant-alert-message {
+      font-size: 13px;
+      line-height: 1.6;
+    }
+  }
+}
