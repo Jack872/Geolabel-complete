@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schema/trainingdml.schema.json",
+  "title": "TrainingDML-AI Semantic Segmentation Dataset",
+  "type": "object",
+  "required": ["type", "id", "name", "tasks", "data"],
+  "properties": {
+    "type": {
+      "const": "AI_EOTrainingDataset"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "license": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "amountOfTrainingData": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "numberOfClasses": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "classificationScheme": {
+      "type": "string"
+    },
+    "classes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1
+    },
+    "labeling": {
+      "type": "array"
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "id", "datasetId", "trainingType", "dataURL", "labels"],
+        "properties": {
+          "type": {
+            "const": "AI_EOTrainingData"
+          },
+          "id": {
+            "type": "string"
+          },
+          "datasetId": {
+            "type": "string"
+          },
+          "trainingType": {
+            "enum": ["training", "validation", "test"]
+          },
+          "dataURL": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "numberOfLabels": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "labels": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["type", "imageURL", "imageFormat"],
+              "properties": {
+                "type": {
+                  "const": "AI_PixelLabel"
+                },
+                "imageURL": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "imageFormat": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

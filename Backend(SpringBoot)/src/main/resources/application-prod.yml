@@ -1,0 +1,65 @@
+server:
+  port: 1290
+
+spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+  datasource:
+    url: jdbc:postgresql://postgres:5432/geolabel   # ← 改为服务名 'db'
+    username: postgres
+    password: 88888888
+    driver-class-name: org.postgresql.Driver
+
+  security:
+    jwt:
+      key: '321456'
+      expire: 72
+
+  redis:
+    host: redis        # ← 改为服务名 'redis'
+    port: 6379
+    password: '123321' # 建议加引号避免 YAML 解析问题
+    database: 0
+
+  servlet:
+    multipart:
+      max-file-size: 256MB
+      max-request-size: 256MB
+
+geoserver:
+  url: http://geoserver:8080/geoserver   # ← 改为服务名 'geoserver'，注意端口是 8080（容器内）
+  username: admin
+  password: geoserver
+  localCoverageDir: /opt/geoserver/data_dir/coverages
+
+minio:
+  endpoint: http://minio:9000   # ← 如果 MinIO 也是容器，用服务名 'minio'
+  public-endpoint: http://172.18.22.90:9000   # ← 新增这一行
+  bucketName: geoserver
+  accessKey: minioadmin
+  secretKey: minioadmin
+  uploaddir: F:\\program\\MINIO\\data\\geoserver
+  # uploaddir 不需要（MinIO 是对象存储，不存本地路径）
+
+knife4j:
+  enable: true
+
+logging:
+  level:
+    com.example.labelMark.mapper: trace
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+modal:
+  path: F:\PG-project\modalDataStore
+
+sampleSet:
+  path: F:\PG-project\sampleSetDataStore
+
+python:
+  service:
+    url: ${PYTHON_SERVICE_URL:http://localhost:5000}
