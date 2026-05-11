@@ -70,3 +70,6 @@ Geolabel-complete/
 .env
 .env.local
 *.env
+
+# Claude persistent memory
+memory/
