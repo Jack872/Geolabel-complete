@@ -54,3 +54,14 @@ __pycache__/
 
 *.tif
 *.png
+
+# Build artifacts and dependency directories
+**/node_modules/
+**/dist/
+**/target/
+**/build/
+**/.next/
+**/out/
+
+# Local nested copy directory (should not be versioned)
+Geolabel-complete/

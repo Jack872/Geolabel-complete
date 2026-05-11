@@ -55,10 +55,25 @@ services:
     networks:
       - geolabel-net
 
+  python-api:
+    build:
+      context: ../Backend(FastAPI)
+      dockerfile: Dockerfile
+    container_name: geolabel-python-api
+    ports:
+      - "5000:5000"
+    environment:
+      SPRING_BOOT_BASE_URL: http://app:1290
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000
+    depends_on:
+      - postgres
+    networks:
+      - geolabel-net
+
   # Spring Boot 后端应用（需自行构建镜像）
   app:
     build:
-      context: .
+      context: ../Backend(SpringBoot)
       dockerfile: Dockerfile
     container_name: geolabel-app
     ports:
@@ -68,11 +83,13 @@ services:
       SPRING_REDIS_HOST: redis
       GEOSERVER_URL: http://geoserver:8080/geoserver
       MINIO_ENDPOINT: http://minio:9000
+      PYTHON_SERVICE_URL: http://python-api:5000
     depends_on:
       - postgres
       - redis
       - geoserver
       - minio
+      - python-api
     networks:
       - geolabel-net
 
