@@ -15,8 +15,11 @@ from typing import List, Dict, Any, Tuple # 增加类型提示
 
 class RemoteSensingSegmentationDataset(Dataset):
     def __init__(self, image_path, labels_data, num_classes, type_id_to_class_index,
-                 background_class_index, apply_transforms=False, vis_output_path=r"F:\PG-project\modalDataStore\PNG\visualization.png",
+                 background_class_index, apply_transforms=False,
+                 vis_output_path=None,
                  target_size=(512, 512)):
+        if vis_output_path is None:
+            vis_output_path = os.getenv("VIS_OUTPUT_PATH", "F:/PG-project/modalDataStore/PNG/visualization.png")
         self.image_path = image_path
         self.labels_data = labels_data or []
         self.num_classes = num_classes

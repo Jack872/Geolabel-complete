@@ -63,7 +63,7 @@ def train_Multi_function(argv=None):
     # model_scope_str = argv[10] # 不再使用
     model_name = argv[11]
 
-    model_save_dir = "F:\PG-project\modalDataStore\\trained_models"
+    model_save_dir = os.getenv("MODEL_SAVE_DIR", "F:/PG-project/modalDataStore/trained_models")
     task_model_save_dir = os.path.join(model_save_dir, str(USER_ID))
     os.makedirs(task_model_save_dir, exist_ok=True)
     detection_output_dir = os.path.join(task_model_save_dir, "detection_results")
@@ -241,7 +241,7 @@ def train_Multi_function(argv=None):
         class_names_for_yaml = [str(type_id_to_name.get(tid, f"class_{tid}")) for tid in sorted_type_ids] # 获取类别名
 
 
-        temp_yolo_data_dir = "F:/PG-project/modalDataStore/yolo_datasets"  # 自定义路径
+        temp_yolo_data_dir = os.getenv("YOLO_DATASET_DIR", "F:/PG-project/modalDataStore/yolo_datasets")
         os.makedirs(temp_yolo_data_dir, exist_ok=True)
 
         # 如果你想每次清空旧数据（模拟临时目录行为），可以加：

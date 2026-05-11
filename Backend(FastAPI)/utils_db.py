@@ -1,10 +1,16 @@
+import os
 import psycopg2
 import json
 import numpy as np
 from scipy.spatial import KDTree
 
 # 数据库操作
-def connect_db(host="localhost", dbname="geolabel", user="postgres", password="88888888", port="5432"):
+def connect_db(host=None, dbname=None, user=None, password=None, port=None):
+    host = host or os.getenv("DB_HOST", "localhost")
+    dbname = dbname or os.getenv("DB_NAME", "geolabel")
+    user = user or os.getenv("DB_USER", "postgres")
+    password = password or os.getenv("DB_PASSWORD", "88888888")
+    port = port or os.getenv("DB_PORT", "5432")
     try:
         conn = psycopg2.connect(host=host, database=dbname, user=user, password=password, port=port)
         return conn
