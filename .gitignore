@@ -65,3 +65,12 @@ __pycache__/
 
 # Local nested copy directory (should not be versioned)
 Geolabel-complete/
+
+# Claude Code auto-memory
+memory/
+
+# Frontend config
+Frontend(React)/portal/src/config.js
+
+# FastAPI env
+Backend(FastAPI)/.env

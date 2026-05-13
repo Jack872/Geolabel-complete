@@ -5,8 +5,8 @@ import { ProFormText, LoginForm, ProFormCheckbox } from '@ant-design/pro-form';
 import { useIntl, history, FormattedMessage, useModel, useAccess, SelectLang, Link } from 'umi';
 import { login } from '@/services/login/api';
 import styles from './index.less';
-import logo from '@/assets/LUUlogo.png';
-import LUUlogo from '@/assets/LUUlogo.png';
+import logo from '@/assets/LUUlogo.svg';
+import LUUlogo from '@/assets/LUUlogo.svg';
 import logoSVG from '@/assets/LUUlogo.svg';
 import backgroundImg from '@/assets/background.jpg';
 
