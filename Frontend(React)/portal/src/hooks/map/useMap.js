@@ -10,6 +10,7 @@ import { transformExtent, Projection, addProjection } from 'ol/proj';
 import Tile from 'ol/layer/Tile';
 import ImageLayer from 'ol/layer/Image';
 import Static from 'ol/source/ImageStatic';
+import { GEOSERVER_URL } from '@/config';
 
 // 预注册像素坐标投影，供本地任务的 readFeatures/writeFeatures 使用
 const _pixelProj = new Projection({ code: 'pixel', units: 'pixels', extent: [0, 0, 65536, 65536] });
@@ -159,7 +160,7 @@ function useMap() {
       }
 
       // ===== GeoServer 任务：原有逻辑 =====
-      mapserver = taskResult.data[0].mapserver;
+      mapserver = taskResult?.data?.[0]?.mapserver;
       let geoResult = await reqGetGeoServerInfo(mapserver);
       if (geoResult) {
         setMapExtent(geoResult.coverage.nativeBoundingBox);
@@ -181,7 +182,7 @@ function useMap() {
     if (mapserver) {
       try {
         const tmsSource = new XYZ({
-          url: `http://localhost:8081/geoserver/gwc/service/tms/1.0.0/LUU:${coverageName}@EPSG%3A900913@png/{z}/{x}/{-y}.png`,
+          url: `${GEOSERVER_URL}/geoserver/gwc/service/tms/1.0.0/LUU:${coverageName}@EPSG%3A900913@png/{z}/{x}/{-y}.png`,
           projection: 'EPSG:3857',
           tileGrid: createXYZ({ maxZoom: 20, tileSize: 256 }),
           transition: 0.1,

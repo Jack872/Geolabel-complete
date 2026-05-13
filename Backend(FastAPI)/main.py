@@ -6,6 +6,14 @@ import sys
 import tempfile
 import traceback
 from collections import OrderedDict
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 加载 .env 配置文件（从当前文件所在目录向上查找）
+env_path = Path(__file__).resolve().parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 from affine import Affine
 
@@ -80,18 +88,10 @@ PRELOAD_AUTO_YOLO_ON_STARTUP = os.getenv("PRELOAD_AUTO_YOLO_ON_STARTUP", "false"
 
 
 def parse_cors_origins(raw_value: str):
-    default_origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:8001",
-        "http://127.0.0.1:8001",
-    ]
     if not raw_value or not raw_value.strip():
-        return default_origins
+        return ["http://localhost:3000"]
     parsed = [item.strip() for item in raw_value.split(",") if item.strip()]
-    return parsed or default_origins
+    return parsed or ["http://localhost:3000"]
 
 
 CORS_ORIGINS = parse_cors_origins(os.getenv("CORS_ORIGINS", ""))

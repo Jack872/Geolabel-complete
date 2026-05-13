@@ -95,9 +95,6 @@ public class CommUtils {
                 return "UNKNOWN";
             }
             GridCoverage2DReader reader = format.getReader(file);
-            if (reader == null) {
-                return "UNKNOWN";
-            }
             CoordinateReferenceSystem crs = reader.getCoordinateReferenceSystem();
             if (crs == null) {
                 return "UNKNOWN";

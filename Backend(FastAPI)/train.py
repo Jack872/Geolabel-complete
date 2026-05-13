@@ -168,7 +168,7 @@ def train_function(argv=None):
     model_name = argv[11]
 
     # 模型保存路径
-    model_save_dir = "F:\PG-project\modalDataStore\\trained_models"
+    model_save_dir = os.getenv("MODEL_SAVE_DIR", "F:/PG-project/modalDataStore/trained_models")
     # 修改模型保存路径，加入 task_id 文件夹
     task_model_save_dir = os.path.join(model_save_dir, str(USER_ID)) # 创建 task_id 文件夹路径
     # 检查文件夹是否存在，如果不存在则创建

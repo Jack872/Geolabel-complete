@@ -251,12 +251,22 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                 }
                 logger.info("为文件 {} 检测到坐标系: {}", filename, coordinateSystem);
 
-                // 检查是否为无坐标系
-                boolean isPixelCRS = coordinateSystem.equals("NONE") || coordinateSystem.equals("UNKNOWN");
-
                 String coverageName = sername;
-                if (!isPixelCRS) {
-                    // 只有有坐标系的图片才需要检查和发布到GeoServer
+
+                if ("NONE".equals(coordinateSystem)) {
+                    // 真正的无坐标系（像素坐标），跳过GeoServer
+                    coverageName = geoServerService.publish(sername, seryear, setName, coordinateSystem);
+                    logger.info("无坐标系图片已处理，覆盖名称: {}", coverageName);
+                } else if ("UNKNOWN".equals(coordinateSystem)) {
+                    // CRS检测失败，让GeoServer自动检测（传null触发auto-detect模式）
+                    coverageName = geoServerService.publish(sername, seryear, setName, null);
+                    boolean coverageExists = geoServerService.checkCoverageExists("LUU", coverageName);
+                    if (!coverageExists) {
+                        throw new IllegalStateException("Coverage 发布失败（自动检测CRS）");
+                    }
+                    logger.info("CRS自动检测发布成功，覆盖名称: {}", coverageName);
+                } else {
+                    // 有明确CRS，正常发布
                     boolean coverageExists = geoServerService.checkCoverageExists("LUU", sername);
                     if (!coverageExists) {
                         coverageName = geoServerService.publish(sername, seryear, setName, coordinateSystem);
@@ -265,10 +275,6 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                             throw new IllegalStateException("Coverage 发布失败");
                         }
                     }
-                } else {
-                    // 无坐标系图片直接发布（跳过GeoServer）
-                    coverageName = geoServerService.publish(sername, seryear, setName, coordinateSystem);
-                    logger.info("无坐标系图片已处理，覆盖名称: {}", coverageName);
                 }
 
                 // 2. 数据库操作 (Server)

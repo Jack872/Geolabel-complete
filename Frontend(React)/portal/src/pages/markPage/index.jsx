@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Button, Form, Input, message, Popconfirm, Tag, Slider, Select, Tooltip } from 'antd';
 import { reqSaveService, reqExportService, reqAuditTask, reqAssistFunction, reqUqdateLabel,
   reqGetModelList,reqInferenceFunction, reqSplitPolygon, reqUnionPolygons} from '@/services/map/api';
+import { reqGetMyTaskIds } from '@/services/taskManage/api';
 import { Vector as VectorLayer } from 'ol/layer';
 import { Vector as VectorSource } from 'ol/source';
 import { Fill, Stroke, Style } from 'ol/style';
@@ -108,6 +109,8 @@ export default function () {
     markSource: new VectorSource(),
     currentLayer: '',
   });
+  // 任务导航：当前用户的任务 ID 列表
+  const [myTaskIds, setMyTaskIds] = useState([]);
   const {
     initialState: {
       currentState: { currentUser },
@@ -1420,7 +1423,7 @@ const navigateTask = useCallback(async (direction) => {
   const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
   if (idx === -1) return;
   const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
-  if (nextIdx < 0 || nextIdx >= taskItems.length) {
+  if (nextIdx < 0 || nextIdx >= myTaskIds.length) {
     message.info(direction === 'prev' ? '已是第一个任务' : '已是最后一个任务');
     return;
   }
@@ -1603,7 +1606,7 @@ const navigateTask = useCallback(async (direction) => {
   // 提取目标功能（XGBoost固定参数）
   const handleExtractTarget = async () => {
     let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
+    const taskType = taskInfo?.data?.[0]?.type;
     const userId = getUserId();
 
     if (!userId) {
@@ -1877,7 +1880,7 @@ const navigateTask = useCallback(async (direction) => {
   };
 
 
-  const isObjectDetection = taskInfo?.data[0].type === '目标检测'; // 判断是否为目标检测任务
+  const isObjectDetection = taskInfo?.data?.[0]?.type === '目标检测'; // 判断是否为目标检测任务
 
 // 定义模型选项
   const objectDetectionModels = [
@@ -2019,12 +2022,12 @@ const navigateTask = useCallback(async (direction) => {
       <div className="top-info-bar">
         <div className="top-info-item">
           <span className="top-info-label">任务名称：</span>
-          <span className="top-info-name">{taskInfo?.data[0].taskname}</span>
+          <span className="top-info-name">{taskInfo?.data?.[0]?.taskname}</span>
         </div>
         <div className="top-info-sep" />
         <div className="top-info-item">
           <span className="top-info-label">任务类型：</span>
-          <span className="top-info-type">{taskInfo?.data[0].type}</span>
+          <span className="top-info-type">{taskInfo?.data?.[0]?.type}</span>
         </div>
         {taskItems?.length > 0 && (
           <>
@@ -2044,12 +2047,12 @@ const navigateTask = useCallback(async (direction) => {
             </div>
           </>
         )}
-        {taskInfo?.data[0].auditfeedback && (
+        {taskInfo?.data?.[0]?.auditfeedback && (
           <>
             <div className="top-info-sep" />
             <div className="top-info-item">
               <span className="top-info-label">审核反馈：</span>
-              <span className="top-info-feedback">{taskInfo?.data[0].auditfeedback}</span>
+              <span className="top-info-feedback">{taskInfo?.data?.[0]?.auditfeedback}</span>
             </div>
           </>
         )}
@@ -2244,7 +2247,7 @@ const navigateTask = useCallback(async (direction) => {
           </div>
 
           {/* 辅助模型（地物分类任务） */}
-          {taskInfo?.data[0].type === '地物分类' && (
+          {taskInfo?.data?.[0]?.type === '地物分类' && (
             <div className="model-block">
               <div className="model-block-title"><ExperimentOutlined /> 辅助模型</div>
               <div className="assist-btns">
