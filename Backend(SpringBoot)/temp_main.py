@@ -421,7 +421,6 @@ class AssistFunctionRequest(BaseModel):
     promptType: Optional[str] = None
     coordinates: Optional[Any] = None
     currentTypeId: Optional[Any] = None
-    taskItemId: Optional[int] = None
 
 
 class AssistMultFunctionRequest(BaseModel):
@@ -452,7 +451,6 @@ class InferenceFunctionRequest(BaseModel):
     categoryMapping: Any = "{}"
     inferParams: Optional[dict] = None
     modelScopeStr: str = ""
-    taskItemId: Optional[int] = None
 
 
 class ReferenceSource(BaseModel):
@@ -494,7 +492,6 @@ class QualityReferenceRequest(BaseModel):
 class UpdateLabelRequest(BaseModel):
     taskid: str
     mapfile_path: str
-    taskItemId: Optional[int] = None
 
 
 # ── SAM 核心推理函数 ────────────────────────────────────────────────────────────
@@ -511,7 +508,6 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
     try:
         sam_model = get_or_create_sam()
         TASK_ID = int(params['taskid'])
-        TASK_ITEM_ID = params.get('taskItemId')
         raw_path = params['mapfile_path']
         IMAGE_PATH = resolve_image_path(raw_path)
         USER_ID = params.get('user_id')
@@ -522,7 +518,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         # 如果前端没传 currentTypeId，从数据库最新提示记录中获取
         if TARGET_TYPE_ID is None:
             try:
-                labels = fetch_labels_from_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
+                labels = fetch_labels_from_db(conn, TASK_ID, USER_ID)
                 if labels:
                     TARGET_TYPE_ID = labels[-1][2]
                     print(f"[SAM] currentTypeId 未传，从DB获取: {TARGET_TYPE_ID}")
@@ -703,8 +699,8 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
 
         # 单次点击模式：直接入库
         if final_polygons and conn:
-            delete_latest_prompt_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
-            insert_segmentation_results_db(conn, TASK_ID, final_polygons, USER_ID, status=1, task_item_id=TASK_ITEM_ID)
+            delete_latest_prompt_db(conn, TASK_ID, USER_ID)
+            insert_segmentation_results_db(conn, TASK_ID, final_polygons, USER_ID, status=1)
             poly_count = sum(len(v) for v in final_polygons.values())
             print(f"[SAM] 单个目标已入库")
             # 异步记录 prov（不阻塞）
@@ -722,7 +718,6 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
 def auto_building_segmentation(params: dict):
     """一键识别全图建筑并利用 SAM 分割"""
     yolo_model = get_or_create_auto_yolo()
-    TASK_ITEM_ID = params.get('taskItemId')
     raw_path = params['mapfile_path']
     IMAGE_PATH = resolve_image_path(raw_path)
     with rasterio.open(IMAGE_PATH) as src:
@@ -831,14 +826,10 @@ def auto_building_segmentation(params: dict):
         if conn:
             try:
                 with conn.cursor() as cur:
-                    if TASK_ITEM_ID is not None:
-                        cur.execute("DELETE FROM mark WHERE task_id = %s AND task_item_id = %s AND user_id = %s AND status = 1",
-                                    (int(params['taskid']), TASK_ITEM_ID, params.get('user_id')))
-                    else:
-                        cur.execute("DELETE FROM mark WHERE task_id = %s AND user_id = %s AND status = 1",
-                                    (int(params['taskid']), params.get('user_id')))
+                    cur.execute("DELETE FROM mark WHERE task_id = %s AND user_id = %s AND status = 1",
+                                (int(params['taskid']), params.get('user_id')))
                 insert_segmentation_results_db(conn, int(params['taskid']), all_batch_polygons,
-                                               params.get('user_id'), status=1, task_item_id=TASK_ITEM_ID)
+                                               params.get('user_id'), status=1)
                 conn.commit()
                 poly_count = sum(len(v) for v in all_batch_polygons.values())
                 print(f"[Auto] 批量标注成功：共 {poly_count} 个多边形")
@@ -1875,7 +1866,7 @@ async def inference_function(request: InferenceFunctionRequest):
 
         argv = ["", request.taskid, request.mapfile_path, request.user_id, model_identifier,
                 param1, param2, param3, param4,
-                request.modelScopeStr, class_mapping, request.taskItemId]
+                request.modelScopeStr, class_mapping]
         print(f"收到推理请求: {argv}")
 
         if not torch.cuda.is_available():
@@ -2224,7 +2215,7 @@ async def quality_reference_evaluate(request: QualityReferenceRequest):
 async def update_label(request: UpdateLabelRequest):
     """更新样本标签"""
     try:
-        argv = ["", request.taskid, request.mapfile_path, request.taskItemId]
+        argv = ["", request.taskid, request.mapfile_path]
         print(f"收到 update_label 请求: {argv}")
         update_label_function(argv)
         prov_update_label(request.taskid, "system")

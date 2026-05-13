@@ -9,6 +9,7 @@ import com.example.labelMark.domain.Server;
 import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.domain.SysUser;
 import com.example.labelMark.domain.Task;
+import com.example.labelMark.domain.TaskItem;
 import com.example.labelMark.domain.TaskDatasetInfo;
 import com.example.labelMark.domain.Type;
 import com.example.labelMark.service.DatasetService;
@@ -18,6 +19,7 @@ import com.example.labelMark.service.AttributeDefService;
 import com.example.labelMark.service.SysFileService;
 import com.example.labelMark.service.SysUserService;
 import com.example.labelMark.service.TaskAcceptedService;
+import com.example.labelMark.service.TaskItemService;
 import com.example.labelMark.service.TaskService;
 import com.example.labelMark.service.TaskTypeAttributeService;
 import com.example.labelMark.service.ProvenanceService;
@@ -85,6 +87,8 @@ public class TaskController {
     @Resource
     private TaskService taskService;
     @Resource
+    private TaskItemService taskItemService;
+    @Resource
     private TypeService typeService;
     @Resource
     private SysUserService sysUserService;
@@ -133,59 +137,37 @@ public class TaskController {
     @PostMapping("/publishTask")
     @ApiOperation("创建任务,包括保存关联的指定任务用户和类型")
     public Result publishTask(@RequestBody Map<String, Object> map) {
-        // 获取当前登录用户信息
         LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         SysUser currentUser = loginUser.getSysUser();
         Integer creatorUserId = currentUser.getUserid();
-        Integer teamId = currentUser.getTeamId(); // 获取当前用户的teamId
-        // Integer userid = currentUser.getUserid(); // creatorUserId 就是当前用户ID，这个可以移除或注释掉
+        Integer teamId = currentUser.getTeamId();
 
         ArrayList<String> dateRange = (ArrayList<String>) map.get("daterange");
-        String taskName = map.get("taskname").toString();
-        String taskType = map.get("type").toString();
-        String mapServerId = map.get("mapserver").toString();
+        String taskName = String.valueOf(map.get("taskname"));
+        String taskType = String.valueOf(map.get("type"));
         String dateRangeStr = dateRange.get(0) + " " + dateRange.get(1);
-
-        // 获取积分值（如果有）
-        Integer taskScore = 0;
-        if (map.containsKey("score") && map.get("score") != null) {
-            try {
-                Object scoreObj = map.get("score");
-                if (scoreObj instanceof Integer) {
-                    taskScore = (Integer) scoreObj;
-                } else if (scoreObj instanceof Double) { // 处理前端可能传Double的情况
-                    taskScore = ((Double) scoreObj).intValue();
-                } else {
-                    String scoreStr = scoreObj.toString().trim();
-                    if (!scoreStr.isEmpty()) {
-                        taskScore = (int) Double.parseDouble(scoreStr);
-                    }
-                }
-                if (taskScore < 0) taskScore = 0; // 确保积分为非负
-            } catch (NumberFormatException e) {
-                taskScore = 0; // 解析失败默认为0
-            }
+        List<TaskItem> taskItems = buildTaskItemsFromRequest(map, taskName);
+        if (taskItems.isEmpty()) {
+            return ResultGenerator.getFailResult("请至少选择一张影像");
         }
 
-        // 获取目标用户类型和对应的数据
+        Integer taskScore = parseScore(map.get("score"));
         String targetUserType = map.get("targetUserType").toString();
-        int taskClass = 0; // 0: 团队相关, 1: 非团队相关 (个人或公开)
+        int taskClass = 0;
 
-        // 判断任务类型 (taskClass)
-        if (currentUser.getIsadmin() == 0) { // 普通用户发布
-            targetUserType = "allNonAdminUsers"; // 普通用户只能发布给所有非管理员
-            taskClass = 1; // 标记为非团队任务
-        } else { // 管理员发布
+        if (currentUser.getIsadmin() == 0) {
+            targetUserType = "allNonAdminUsers";
+            taskClass = 1;
+        } else {
             if ("allNonTeamUsers".equals(targetUserType)) {
-                taskClass = 1; // 非团队任务
+                taskClass = 1;
             } else if ("specificTeamUsers".equals(targetUserType) || "allTeamMembers".equals(targetUserType)) {
-                taskClass = 0; // 团队任务
+                taskClass = 0;
             } else {
                 return ResultGenerator.getFailResult("无效的目标用户类型");
             }
         }
 
-        // 非团队任务(taskClass=1)且设置了积分(taskScore > 0)，则检查并扣除创建者积分
         if (taskClass == 1 && taskScore > 0) {
             Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
             if (creatorCurrentScore < taskScore) {
@@ -197,18 +179,14 @@ public class TaskController {
             }
         }
 
-        // 创建任务
-        int taskId = taskService.createTask(dateRangeStr, taskName, taskType, mapServerId, creatorUserId, taskClass);
-
+        int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
         if (taskId == -1) {
-            // 如果任务创建失败，并且之前扣除了积分，则回滚积分
             if (taskClass == 1 && taskScore > 0) {
-                sysUserService.addUserScore(creatorUserId, taskScore); // 归还积分
+                sysUserService.addUserScore(creatorUserId, taskScore);
             }
             return ResultGenerator.getFailResult("创建任务主体失败");
         }
 
-        // 如果任务创建成功，且设置了任务积分，则更新任务表中的score字段
         if (taskScore > 0) {
             taskService.updateTaskScore(taskId, taskScore);
         }
@@ -216,106 +194,11 @@ public class TaskController {
         applyTaskTypeAttributes(taskId, map);
         recordTaskCreateProvenance(taskId, creatorUserId);
 
-        // ... (后续分配任务给用户的逻辑)
-        List<SysUser> targetUsers = new ArrayList<>();
-        Integer currentUserId = currentUser.getUserid(); // 用一个新变量存储，避免混淆
-        Set<String> assignedUsernames = new LinkedHashSet<>();
-
-        // 普通用户发布任务 (targetUserType 已经固定为 allNonAdminUsers)
-        if (currentUser.getIsadmin() == 0) {
-            targetUsers = sysUserService.getAllNonAdminUsers();
-            targetUsers.removeIf(user -> user.getUserid().equals(currentUserId)); // 排除创建者自己
-
-            List<?> rawSelectedSampleTypes = (List<?>) map.get("selectedSampleTypes");
-            List<String> typeIdListForNonAdmin = new ArrayList<>();
-            if (rawSelectedSampleTypes != null) {
-                for (Object typeId : rawSelectedSampleTypes) {
-                    typeIdListForNonAdmin.add(String.valueOf(typeId));
-                }
-            }
-            String commonTypeStr = String.join(",", typeIdListForNonAdmin);
-            for (SysUser user : targetUsers) {
-                if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                    // 注意：部分失败时的处理，是否要回滚已创建的task_accepted记录，或者整个事务回滚
-                    return ResultGenerator.getFailResult("为用户 '" + user.getUsername() + "' 分配任务失败");
-                }
-                assignedUsernames.add(user.getUsername());
-            }
+        Result assignResult = assignUsersForTask(taskId, map, currentUser, targetUserType, teamId, creatorUserId);
+        if (assignResult.getCode() != 200) {
+            return assignResult;
         }
-        // 管理员发布任务
-        else {
-            if ("allTeamMembers".equals(targetUserType)) {
-                if (teamId == null) return ResultGenerator.getFailResult("管理员无团队信息，无法分配给所有团队成员");
-                targetUsers = sysUserService.getUsersByTeamIdAndNotAdmin(teamId);
-                targetUsers.removeIf(user -> user.getUserid().equals(currentUserId));
-
-                List<?> rawSelectedSampleTypes = (List<?>) map.get("selectedSampleTypes");
-                List<String> typeIdListForAllTeam = new ArrayList<>();
-                if (rawSelectedSampleTypes != null) {
-                    for (Object typeId : rawSelectedSampleTypes) {
-                        typeIdListForAllTeam.add(String.valueOf(typeId));
-                    }
-                }
-                String commonTypeStr = String.join(",", typeIdListForAllTeam);
-                for (SysUser user : targetUsers) {
-                    if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                        return ResultGenerator.getFailResult("为团队成员 '" + user.getUsername() + "' 分配任务失败");
-                    }
-                    assignedUsernames.add(user.getUsername());
-                }
-            } else if ("allNonTeamUsers".equals(targetUserType)) {
-                targetUsers = sysUserService.getNonTeamUsersAndNotAdmin(teamId); // teamId 用于排除团队成员
-                targetUsers.removeIf(user -> user.getUserid().equals(currentUserId));
-
-                List<?> rawSelectedSampleTypes = (List<?>) map.get("selectedSampleTypes");
-                List<String> typeIdListForAllNonTeam = new ArrayList<>();
-                 if (rawSelectedSampleTypes != null) {
-                    for (Object typeId : rawSelectedSampleTypes) {
-                        typeIdListForAllNonTeam.add(String.valueOf(typeId));
-                    }
-                }
-                String commonTypeStr = String.join(",", typeIdListForAllNonTeam);
-                for (SysUser user : targetUsers) {
-                    if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                        return ResultGenerator.getFailResult("为非团队用户 '" + user.getUsername() + "' 分配任务失败");
-                    }
-                    assignedUsernames.add(user.getUsername());
-                }
-            } else if ("specificTeamUsers".equals(targetUserType)) {
-                if (teamId == null) return ResultGenerator.getFailResult("管理员无团队信息，无法分配给指定团队用户");
-                ArrayList<Map<String, Object>> specificUserAssignments = (ArrayList<Map<String, Object>>) map.get("specificUserAssignments");
-                if (specificUserAssignments == null || specificUserAssignments.isEmpty()) {
-                    return ResultGenerator.getFailResult("未指定任何用户进行任务分配");
-                }
-                for (Map<String, Object> assignment : specificUserAssignments) {
-                    String username = assignment.get("username").toString();
-                    SysUser targetUser = sysUserService.findByUsername(username);
-                    // 确保用户存在且是团队成员 (或者如果允许分配给非团队的特定用户，则调整此逻辑)
-                    if (targetUser == null || !teamId.equals(targetUser.getTeamId())) {
-                         return ResultGenerator.getFailResult("用户 '" + username + "' 不存在或不属于您的团队");
-                    }
-//                    if (targetUser.getUserid().equals(currentUserId)) continue; // 不能分配给自己
-
-                    List<?> rawTypeArr = (List<?>) assignment.get("typeArr");
-                    List<String> typeStrList = new ArrayList<>();
-                    if (rawTypeArr != null) {
-                        for (Object typeId : rawTypeArr) {
-                            typeStrList.add(String.valueOf(typeId));
-                        }
-                    }
-                    if (typeStrList.isEmpty()) {
-                         return ResultGenerator.getFailResult("未给用户 '" + username + "' 分配任何样本类型");
-                    }
-                    String typeStr = String.join(",", typeStrList);
-                    if (!taskAcceptedService.createTaskAccept(taskId, username, typeStr)) {
-                        return ResultGenerator.getFailResult("为特定用户 '" + username + "' 分配任务失败");
-                    }
-                    assignedUsernames.add(username);
-                }
-            }
-        }
-        recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
-        return ResultGenerator.getSuccessResult("任务创建及分配成功");
+        return ResultGenerator.getSuccessResult("任务创建成功，包含 " + taskItems.size() + " 张影像");
     }
 
     @GetMapping("/getTaskInfo")
@@ -477,6 +360,7 @@ public class TaskController {
     @Transactional(rollbackFor = Exception.class)
     public Result deleteTask(@PathVariable int taskId) {
         taskAcceptedService.deleteTaskAcceptByTaskId(taskId);
+        taskItemService.remove(new QueryWrapper<TaskItem>().eq("task_id", taskId));
         taskService.deleteTaskById(taskId);
         markService.deleteMarkByTaskId(taskId);
         provenanceService.deleteByBusinessIdsAndTypes(
@@ -668,14 +552,14 @@ public class TaskController {
 
     @GetMapping("/getMarkTaskDetail")
     @ApiOperation("获取标注页面所需的任务详情，专用于标注界面")
-    public Map<String, Object> getMarkTaskDetail(@RequestParam Integer taskid) {
+    public Map<String, Object> getMarkTaskDetail(@RequestParam Integer taskid,
+                                                 @RequestParam(required = false) Integer taskItemId) {
         // 获取当前登录用户信息
         LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         SysUser currentUser = loginUser.getSysUser();
         String username = currentUser.getUsername();
         Integer userId = currentUser.getUserid();
 
-        // 获取任务详情
         Task task = taskService.selectTaskById(taskid);
         if (task == null) {
             Map<String, Object> errorResponse = new HashMap<>();
@@ -683,22 +567,26 @@ public class TaskController {
             errorResponse.put("message", "任务不存在");
             return errorResponse;
         }
+        List<TaskItem> taskItems = taskService.getTaskItems(taskid);
+        TaskItem currentTaskItem = taskService.resolveTaskItem(taskid, taskItemId);
+        if (currentTaskItem == null) {
+            currentTaskItem = taskService.getDefaultTaskItem(taskid);
+        }
 
-        // 创建标准化的任务信息对象
         TaskInfoDTO taskInfo = new TaskInfoDTO();
         taskInfo.setTaskid(task.getTaskId());
         taskInfo.setTaskname(task.getTaskName());
         taskInfo.setType(task.getTaskType());
-        taskInfo.setMapserver(task.getMapServer());
+        taskInfo.setMapserver(currentTaskItem != null ? currentTaskItem.getMapServer() : task.getMapServer());
         taskInfo.setDaterange(task.getDateRange());
         taskInfo.setStatus(task.getStatus());
         taskInfo.setAuditfeedback(task.getAuditFeedback());
         taskInfo.setTaskClass(task.getTaskClass());
         taskInfo.setScore(task.getScore());
+        taskInfo.setTaskSource(currentTaskItem != null ? currentTaskItem.getTaskSource() : task.getTaskSource());
         taskInfo.setAnnotationSchema(getCachedTaskAnnotationSchema(task));
         taskInfo.setAnnotationSchemaVersion(task.getAnnotationSchemaVersion() == null ? 1 : task.getAnnotationSchemaVersion());
 
-        // 获取与该任务关联的用户信息
         List<Map<String, Object>> userArrOrigin = new ArrayList<>();
         List<String> usernames = taskService.findUserListByTaskId(taskid);
 
@@ -731,10 +619,8 @@ public class TaskController {
         }
 
         taskInfo.setUserArr(userArrOrigin);
-        // 获取标注数据
-        List<Mark> marks = markService.getMarkByTaskId(taskid);
+        List<Mark> marks = markService.getMarkByTaskItem(taskid, currentTaskItem != null ? currentTaskItem.getTaskItemId() : null);
 
-        // 构建响应
         Map<String, Object> response = new HashMap<>();
         List<TaskInfoDTO> resultList = new ArrayList<>();
         resultList.add(taskInfo);
@@ -744,9 +630,10 @@ public class TaskController {
         response.put("success", true);
         response.put("markGeoJsonArr", convertGeojson(marks));
         response.put("taskTypeAttributes", taskTypeAttributeService.getTaskTypeAttributeDetails(taskid, null));
-        // 返回任务来源信息，前端据此决定加载GeoServer还是本地图片
-        response.put("taskSource", task.getTaskSource() != null ? task.getTaskSource() : "geoserver");
-        response.put("localImagePath", task.getLocalImagePath());
+        response.put("taskItems", buildTaskItemPayload(taskItems));
+        response.put("currentTaskItemId", currentTaskItem != null ? currentTaskItem.getTaskItemId() : null);
+        response.put("taskSource", currentTaskItem != null ? currentTaskItem.getTaskSource() : (task.getTaskSource() != null ? task.getTaskSource() : "geoserver"));
+        response.put("localImagePath", currentTaskItem != null ? currentTaskItem.getLocalImagePath() : task.getLocalImagePath());
         return response;
     }
 
@@ -760,9 +647,23 @@ public class TaskController {
 
         String taskName = map.get("taskname").toString();
         String taskType = map.get("type").toString();
-        String localImagePath = resolveExistingLocalImagePath(String.valueOf(map.get("localImagePath")));
         ArrayList<String> dateRange = (ArrayList<String>) map.get("daterange");
         String dateRangeStr = dateRange.get(0) + " " + dateRange.get(1);
+        List<TaskItem> taskItems = buildTaskItemsFromRequest(map, taskName);
+        if (taskItems.isEmpty()) {
+            return ResultGenerator.getFailResult("请至少提供一张本地影像");
+        }
+        for (TaskItem taskItem : taskItems) {
+            String localImagePath = resolveExistingLocalImagePath(taskItem.getLocalImagePath());
+            File imageFile = new File(localImagePath);
+            if (!imageFile.exists() || !imageFile.isFile()) {
+                return ResultGenerator.getFailResult("本地图片文件不存在: " + localImagePath);
+            }
+            taskItem.setLocalImagePath(localImagePath);
+            taskItem.setTaskSource("local");
+            taskItem.setMapServer("local:" + taskItem.getItemName());
+            taskItem.setServerId(0);
+        }
 
         String targetUserType = String.valueOf(map.getOrDefault("targetUserType", ""));
         if (currentUser.getIsadmin() == 0) {
@@ -771,12 +672,6 @@ public class TaskController {
         int taskClass = currentUser.getIsadmin() == 0 ? 1 :
                 ("allNonTeamUsers".equals(targetUserType) ? 1 : 0);
         Integer scorePerTask = parseScore(map.get("score"));
-
-        // 验证本地文件是否存在
-        File imageFile = new File(localImagePath);
-        if (!imageFile.exists() || !imageFile.isFile()) {
-            return ResultGenerator.getFailResult("本地图片文件不存在: " + localImagePath);
-        }
 
         if (taskClass == 1 && scorePerTask > 0) {
             Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
@@ -789,8 +684,7 @@ public class TaskController {
             }
         }
 
-        int taskId = taskService.createLocalTask(localImagePath, taskName, taskType,
-                creatorUserId, taskClass, dateRangeStr);
+        int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
         if (taskId == -1) {
             if (taskClass == 1 && scorePerTask > 0) {
                 sysUserService.addUserScore(creatorUserId, scorePerTask);
@@ -810,7 +704,7 @@ public class TaskController {
             return assignResult;
         }
 
-        return ResultGenerator.getSuccessResult("本地任务创建成功");
+        return ResultGenerator.getSuccessResult("本地任务创建成功，包含 " + taskItems.size() + " 张影像");
     }
 
     @PostMapping("/publishTaskBySet")
@@ -877,7 +771,7 @@ public class TaskController {
         }
 
         Map<String, List<String>> serviceSetMap = serverService.getServersBySetName(creatorUserId);
-        List<Map<String, Object>> taskUnits = new ArrayList<>();
+        List<TaskItem> taskItems = new ArrayList<>();
 
         for (String setName : setNames) {
             String setType = setTypeByName.getOrDefault(setName, "service");
@@ -907,25 +801,25 @@ public class TaskController {
                     continue;
                 }
                 for (SysFile file : files) {
-                    Map<String, Object> unit = new HashMap<>();
-                    unit.put("source", "local");
-                    unit.put("localImagePath", buildLocalImagePath(file.getFileName()));
-                    unit.put("setName", setName);
-                    taskUnits.add(unit);
+                    TaskItem taskItem = new TaskItem();
+                    taskItem.setTaskSource("local");
+                    taskItem.setLocalImagePath(buildLocalImagePath(file.getFileName()));
+                    taskItem.setItemName(resolveFileName(file.getFileName()));
+                    taskItems.add(taskItem);
                 }
             } else {
                 List<String> mapservers = serviceSetMap.getOrDefault(setName, Collections.emptyList());
                 for (String mapserver : mapservers) {
-                    Map<String, Object> unit = new HashMap<>();
-                    unit.put("source", "geoserver");
-                    unit.put("mapserver", mapserver);
-                    unit.put("setName", setName);
-                    taskUnits.add(unit);
+                    TaskItem taskItem = new TaskItem();
+                    taskItem.setTaskSource("geoserver");
+                    taskItem.setMapServer(mapserver);
+                    taskItem.setItemName(mapserver);
+                    taskItems.add(taskItem);
                 }
             }
         }
 
-        if (taskUnits.isEmpty()) {
+        if (taskItems.isEmpty()) {
             if (!failReasons.isEmpty()) {
                 return ResultGenerator.getFailResult("所选影像集内没有可创建任务的影像：" + String.join("；", failReasons));
             }
@@ -933,69 +827,36 @@ public class TaskController {
         }
 
         if (taskClass == 1 && scorePerTask > 0) {
-            int totalNeedScore = scorePerTask * taskUnits.size();
             Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
-            if (creatorCurrentScore < totalNeedScore) {
-                return ResultGenerator.getFailResult("积分不足，需 " + totalNeedScore + "，当前 " + creatorCurrentScore);
+            if (creatorCurrentScore < scorePerTask) {
+                return ResultGenerator.getFailResult("积分不足，需 " + scorePerTask + "，当前 " + creatorCurrentScore);
             }
-            boolean subtractSuccess = sysUserService.subtractUserScore(creatorUserId, totalNeedScore);
+            boolean subtractSuccess = sysUserService.subtractUserScore(creatorUserId, scorePerTask);
             if (!subtractSuccess) {
                 return ResultGenerator.getFailResult("扣除发布者积分失败，请重试");
             }
         }
 
-        String batchId = UUID.randomUUID().toString().replace("-", "");
-        int successCount = 0;
-
-        for (int i = 0; i < taskUnits.size(); i++) {
-            Map<String, Object> unit = taskUnits.get(i);
-            int batchIndex = i + 1;
-            String currentTaskName = taskName + "_" + batchIndex;
-            Integer taskId;
-
-            if ("local".equals(unit.get("source"))) {
-                String localImagePath = String.valueOf(unit.get("localImagePath"));
-                taskId = taskService.createLocalTask(localImagePath, currentTaskName, taskType,
-                        creatorUserId, taskClass, dateRangeStr);
-            } else {
-                String mapserver = String.valueOf(unit.get("mapserver"));
-                taskId = taskService.createTask(dateRangeStr, currentTaskName, taskType, mapserver, creatorUserId, taskClass);
+        int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
+        if (taskId == -1) {
+            if (taskClass == 1 && scorePerTask > 0) {
+                sysUserService.addUserScore(creatorUserId, scorePerTask);
             }
-
-            if (taskId == null || taskId == -1) {
-                failReasons.add("创建任务失败: " + currentTaskName);
-                continue;
-            }
-
-            Task createdTask = taskService.selectTaskById(taskId);
-            if (createdTask != null) {
-                createdTask.setBatchId(batchId);
-                createdTask.setBatchIndex(batchIndex);
-                taskService.updateById(createdTask);
-            }
-
-            if (scorePerTask > 0) {
-                taskService.updateTaskScore(taskId, scorePerTask);
-            }
-            applyTaskAnnotationSchema(taskId, map);
-            applyTaskTypeAttributes(taskId, map);
-            recordTaskCreateProvenance(taskId, creatorUserId);
-
-            Result assignResult = assignUsersForTask(taskId, map, currentUser, targetUserType, teamId, creatorUserId);
-            if (assignResult.getCode() != 200) {
-                failReasons.add("任务分配失败: " + currentTaskName + "，" + assignResult.getMessage());
-                continue;
-            }
-            successCount++;
+            return ResultGenerator.getFailResult("多影像任务创建失败");
         }
 
-        if (successCount == 0) {
-            return ResultGenerator.getFailResult("批量任务创建失败：" + String.join("；", failReasons));
+        if (scorePerTask > 0) {
+            taskService.updateTaskScore(taskId, scorePerTask);
         }
-        if (!failReasons.isEmpty()) {
-            return ResultGenerator.getSuccessResult("部分成功：成功 " + successCount + " 个，失败 " + failReasons.size() + " 个");
+        applyTaskAnnotationSchema(taskId, map);
+        applyTaskTypeAttributes(taskId, map);
+        recordTaskCreateProvenance(taskId, creatorUserId);
+
+        Result assignResult = assignUsersForTask(taskId, map, currentUser, targetUserType, teamId, creatorUserId);
+        if (assignResult.getCode() != 200) {
+            return assignResult;
         }
-        return ResultGenerator.getSuccessResult("批量任务创建成功，共 " + successCount + " 个");
+        return ResultGenerator.getSuccessResult("多影像任务创建成功，共 " + taskItems.size() + " 张影像");
     }
 
     private JSONObject parseAnnotationSchema(Object rawSchema) {
@@ -1167,26 +1028,27 @@ public class TaskController {
             }
 
             List<ProvEntityRef> inputs = new ArrayList<>();
-            if ("local".equals(task.getTaskSource())) {
-                String rawBusinessId = resolveLocalRawImageBusinessId(task.getLocalImagePath(), operatorUserId);
-                if (rawBusinessId != null && !rawBusinessId.trim().isEmpty()) {
-                    ProvEntityRef rawImage = ProvEntityRef.of(
-                            rawBusinessId,
-                            "RAW_IMAGE",
-                            resolveFileName(task.getLocalImagePath())
-                    );
-                    Map<String, Object> attrs = new HashMap<>();
-                    attrs.put("path", task.getLocalImagePath());
-                    rawImage.setAttributes(attrs);
-                    inputs.add(rawImage);
-                }
-            } else {
-                Integer serverId = task.getServerId();
-                if (serverId != null && serverId > 0) {
+            List<TaskItem> taskItems = taskService.getTaskItems(taskId);
+            for (TaskItem taskItem : taskItems) {
+                if ("local".equals(taskItem.getTaskSource())) {
+                    String rawBusinessId = resolveLocalRawImageBusinessId(taskItem.getLocalImagePath(), operatorUserId);
+                    if (rawBusinessId != null && !rawBusinessId.trim().isEmpty()) {
+                        ProvEntityRef rawImage = ProvEntityRef.of(
+                                rawBusinessId,
+                                "RAW_IMAGE",
+                                resolveFileName(taskItem.getLocalImagePath())
+                        );
+                        Map<String, Object> attrs = new HashMap<>();
+                        attrs.put("path", taskItem.getLocalImagePath());
+                        attrs.put("taskItemId", taskItem.getTaskItemId());
+                        rawImage.setAttributes(attrs);
+                        inputs.add(rawImage);
+                    }
+                } else if (taskItem.getServerId() != null && taskItem.getServerId() > 0) {
                     inputs.add(ProvEntityRef.of(
-                            serverId.toString(),
+                            taskItem.getServerId().toString(),
                             "MAP_SERVICE",
-                            task.getMapServer()
+                            taskItem.getMapServer()
                     ));
                 }
             }
@@ -1202,6 +1064,7 @@ public class TaskController {
             params.put("taskType", task.getTaskType());
             params.put("taskSource", task.getTaskSource());
             params.put("dateRange", task.getDateRange());
+            params.put("itemCount", taskItems.size());
 
             provenanceService.recordActivity(
                     "TASK_CREATE",
@@ -1354,6 +1217,108 @@ public class TaskController {
         } catch (Exception ignore) {
             return 0;
         }
+    }
+
+    private List<TaskItem> buildTaskItemsFromRequest(Map<String, Object> requestMap, String taskName) {
+        List<TaskItem> taskItems = new ArrayList<>();
+        Object rawTaskItems = requestMap.get("taskItems");
+        if (rawTaskItems instanceof List) {
+            List<?> source = (List<?>) rawTaskItems;
+            int index = 1;
+            for (Object item : source) {
+                if (!(item instanceof Map)) {
+                    continue;
+                }
+                Map<?, ?> itemMap = (Map<?, ?>) item;
+                String sourceType = stringValue(itemMap.get("source"));
+                if (sourceType == null) {
+                    sourceType = "geoserver";
+                }
+                TaskItem taskItem = new TaskItem();
+                taskItem.setTaskSource("local".equalsIgnoreCase(sourceType) ? "local" : "geoserver");
+                taskItem.setMapServer(stringValue(itemMap.get("mapserver"), itemMap.get("mapServer")));
+                taskItem.setLocalImagePath(stringValue(itemMap.get("localImagePath")));
+                String itemName = stringValue(itemMap.get("name"), itemMap.get("itemName"));
+                if (itemName == null || itemName.trim().isEmpty()) {
+                    itemName = "local".equals(taskItem.getTaskSource())
+                            ? resolveFileName(taskItem.getLocalImagePath())
+                            : taskItem.getMapServer();
+                }
+                taskItem.setItemName((itemName == null || itemName.trim().isEmpty()) ? taskName + "_" + index : itemName);
+                taskItems.add(taskItem);
+                index++;
+            }
+        }
+
+        if (!taskItems.isEmpty()) {
+            return taskItems;
+        }
+
+        Object rawMapserver = requestMap.get("mapserver");
+        if (rawMapserver instanceof List) {
+            List<?> mapservers = (List<?>) rawMapserver;
+            int index = 1;
+            for (Object mapserver : mapservers) {
+                if (mapserver == null) continue;
+                TaskItem taskItem = new TaskItem();
+                taskItem.setTaskSource("geoserver");
+                taskItem.setMapServer(String.valueOf(mapserver));
+                taskItem.setItemName(String.valueOf(mapserver));
+                taskItems.add(taskItem);
+                index++;
+            }
+        } else if (rawMapserver != null && !String.valueOf(rawMapserver).trim().isEmpty()) {
+            TaskItem taskItem = new TaskItem();
+            taskItem.setTaskSource("geoserver");
+            taskItem.setMapServer(String.valueOf(rawMapserver));
+            taskItem.setItemName(String.valueOf(rawMapserver));
+            taskItems.add(taskItem);
+        }
+
+        Object rawLocalImagePath = requestMap.get("localImagePath");
+        if (rawLocalImagePath != null && !String.valueOf(rawLocalImagePath).trim().isEmpty()) {
+            TaskItem taskItem = new TaskItem();
+            taskItem.setTaskSource("local");
+            taskItem.setLocalImagePath(String.valueOf(rawLocalImagePath));
+            taskItem.setItemName(resolveFileName(String.valueOf(rawLocalImagePath)));
+            taskItems.add(taskItem);
+        }
+        return taskItems;
+    }
+
+    private List<Map<String, Object>> buildTaskItemPayload(List<TaskItem> taskItems) {
+        List<Map<String, Object>> payload = new ArrayList<>();
+        if (taskItems == null) {
+            return payload;
+        }
+        for (TaskItem taskItem : taskItems) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("taskItemId", taskItem.getTaskItemId());
+            item.put("taskId", taskItem.getTaskId());
+            item.put("itemIndex", taskItem.getItemIndex());
+            item.put("itemName", taskItem.getItemName());
+            item.put("taskSource", taskItem.getTaskSource());
+            item.put("mapserver", taskItem.getMapServer());
+            item.put("localImagePath", taskItem.getLocalImagePath());
+            payload.add(item);
+        }
+        return payload;
+    }
+
+    private String stringValue(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+            String text = String.valueOf(value).trim();
+            if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
+                return text;
+            }
+        }
+        return null;
     }
 
     private String buildLocalImagePath(String fileName) {
@@ -1550,17 +1515,18 @@ public class TaskController {
     @GetMapping("/getLocalImage")
     @ApiOperation("获取本地图片文件，转换为PNG供浏览器显示")
     public void getLocalImage(@RequestParam Integer taskId,
+                              @RequestParam(required = false) Integer taskItemId,
                               javax.servlet.http.HttpServletResponse response) {
         try {
             // 避免 ImageIO 在受限目录创建临时缓存文件导致异常
             ImageIO.setUseCache(false);
-            Task task = taskService.selectTaskById(taskId);
-            if (task == null || !"local".equals(task.getTaskSource())) {
+            TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+            if (taskItem == null || !"local".equals(taskItem.getTaskSource())) {
                 response.sendError(404, "任务不存在或非本地任务");
                 return;
             }
 
-            String rawPath = task.getLocalImagePath();
+            String rawPath = taskItem.getLocalImagePath();
             if (rawPath == null || rawPath.trim().isEmpty()) {
                 response.sendError(404, "本地影像路径为空");
                 return;

@@ -297,6 +297,7 @@ const Category = () => {
             onClick={async () => {
               let taskId = Encrypt(record.taskid);
               try {
+                window.sessionStorage.removeItem('taskItemId');
                 window.sessionStorage.setItem('taskId', taskId);
                 jumpRoutesInNewPage(`/map`);
               } catch (error) {

@@ -4,10 +4,13 @@ import cn.hutool.core.util.ObjectUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.labelMark.domain.Server;
 import com.example.labelMark.domain.Task;
+import com.example.labelMark.domain.TaskItem;
 import com.example.labelMark.mapper.ServerMapper;
 import com.example.labelMark.mapper.TaskMapper;
+import com.example.labelMark.service.TaskItemService;
 import com.example.labelMark.service.TaskService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.labelMark.vo.TaskInfoDTO;
@@ -33,26 +36,60 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
     private TaskMapper taskMapper;
     @Resource
     private ServerMapper serverMapper;
+    @Resource
+    private TaskItemService taskItemService;
 
     @Override
     public int createTask(String dataRange, String taskName, String taskType
             , String mapServer, Integer userId, Integer taskClass) {
+        TaskItem taskItem = new TaskItem();
+        taskItem.setTaskSource("geoserver");
+        taskItem.setMapServer(mapServer);
+        taskItem.setItemName(taskName);
+        return createTaskWithItems(dataRange, taskName, taskType, userId, taskClass, List.of(taskItem));
+    }
+
+    @Override
+    public int createTaskWithItems(String dataRange, String taskName, String taskType,
+                                   Integer userId, Integer taskClass, List<TaskItem> taskItems) {
+        if (taskItems == null || taskItems.isEmpty()) {
+            return -1;
+        }
         Task task = new Task();
-//        初试状态为未提交
         task.setStatus(3);
         task.setDateRange(dataRange);
         task.setTaskName(taskName);
         task.setTaskType(taskType);
-        task.setMapServer(mapServer);
-        task.setServerId(serverMapper.selectOne(new QueryWrapper<Server>().eq("ser_name", mapServer)).getSerId());
-        task.setTaskSource("geoserver");
         task.setUserId(userId);
         task.setTaskClass(taskClass);
-        // 初始化积分为0
         task.setScore(0);
         boolean isSaved = save(task);
-//        taskMapper.insert(task);
-        return isSaved == true ? task.getTaskId() : -1;
+        if (!isSaved) {
+            return -1;
+        }
+
+        int itemIndex = 1;
+        for (TaskItem rawItem : taskItems) {
+            TaskItem taskItem = new TaskItem();
+            taskItem.setTaskId(task.getTaskId());
+            taskItem.setItemIndex(itemIndex++);
+            taskItem.setItemName(rawItem.getItemName() == null ? taskName + "_" + taskItem.getItemIndex() : rawItem.getItemName());
+            taskItem.setTaskSource(rawItem.getTaskSource() == null ? "geoserver" : rawItem.getTaskSource());
+            taskItem.setMapServer(rawItem.getMapServer());
+            taskItem.setLocalImagePath(rawItem.getLocalImagePath());
+            taskItem.setStatus(task.getStatus());
+
+            Integer serverId = rawItem.getServerId();
+            if (serverId == null && "geoserver".equals(taskItem.getTaskSource()) && rawItem.getMapServer() != null) {
+                Server server = serverMapper.selectOne(new QueryWrapper<Server>().eq("ser_name", rawItem.getMapServer()));
+                serverId = server != null ? server.getSerId() : 0;
+            }
+            taskItem.setServerId(serverId == null ? 0 : serverId);
+            taskItemService.save(taskItem);
+        }
+
+        syncTaskPrimaryItem(task.getTaskId());
+        return task.getTaskId();
     }
 
     @Override
@@ -231,26 +268,53 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
     @Override
     public int createLocalTask(String localImagePath, String taskName, String taskType,
                                Integer userId, Integer taskClass, String dateRange) {
-        Task task = new Task();
-        task.setStatus(3);
-        task.setDateRange(dateRange);
-        task.setTaskName(taskName);
-        task.setTaskType(taskType);
-        task.setTaskSource("local");
-        task.setLocalImagePath(localImagePath);
-        task.setMapServer("local:" + taskName); // 占位，标识本地任务
-        task.setServerId(0); // 本地任务无GeoServer服务，用0占位
-        task.setUserId(userId);
-        task.setTaskClass(taskClass);
-        task.setScore(0);
-        boolean isSaved = save(task);
-        return isSaved ? task.getTaskId() : -1;
+        TaskItem taskItem = new TaskItem();
+        taskItem.setTaskSource("local");
+        taskItem.setLocalImagePath(localImagePath);
+        taskItem.setMapServer("local:" + taskName);
+        taskItem.setServerId(0);
+        taskItem.setItemName(taskName);
+        return createTaskWithItems(dateRange, taskName, taskType, userId, taskClass, List.of(taskItem));
     }
 
     @Override
     public boolean isLocalTask(int taskId) {
-        Task task = taskMapper.selectTaskById(taskId);
-        return task != null && "local".equals(task.getTaskSource());
+        TaskItem taskItem = getDefaultTaskItem(taskId);
+        return taskItem != null && "local".equals(taskItem.getTaskSource());
+    }
+
+    @Override
+    public List<TaskItem> getTaskItems(Integer taskId) {
+        return taskItemService.listByTaskId(taskId);
+    }
+
+    @Override
+    public TaskItem getTaskItemById(Integer taskItemId) {
+        return taskItemService.getById(taskItemId);
+    }
+
+    @Override
+    public TaskItem getDefaultTaskItem(Integer taskId) {
+        return taskItemService.getDefaultItem(taskId);
+    }
+
+    @Override
+    public TaskItem resolveTaskItem(Integer taskId, Integer taskItemId) {
+        return taskItemService.resolveTaskItem(taskId, taskItemId);
+    }
+
+    private void syncTaskPrimaryItem(Integer taskId) {
+        TaskItem firstItem = getDefaultTaskItem(taskId);
+        if (firstItem == null) {
+            return;
+        }
+        UpdateWrapper<Task> wrapper = new UpdateWrapper<Task>()
+                .eq("task_id", taskId)
+                .set("task_source", firstItem.getTaskSource())
+                .set("server_id", firstItem.getServerId())
+                .set("map_server", firstItem.getMapServer())
+                .set("local_image_path", firstItem.getLocalImagePath());
+        update(wrapper);
     }
 
     private JSONObject parseAnnotationSchema(Object value) {

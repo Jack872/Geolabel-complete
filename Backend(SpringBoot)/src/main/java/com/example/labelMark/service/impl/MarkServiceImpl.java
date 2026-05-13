@@ -43,6 +43,7 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
         // 1. 获取基础参数
         Integer userId = Integer.valueOf(request.get("userid").toString());
         Integer taskId = Integer.valueOf(request.get("id").toString());
+        Integer taskItemId = request.get("taskItemId") == null ? null : Integer.valueOf(request.get("taskItemId").toString());
 
         // 2. 检查唯一执行者标志
         boolean setAsSubmitter = false;
@@ -88,6 +89,7 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
                 Mark mark = new Mark();
                 mark.setUserId(userId);
                 mark.setTaskId(taskId);
+                mark.setTaskItemId(taskItemId);
 
                 // 设置类型ID
                 if (markData.get("typeId") != null) {
@@ -233,6 +235,16 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
     public List<Mark> getMarkByTaskId(Integer taskId) {
         QueryWrapper<Mark> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("task_id", taskId);
+        return list(queryWrapper);
+    }
+
+    @Override
+    public List<Mark> getMarkByTaskItem(Integer taskId, Integer taskItemId) {
+        QueryWrapper<Mark> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("task_id", taskId);
+        if (taskItemId != null) {
+            queryWrapper.eq("task_item_id", taskItemId);
+        }
         return list(queryWrapper);
     }
 

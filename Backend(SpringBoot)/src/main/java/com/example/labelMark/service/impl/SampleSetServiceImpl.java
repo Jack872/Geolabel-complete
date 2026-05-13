@@ -120,210 +120,175 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
                 Task task = taskService.selectTaskById(taskId);
                 if (task == null) continue;
-                List<Mark> marks = markService.selectMarkById(taskId);
-                if (marks.isEmpty()) continue;
+                List<TaskItem> taskItems = taskService.getTaskItems(taskId);
+                if (taskItems == null || taskItems.isEmpty()) {
+                    taskItems = new ArrayList<>();
+                    taskItems.add(null);
+                }
 
                 if (taskType == null) {
                     taskType = task.getTaskType();
                 }
 
-                // ── 分支：地物分类（语义分割）滑动窗口裁切 ──────────────────
-                if ("地物分类".equals(task.getTaskType())) {
-                    totalSliceCount += processSegmentationTask(
-                            task, marks, taskId, params, targetSize,
-                            slicesDir, outputDir, projectMeta, categoryMap,
-                            globalObjectId);
-                    // globalObjectId 在子方法内部递增，这里同步（简化：直接用 projectMeta 统计）
-                    globalObjectId = projectMeta.getImages().stream()
-                            .flatMap(img -> img.getObjects().stream())
-                            .mapToInt(MetaObject::getId).max().orElse(globalObjectId) + 1;
-                    continue;
-                }
+                for (TaskItem taskItem : taskItems) {
+                    Integer taskItemId = taskItem != null ? taskItem.getTaskItemId() : null;
+                    Task effectiveTask = mergeTaskWithItem(task, taskItem);
+                    List<Mark> marks = markService.getMarkByTaskItem(taskId, taskItemId);
+                    if (marks == null || marks.isEmpty()) continue;
+                    String sourceKey = taskItemId == null ? String.valueOf(taskId) : (taskId + "_" + taskItemId);
 
-                // ── 原有目标检测逻辑 ─────────────────────────────────────────
-                BufferedImage sourceImage = null;
-                String largeFileName;
-
-                if ("local".equals(task.getTaskSource()) && task.getLocalImagePath() != null) {
-                    // 本地无坐标系 TIF：直接读取
-                    largeFileName = "train_" + taskId + ".jpg";
-                    Path largeFilePath = imageDir.resolve(largeFileName);
-                    sourceImage = loadTaskSourceImage(task, taskId);
-                    if (sourceImage == null) {
-                        System.err.println("本地图片不存在或不可读: " + task.getLocalImagePath());
+                    if ("地物分类".equals(task.getTaskType())) {
+                        totalSliceCount += processSegmentationTask(
+                                effectiveTask, marks, taskId, taskItemId, sourceKey, params, targetSize,
+                                slicesDir, outputDir, projectMeta, categoryMap,
+                                globalObjectId);
+                        globalObjectId = projectMeta.getImages().stream()
+                                .flatMap(img -> img.getObjects().stream())
+                                .mapToInt(MetaObject::getId).max().orElse(globalObjectId) + 1;
                         continue;
                     }
-                    if (sourceImage != null && !largeFilePath.toFile().exists()) {
-                        ImageIO.write(sourceImage, "jpg", largeFilePath.toFile());
-                    }
-                } else {
-                    // GeoServer 任务：原有下载逻辑
-                    Server server = serverService.getById(task.getServerId());
-                    if (server == null) continue;
-                    String readableTime = server.getSerYear().replaceAll("[:.]", "").replace("T", "_");
-                    String LayerName = server.getSerName() + "_" + server.getSetName() + "_" + readableTime;
 
-                    String layerInfo = geoServerRESTClient.getLayerInfo(LayerName);
-                    if (layerInfo == null || !layerInfo.trim().startsWith("{")) continue;
-
-                    ObjectMapper objectMapper = new ObjectMapper();
-                    JsonNode rootNode = objectMapper.readTree(layerInfo);
-                    String coverageHref = rootNode.path("layer").path("resource").path("href").asText();
-                    String coverageInfo = geoServerRESTClient.getCoverageInfo(coverageHref);
-                    if (coverageInfo == null || !coverageInfo.trim().startsWith("{")) continue;
-
-                    JsonNode coverageRootNode = objectMapper.readTree(coverageInfo);
-                    String srs = coverageRootNode.path("coverage").path("srs").asText();
-                    JsonNode bboxNode = coverageRootNode.path("coverage").path("nativeBoundingBox");
-
-                    double minx = bboxNode.path("minx").asDouble();
-                    double maxx = bboxNode.path("maxx").asDouble();
-                    double miny = bboxNode.path("miny").asDouble();
-                    double maxy = bboxNode.path("maxy").asDouble();
-
-                    double height = 2048;
-                    double width = Math.ceil(((maxx - minx) / (maxy - miny)) * height);
-                    String bboxStr = String.format("%f,%f,%f,%f", minx, miny, maxx, maxy);
-
-                    largeFileName = "train_" + taskId + ".tif";
-                    Path largeFilePath = imageDir.resolve(largeFileName);
-
-                    if (!largeFilePath.toFile().exists()) {
-                        ResponseEntity<byte[]> result = geoServerService.getGeoserverImg(
-                                LayerName, (int) Math.round(width), (int) Math.round(height), bboxStr, srs
-                        );
-                        try (FileOutputStream fos = new FileOutputStream(largeFilePath.toFile())) {
-                            if (result.getBody() != null) fos.write(result.getBody());
+                    BufferedImage sourceImage = null;
+                    String largeFileName;
+                    if ("local".equals(effectiveTask.getTaskSource()) && effectiveTask.getLocalImagePath() != null) {
+                        largeFileName = "train_" + sourceKey + ".jpg";
+                        Path largeFilePath = imageDir.resolve(largeFileName);
+                        sourceImage = loadTaskSourceImage(effectiveTask, taskId, taskItemId);
+                        if (sourceImage == null) continue;
+                        if (!largeFilePath.toFile().exists()) {
+                            ImageIO.write(sourceImage, "jpg", largeFilePath.toFile());
                         }
-                    }
+                    } else {
+                        Server server = serverService.getById(effectiveTask.getServerId());
+                        if (server == null) continue;
+                        String readableTime = server.getSerYear().replaceAll("[:.]", "").replace("T", "_");
+                        String LayerName = server.getSerName() + "_" + server.getSetName() + "_" + readableTime;
 
-                    // 计算像素坐标
-                    Map<String, Double> tifParams = new HashMap<>();
-                    tifParams.put("minx", Math.abs(minx));
-                    tifParams.put("maxy", Math.abs(maxy));
-                    tifParams.put("serverHeight", Math.abs(maxy) - Math.abs(miny));
-                    tifParams.put("serverWidth", Math.abs(maxx) - Math.abs(minx));
-                    Map<String, Double> dimensions = new HashMap<>();
-                    dimensions.put("width", width);
-                    dimensions.put("height", height);
+                        String layerInfo = geoServerRESTClient.getLayerInfo(LayerName);
+                        if (layerInfo == null || !layerInfo.trim().startsWith("{")) continue;
 
-                    List<Map<String, Object>> markMapList = DomainToMapList.convertDomainListToMapList(marks);
-                    List<Map<String, Object>> segmentationArr = CovertCoordinateToPixel.covertCoordinateToPixel(markMapList, tifParams, dimensions);
+                        ObjectMapper objectMapper = new ObjectMapper();
+                        JsonNode rootNode = objectMapper.readTree(layerInfo);
+                        String coverageHref = rootNode.path("layer").path("resource").path("href").asText();
+                        String coverageInfo = geoServerRESTClient.getCoverageInfo(coverageHref);
+                        if (coverageInfo == null || !coverageInfo.trim().startsWith("{")) continue;
 
-                    try {
+                        JsonNode coverageRootNode = objectMapper.readTree(coverageInfo);
+                        String srs = coverageRootNode.path("coverage").path("srs").asText();
+                        JsonNode bboxNode = coverageRootNode.path("coverage").path("nativeBoundingBox");
+                        double minx = bboxNode.path("minx").asDouble();
+                        double maxx = bboxNode.path("maxx").asDouble();
+                        double miny = bboxNode.path("miny").asDouble();
+                        double maxy = bboxNode.path("maxy").asDouble();
+
+                        double height = 2048;
+                        double width = Math.ceil(((maxx - minx) / (maxy - miny)) * height);
+                        String bboxStr = String.format("%f,%f,%f,%f", minx, miny, maxx, maxy);
+                        largeFileName = "train_" + sourceKey + ".tif";
+                        Path largeFilePath = imageDir.resolve(largeFileName);
+
+                        if (!largeFilePath.toFile().exists()) {
+                            ResponseEntity<byte[]> result = geoServerService.getGeoserverImg(
+                                    LayerName, (int) Math.round(width), (int) Math.round(height), bboxStr, srs
+                            );
+                            try (FileOutputStream fos = new FileOutputStream(largeFilePath.toFile())) {
+                                if (result.getBody() != null) fos.write(result.getBody());
+                            }
+                        }
+
+                        Map<String, Double> tifParams = new HashMap<>();
+                        tifParams.put("minx", Math.abs(minx));
+                        tifParams.put("maxy", Math.abs(maxy));
+                        tifParams.put("serverHeight", Math.abs(maxy) - Math.abs(miny));
+                        tifParams.put("serverWidth", Math.abs(maxx) - Math.abs(minx));
+                        Map<String, Double> dimensions = new HashMap<>();
+                        dimensions.put("width", width);
+                        dimensions.put("height", height);
+
+                        List<Map<String, Object>> markMapList = DomainToMapList.convertDomainListToMapList(marks);
+                        List<Map<String, Object>> segmentationArr = CovertCoordinateToPixel.covertCoordinateToPixel(markMapList, tifParams, dimensions);
+
                         sourceImage = ImageIO.read(largeFilePath.toFile());
-                    } catch (Exception e) {
-                        System.err.println("无法读取图片: " + largeFilePath);
-                        throw new RuntimeException("大图读取失败: " + largeFileName);
-                    }
-                    if (sourceImage == null) continue;
+                        if (sourceImage == null) continue;
 
-                    // 构建元数据（目标检测原有逻辑）
-                    MetaImage metaImage = new MetaImage();
-                    metaImage.setId(taskId);
-                    metaImage.setFileName(largeFileName);
-                    metaImage.setOriginalTaskId(taskId);
+                        MetaImage metaImage = new MetaImage();
+                        metaImage.setId(taskItemId != null ? taskItemId : taskId);
+                        metaImage.setFileName(largeFileName);
+                        metaImage.setOriginalTaskId(taskId);
 
-                    for (int i = 0; i < segmentationArr.size(); i++) {
-                        Map<String, Object> segItem = segmentationArr.get(i);
-                        Integer typeId = (Integer) segItem.get("type_id");
-                        String typeName = typeService.getTypeNameById(typeId);
-                        String typeColor = (String) segItem.get("type_color");
+                        for (int i = 0; i < segmentationArr.size(); i++) {
+                            Map<String, Object> segItem = segmentationArr.get(i);
+                            Integer typeId = (Integer) segItem.get("type_id");
+                            String typeName = typeService.getTypeNameById(typeId);
+                            String typeColor = (String) segItem.get("type_color");
 
-                        if (!categoryMap.containsKey(typeName)) {
-                            MetaCategory category = new MetaCategory();
-                            category.setId(typeId);
-                            category.setName(typeName);
-                            category.setColor(typeColor);
-                            categoryMap.put(typeName, category);
-                        }
-                        int finalNextCategoryId = nextCategoryId;
-                        MetaCategory cat = categoryMap.computeIfAbsent(typeName, k -> {
-                            MetaCategory c = new MetaCategory();
-                            c.setId(finalNextCategoryId);
-                            c.setName(typeName);
-                            c.setColor(typeColor);
-                            return c;
-                        });
-                        if (cat.getId() == nextCategoryId) nextCategoryId++;
+                            if (!categoryMap.containsKey(typeName)) {
+                                MetaCategory category = new MetaCategory();
+                                category.setId(typeId);
+                                category.setName(typeName);
+                                category.setColor(typeColor);
+                                categoryMap.put(typeName, category);
+                            }
+                            int finalNextCategoryId = nextCategoryId;
+                            MetaCategory cat = categoryMap.computeIfAbsent(typeName, k -> {
+                                MetaCategory c = new MetaCategory();
+                                c.setId(finalNextCategoryId);
+                                c.setName(typeName);
+                                c.setColor(typeColor);
+                                return c;
+                            });
+                            if (cat.getId() == nextCategoryId) nextCategoryId++;
 
-                        Object bboxObj = segItem.get("bbox");
-                        List<Double> rawBbox = new ArrayList<>();
-                        if (bboxObj instanceof double[]) {
-                            for (double d : (double[]) bboxObj) rawBbox.add(d);
-                        } else if (bboxObj instanceof List) {
-                            rawBbox = (List<Double>) bboxObj;
-                        }
+                            List<Double> rawBbox = (List<Double>) segItem.get("bbox");
+                            boolean smallObjectOptimize = params.get("smallObjectOptimize") != null
+                                    ? Boolean.parseBoolean(params.get("smallObjectOptimize").toString()) : true;
+                            double maxSide = Math.max((double) rawBbox.get(2), (double) rawBbox.get(3));
 
-                        boolean smallObjectOptimize = params.get("smallObjectOptimize") != null
-                                ? Boolean.parseBoolean(params.get("smallObjectOptimize").toString()) : true;
-                        double maxSide = Math.max((double) rawBbox.get(2), (double) rawBbox.get(3));
-
-                        SampleUtils.CropRect cropRect;
-                        double scale = 1.0;
-                        int finalW, finalH;
-
-                        if (targetSize != null && smallObjectOptimize && maxSide < targetSize) {
-                            cropRect = SampleUtils.calculateFixedWindowRect(rawBbox, sourceImage.getWidth(), sourceImage.getHeight(), targetSize);
-                            finalW = targetSize;
-                            finalH = targetSize;
-                            scale = 1.0;
-                        } else {
-                            cropRect = SampleUtils.calculateCropRect(rawBbox, sourceImage.getWidth(), sourceImage.getHeight(), expandRatio, forceSquare);
-                            if (targetSize != null) {
+                            SampleUtils.CropRect cropRect;
+                            double scale = 1.0;
+                            int finalW;
+                            int finalH;
+                            if (targetSize != null && smallObjectOptimize && maxSide < targetSize) {
+                                cropRect = SampleUtils.calculateFixedWindowRect(rawBbox, sourceImage.getWidth(), sourceImage.getHeight(), targetSize);
                                 finalW = targetSize;
                                 finalH = targetSize;
-                                scale = (double) targetSize / cropRect.getW();
                             } else {
-                                finalW = cropRect.getFinalW();
-                                finalH = cropRect.getFinalH();
-                            }
-                        }
-
-                        String sliceName = "slice_" + taskId + "_" + i + ".jpg";
-                        Path slicePath = slicesDir.resolve(sliceName);
-                        if (!slicePath.toFile().exists()) {
-                            SampleUtils.cropAndSave(sourceImage, cropRect, finalW, finalH, slicePath.toFile());
-                        }
-
-                        Object segObj = segItem.get("segmentation");
-                        List<List<Double>> originalPoly = new ArrayList<>();
-                        if (segObj instanceof double[][]) {
-                            for (double[] poly : (double[][]) segObj) {
-                                List<Double> point = new ArrayList<>();
-                                for (double d : poly) point.add(d);
-                                originalPoly.add(point);
-                            }
-                        } else if (segObj instanceof List) {
-                            List<?> tempList = (List<?>) segObj;
-                            for (Object item : tempList) {
-                                List<Double> point = new ArrayList<>();
-                                if (item instanceof double[]) {
-                                    for (double d : (double[]) item) point.add(d);
-                                } else if (item instanceof List) {
-                                    point = (List<Double>) item;
+                                cropRect = SampleUtils.calculateCropRect(rawBbox, sourceImage.getWidth(), sourceImage.getHeight(), expandRatio, forceSquare);
+                                if (targetSize != null) {
+                                    finalW = targetSize;
+                                    finalH = targetSize;
+                                    scale = (double) targetSize / cropRect.getW();
+                                } else {
+                                    finalW = cropRect.getFinalW();
+                                    finalH = cropRect.getFinalH();
                                 }
-                                originalPoly.add(point);
                             }
+
+                            String sliceName = "slice_" + sourceKey + "_" + i + ".jpg";
+                            Path slicePath = slicesDir.resolve(sliceName);
+                            if (!slicePath.toFile().exists()) {
+                                SampleUtils.cropAndSave(sourceImage, cropRect, finalW, finalH, slicePath.toFile());
+                            }
+
+                            List<List<Double>> originalPoly = (List<List<Double>>) segItem.get("segmentation");
+                            List<List<Double>> localPoly = SampleUtils.transformPoly(originalPoly, cropRect.getX(), cropRect.getY(), scale);
+                            List<Double> localBbox = SampleUtils.transformBbox(rawBbox, cropRect.getX(), cropRect.getY(), scale);
+
+                            MetaObject obj = new MetaObject();
+                            obj.setId(globalObjectId++);
+                            obj.setCategoryId(cat.getId());
+                            obj.setCategoryName(cat.getName());
+                            obj.setSliceFileName(sliceName);
+                            obj.setWidth(finalW);
+                            obj.setHeight(finalH);
+                            obj.setBbox(localBbox);
+                            obj.setSegmentation(localPoly);
+                            metaImage.getObjects().add(obj);
+                            totalSliceCount++;
                         }
-                        List<List<Double>> localPoly = SampleUtils.transformPoly(originalPoly, cropRect.getX(), cropRect.getY(), scale);
-                        List<Double> localBbox = SampleUtils.transformBbox(rawBbox, cropRect.getX(), cropRect.getY(), scale);
-
-                        MetaObject obj = new MetaObject();
-                        obj.setId(globalObjectId++);
-                        obj.setCategoryId(cat.getId());
-                        obj.setCategoryName(cat.getName());
-                        obj.setSliceFileName(sliceName);
-                        obj.setWidth(finalW);
-                        obj.setHeight(finalH);
-                        obj.setBbox(localBbox);
-                        obj.setSegmentation(localPoly);
-
-                        metaImage.getObjects().add(obj);
-                        totalSliceCount++;
+                        sourceImage.flush();
+                        projectMeta.getImages().add(metaImage);
                     }
-                    sourceImage.flush();
-                    projectMeta.getImages().add(metaImage);
                 }
             }
             ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -883,7 +848,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
         return isLikelyTiffFile(cachedPath);
     }
 
-    private BufferedImage loadTaskSourceImage(Task task, Integer taskId) {
+    private BufferedImage loadTaskSourceImage(Task task, Integer taskId, Integer taskItemId) {
         String rawPath = task.getLocalImagePath();
         if (rawPath == null || rawPath.trim().isEmpty()) return null;
         String normalizedRawPath = rawPath.trim().replace('\\', '/');
@@ -902,8 +867,8 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                 if (img != null) return img;
             }
         } catch (Exception e) {
-            logger.warn("[SampleSet] 本地影像不可读，将尝试MinIO恢复, taskId={}, path={}, err={}",
-                    taskId, rawPath, e.getMessage());
+            logger.warn("[SampleSet] 本地影像不可读，将尝试MinIO恢复, taskId={}, taskItemId={}, path={}, err={}",
+                    taskId, taskItemId, rawPath, e.getMessage());
         }
 
         try {
@@ -921,10 +886,25 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                 return ImageIO.read(cachedPath.toFile());
             }
         } catch (Exception e) {
-            logger.warn("[SampleSet] MinIO恢复影像失败, taskId={}, path={}, err={}",
-                    taskId, rawPath, e.getMessage());
+            logger.warn("[SampleSet] MinIO恢复影像失败, taskId={}, taskItemId={}, path={}, err={}",
+                    taskId, taskItemId, rawPath, e.getMessage());
         }
         return null;
+    }
+
+    private Task mergeTaskWithItem(Task task, TaskItem taskItem) {
+        if (taskItem == null) return task;
+        Task merged = new Task();
+        merged.setTaskId(task.getTaskId());
+        merged.setTaskName(task.getTaskName());
+        merged.setTaskType(task.getTaskType());
+        merged.setUserId(task.getUserId());
+        merged.setTaskClass(task.getTaskClass());
+        merged.setTaskSource(taskItem.getTaskSource() != null ? taskItem.getTaskSource() : task.getTaskSource());
+        merged.setServerId(taskItem.getServerId() != null ? taskItem.getServerId() : task.getServerId());
+        merged.setMapServer(taskItem.getMapServer() != null ? taskItem.getMapServer() : task.getMapServer());
+        merged.setLocalImagePath(taskItem.getLocalImagePath() != null ? taskItem.getLocalImagePath() : task.getLocalImagePath());
+        return merged;
     }
 
     // =========================================================================
@@ -938,7 +918,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
      * @return 本次生成的切片数量
      */
     private int processSegmentationTask(
-            Task task, List<Mark> marks, Integer taskId,
+            Task task, List<Mark> marks, Integer taskId, Integer taskItemId, String sourceKey,
             Map<String, Object> params, Integer targetSize,
             Path slicesDir, Path outputDir,
             DatasetMeta projectMeta, Map<String, MetaCategory> categoryMap,
@@ -959,7 +939,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
         if ("local".equals(task.getTaskSource()) && task.getLocalImagePath() != null) {
             // 本地无坐标系 TIF：直接读取，标注已是 OpenLayers 像素坐标（Y 向上）
-            sourceImage = loadTaskSourceImage(task, taskId);
+            sourceImage = loadTaskSourceImage(task, taskId, taskItemId);
             if (sourceImage == null) {
                 System.err.println("[Seg] 本地图片不存在或不可读: " + task.getLocalImagePath());
                 return 0;
@@ -997,7 +977,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             String bboxStr = String.format("%f,%f,%f,%f", minx, miny, maxx, maxy);
 
             Path imageDir = outputDir.resolve("images");
-            String largeFileName = "train_seg_" + taskId + ".tif";
+            String largeFileName = "train_seg_" + sourceKey + ".tif";
             Path largeFilePath = imageDir.resolve(largeFileName);
             if (!largeFilePath.toFile().exists()) {
                 ResponseEntity<byte[]> resp = geoServerService.getGeoserverImg(layerName, imgW, imgH, bboxStr, srs);
@@ -1051,15 +1031,15 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
         for (MetaCategory c : categoryMap.values()) catById.put(c.getId(), c);
 
         List<SampleUtils.SlidingWindowSlice> slices = SampleUtils.slidingWindowCrop(
-                sourceImage, maskImage, taskId,
+                sourceImage, maskImage, taskItemId != null ? taskItemId : taskId,
                 windowSize, stride, minFgRatio,
                 slicesDir, masksDir,
                 pixelAnnotations, catById);
 
         // ── 6. 构建 MetaImage ─────────────────────────────────────────────────
         MetaImage metaImage = new MetaImage();
-        metaImage.setId(taskId);
-        metaImage.setFileName("train_seg_" + taskId);
+        metaImage.setId(taskItemId != null ? taskItemId : taskId);
+        metaImage.setFileName("train_seg_" + sourceKey);
         metaImage.setOriginalTaskId(taskId);
 
         int objId = startObjectId;

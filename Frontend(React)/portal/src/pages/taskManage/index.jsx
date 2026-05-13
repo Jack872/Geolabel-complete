@@ -205,30 +205,31 @@ const TaskManage = () => {
         message.error('请至少输入一个本地图片路径');
         return;
       }
-      const hide = message.loading(`正在创建 ${localImagePaths.length} 个本地任务...`);
+      const hide = message.loading(`正在创建多影像本地任务...`);
       try {
-        let successCount = 0;
-        for (const localImagePath of localImagePaths) {
-          const result = await reqPublishLocalTask(
-            buildTaskRequestValues({
-              values,
-              currentTaskName: taskname,
-              daterange,
-              type,
-              targetUserType,
-              score: typeof score === 'number' ? score : Number(score) || 0,
-              localImagePath: localImagePath.trim(),
-            }),
-          );
-          if (result.code === 200) successCount++;
-          else message.warning(`路径 ${localImagePath} 创建失败: ${result.message || '未知错误'}`);
-        }
+        const result = await reqPublishLocalTask({
+          ...buildTaskRequestValues({
+            values,
+            currentTaskName: taskname,
+            daterange,
+            type,
+            targetUserType,
+            score: typeof score === 'number' ? score : Number(score) || 0,
+          }),
+          taskItems: localImagePaths.map((localImagePath) => ({
+            source: 'local',
+            localImagePath: localImagePath.trim(),
+            itemName: localImagePath.trim().split(/[\\/]/).pop(),
+          })),
+        });
         hide();
-        if (successCount > 0) {
-          message.success(`成功创建 ${successCount} 个本地任务！`);
+        if (result.code === 200) {
+          message.success(`成功创建 1 个多影像任务（${localImagePaths.length} 张）`);
           setVisible(false);
           setDefaultValue({});
           actionRef.current.reload();
+        } else {
+          message.error(result.message || '创建本地任务失败');
         }
       } catch (error) {
         hide();
@@ -320,85 +321,55 @@ const TaskManage = () => {
 
     // 如果是非团队任务且设置了积分，进行积分检查
     if (isNonTeamTaskLogic && score > 0) {
-      const totalScoreToDeduct = selectedImages.length * score;
-      if (currentUserScore < totalScoreToDeduct) {
-        message.error(`积分不足！您需要 ${totalScoreToDeduct} 积分来发布这些任务，但您只有 ${currentUserScore} 积分。`);
+      if (currentUserScore < score) {
+        message.error(`积分不足！您需要 ${score} 积分来发布该任务，但您只有 ${currentUserScore} 积分。`);
         return; // 终止操作
       }
     }
 
+    if (taskid && selectedImages.length > 1) {
+      message.error('编辑任务暂不支持一次修改多张影像，请新建任务');
+      return;
+    }
+
     const hide = message.loading('正在添加任务');
     try {
-      let successCount = 0;
-      let failCount = 0;
-      const totalImageCount = serviceImages.length + localImages.length;
-
-      for (let i = 0; i < serviceImages.length; i++) {
-        const currentService = serviceImages[i];
-        const currentTaskName = totalImageCount > 1
-          ? `${taskname}_${currentService.name}`
-          : taskname;
-        const requestValues = buildTaskRequestValues({
+      const taskItems = [
+        ...serviceImages.map((item) => ({
+          source: 'geoserver',
+          mapserver: item.mapserver,
+          itemName: item.name || item.mapserver,
+        })),
+        ...localImages.map((item) => ({
+          source: 'local',
+          localImagePath: item.localImagePath,
+          itemName: item.name || item.fileName,
+        })),
+      ];
+      const requestValues = {
+        ...buildTaskRequestValues({
           values,
-          currentTaskName,
+          currentTaskName: taskname,
           daterange,
           taskid,
           type,
           targetUserType,
           score,
-          mapserver: currentService.mapserver,
-        });
-        let result;
-        if (taskid) {
-          console.log('编辑');
-          result = await reqEditTask(requestValues);
-        } else {
-          result = await reqNewTask(requestValues);
-        }
-        if (result.code == 200) {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      }
-
-      for (let i = 0; i < localImages.length; i++) {
-        const currentLocal = localImages[i];
-        const currentTaskName = totalImageCount > 1
-          ? `${taskname}_${currentLocal.name || currentLocal.fileName || i + 1}`
-          : taskname;
-        const result = await reqPublishLocalTask(
-          buildTaskRequestValues({
-            values,
-            currentTaskName,
-            daterange,
-            type,
-            targetUserType,
-            score,
-            localImagePath: currentLocal.localImagePath,
-          }),
-        );
-        if (result.code === 200) {
-          successCount++;
-        } else {
-          failCount++;
-          message.warning(`${currentLocal.name || currentLocal.fileName} 创建失败: ${result.message || '未知错误'}`);
-        }
-      }
+          mapserver: serviceImages[0]?.mapserver,
+          localImagePath: localImages[0]?.localImagePath,
+        }),
+        ...(taskid ? {} : { taskItems }),
+      };
+      const result = taskid ? await reqEditTask(requestValues) : await reqNewTask(requestValues);
 
       hide();
-      setVisible(false);
-      setDefaultValue({});
-
-      // 根据成功和失败数量显示消息
-      if (successCount > 0 && failCount === 0) {
-        message.success(`成功创建${successCount}个影像任务！`);
-      } else if (successCount > 0 && failCount > 0) {
-        message.warning(`部分影像任务创建成功，成功${successCount}个，失败${failCount}个`);
-      } else {
-        message.error('所有影像任务创建失败！');
+      if (result.code !== 200) {
+        message.error(result.message || '任务创建失败');
         return false;
       }
+      setVisible(false);
+      setDefaultValue({});
+      message.success(taskid ? '任务更新成功！' : `成功创建 1 个多影像任务（${taskItems.length} 张）`);
 
       // 重新加载任务列表
       actionRef.current.reload();
@@ -634,6 +605,7 @@ const TaskManage = () => {
                   } else {
                     window.sessionStorage.setItem('auditTaskIds', JSON.stringify([Number(firstTaskId)]));
                   }
+                  window.sessionStorage.removeItem('taskItemId');
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {
@@ -704,6 +676,7 @@ const TaskManage = () => {
                   if (Number.isFinite(singleTaskId) && singleTaskId > 0) {
                     window.sessionStorage.setItem('auditTaskIds', JSON.stringify([singleTaskId]));
                   }
+                  window.sessionStorage.removeItem('taskItemId');
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {

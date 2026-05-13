@@ -74,14 +74,18 @@ def fetch_map_server_from_db(conn, task_id):
 #         print(f"Error fetching labels from database: {e}")
 #         return []
 
-def delete_existing_results_db(conn, task_id):
+def delete_existing_results_db(conn, task_id, task_item_id=None):
     """删除数据库中指定 task_id 的原有数据"""
     if conn is None:
         return
     cursor = conn.cursor()
     try:
-        delete_query = f"DELETE FROM {TABLE_NAME} WHERE task_id = %s"
-        cursor.execute(delete_query, (task_id,))
+        if task_item_id is not None:
+            delete_query = f"DELETE FROM {TABLE_NAME} WHERE task_id = %s AND task_item_id = %s"
+            cursor.execute(delete_query, (task_id, task_item_id))
+        else:
+            delete_query = f"DELETE FROM {TABLE_NAME} WHERE task_id = %s"
+            cursor.execute(delete_query, (task_id,))
         conn.commit()
         print(f"已删除 task_id {task_id} 的原有数据。")
     except psycopg2.Error as e:
@@ -189,6 +193,7 @@ def update_label_function(argv):
     """主函数：处理任务并更新标签"""
     TASK_ID = int(argv[1])
     MAPFILE_PATH = argv[2]
+    TASK_ITEM_ID = int(argv[3]) if len(argv) > 3 and argv[3] not in (None, "", "None") else None
     
     # 连接数据库
     # conn = db_conn
@@ -197,20 +202,23 @@ def update_label_function(argv):
         print("无法连接到数据库，程序退出。")
         return
     
-    # 获取地图服务器路径
-    map_servers = fetch_map_server_from_db(conn, TASK_ID)
-    if not map_servers:
-        print(f"task_id {TASK_ID} 未找到地图服务器路径，请检查数据库。")
-        conn.close()
-        return
-    map_name = map_servers[0][0]
-    if str(map_name).lower().endswith((".tif", ".tiff")):
-        IMAGE_PATH = map_name
+    # 优先使用 Java 侧传入的影像路径（taskItem 维度）
+    if MAPFILE_PATH and str(MAPFILE_PATH).lower().endswith((".tif", ".tiff")) and os.path.exists(MAPFILE_PATH):
+        IMAGE_PATH = MAPFILE_PATH
     else:
-        IMAGE_PATH = f"{MAPFILE_PATH}/{map_name}.tif"
+        map_servers = fetch_map_server_from_db(conn, TASK_ID)
+        if not map_servers:
+            print(f"task_id {TASK_ID} 未找到地图服务器路径，请检查数据库。")
+            conn.close()
+            return
+        map_name = map_servers[0][0]
+        if str(map_name).lower().endswith((".tif", ".tiff")):
+            IMAGE_PATH = map_name
+        else:
+            IMAGE_PATH = f"{MAPFILE_PATH}/{map_name}.tif"
     
     # 获取标签数据
-    labels_data = fetch_labels_from_db(conn, TASK_ID)
+    labels_data = fetch_labels_from_db(conn, TASK_ID, None, TASK_ITEM_ID)
     # print(f"labels_data: {labels_data}")
     if not labels_data:
         print(f"task_id {TASK_ID} 没有找到标签数据，请检查数据库。")
@@ -258,8 +266,8 @@ def update_label_function(argv):
     segmentation_polygons = identify_holes_and_split(mask, transform, class_index_to_type_id, background_class_index)
     
     # 更新数据库
-    delete_existing_results_db(conn, TASK_ID)
-    insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status)
+    delete_existing_results_db(conn, TASK_ID, TASK_ITEM_ID)
+    insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status, TASK_ITEM_ID)
     
     conn.close()
     print("任务完成!")

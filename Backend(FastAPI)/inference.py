@@ -229,6 +229,7 @@ def inference(argv=None):
     MAPFILE_PATH = argv[2]
     USER_ID = int(argv[3])
     MODEL_identifier = str(argv[4])  # 可以是 model_name 或 model_id
+    TASK_ITEM_ID = int(argv[11]) if len(argv) > 11 and argv[11] not in (None, "", "None") else None
     # model_scope_str = argv[9]  # 模型作用范围
 
     # 类别映射
@@ -275,7 +276,7 @@ def inference(argv=None):
 
     IMAGE_PATH = resolve_image_path(MAPFILE_PATH)
     # 获取标签数据
-    labels_data = fetch_labels_from_db(conn, TASK_ID)
+    labels_data = fetch_labels_from_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
     if not labels_data:
         print(f"task_id {TASK_ID} 没有找到标签数据，将不使用原始标签掩膜。")
         labels_data = None
@@ -500,7 +501,7 @@ def inference(argv=None):
             )
 
             # 更新数据库结果
-            insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status)
+            insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status, TASK_ITEM_ID)
             torch.cuda.empty_cache()
 
         elif MODEL_TYPE == "yolo":
@@ -662,7 +663,7 @@ def inference(argv=None):
             # 直接删除旧数据
             delete_existing_results_db(conn, TASK_ID)
             # 只插入这次检测到的新数据 (哪怕是 0 个，也就什么都不插入)
-            insert_segmentation_results_db(conn, TASK_ID, detection_polygons, user_id, status)
+            insert_segmentation_results_db(conn, TASK_ID, detection_polygons, user_id, status, TASK_ITEM_ID)
 
             torch.cuda.empty_cache()
     else:
@@ -735,7 +736,7 @@ def inference(argv=None):
                 class_index_to_type_id,
                 background_class_index
             )
-            insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status)
+            insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status, TASK_ITEM_ID)
             torch.cuda.empty_cache()
         except Exception as e:
             print(f"TorchScript模型加载或推理失败: {e}")

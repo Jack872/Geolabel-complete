@@ -59,6 +59,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
     @Transactional(rollbackFor = Exception.class)
     public Result submitAuditFail(Map<String, Object> req) {
         Integer taskId = (Integer) req.get("taskId");
+        Integer taskItemId = req.get("taskItemId") == null ? null : Integer.valueOf(req.get("taskItemId").toString());
         String overallFeedback = (String) req.get("overallFeedback");
         // 转换反馈列表
         ObjectMapper mapper = new ObjectMapper();
@@ -70,9 +71,11 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         Map<String, String> feedbackMap = feedbackList.stream()
                 .collect(Collectors.toMap(FeedbackDTO::getId, FeedbackDTO::getFeedback));
         // 2) 获取当前任务的所有标注记录
-        List<Mark> markList = markService.list(
-                new QueryWrapper<Mark>().eq("task_id", taskId)
-        );
+        QueryWrapper<Mark> markQuery = new QueryWrapper<Mark>().eq("task_id", taskId);
+        if (taskItemId != null) {
+            markQuery.eq("task_item_id", taskItemId);
+        }
+        List<Mark> markList = markService.list(markQuery);
         // 3) 用 feedbackMap 高效更新 mark.feedback
         markList.forEach(mark -> {
             String feedback = feedbackMap.get(String.valueOf(mark.getId()));
@@ -149,6 +152,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
 
         // 从 request 对象中安全地获取 taskId 和 correctionsDTO
         Integer taskId = request.getTaskId();
+        Integer taskItemId = request.getTaskItemId();
         CorrectionsDTO correctionsDTO = request.getCorrections();
 
         Task task = taskService.getById(taskId);
@@ -160,7 +164,11 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
             auditInfo.setTaskId(taskId);
         }
         //      获得原来未处理的标注
-        List<Mark> marks = markService.list(new QueryWrapper<Mark>().eq("task_id", taskId));
+        QueryWrapper<Mark> markQuery = new QueryWrapper<Mark>().eq("task_id", taskId);
+        if (taskItemId != null) {
+            markQuery.eq("task_item_id", taskItemId);
+        }
+        List<Mark> marks = markService.list(markQuery);
         LinkedHashMap<Integer, JSONObject> marksMap = marks.stream()
                 .collect(Collectors.toMap(
                         Mark::getId,                                    // key = id
@@ -212,6 +220,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
                 geom.put("geometry", geomJson);
                 mark.setGeom(geom);
                 mark.setTaskId(taskId);
+                mark.setTaskItemId(taskItemId);
                 mark.setUserId(task.getUserId());
                 markService.save(mark);
                 double area = parseGeoJson(geom).getArea();

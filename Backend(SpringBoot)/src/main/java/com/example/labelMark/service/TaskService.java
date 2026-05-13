@@ -1,6 +1,7 @@
 package com.example.labelMark.service;
 
 import com.example.labelMark.domain.Task;
+import com.example.labelMark.domain.TaskItem;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.labelMark.vo.TaskInfoDTO;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,6 +21,9 @@ public interface TaskService extends IService<Task> {
 
     int createTask(String dataRange, String taskName, String taskType,
                    String mapServer, Integer userId, Integer taskClass);
+
+    int createTaskWithItems(String dataRange, String taskName, String taskType,
+                            Integer userId, Integer taskClass, List<TaskItem> taskItems);
 
     List<TaskInfoDTO> getTaskInfo(String username);
 
@@ -95,4 +99,12 @@ public interface TaskService extends IService<Task> {
      * 判断是否为本地图片任务
      */
     boolean isLocalTask(int taskId);
+
+    List<TaskItem> getTaskItems(Integer taskId);
+
+    TaskItem getTaskItemById(Integer taskItemId);
+
+    TaskItem getDefaultTaskItem(Integer taskId);
+
+    TaskItem resolveTaskItem(Integer taskId, Integer taskItemId);
 }

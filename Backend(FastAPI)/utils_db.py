@@ -255,17 +255,27 @@ def fetch_typeid_from_db(conn, task_id, table_name="task_accepted"):
         return []
         
 
-def fetch_labels_from_db(conn, task_id, table_name="mark", limit=1000, offset=0):
+def fetch_labels_from_db(conn, task_id, user_id=None, task_item_id=None, table_name="mark", limit=1000, offset=0):
     if conn is None:
         return []
     try:
         with conn.cursor() as cursor:
-            query = f"SELECT id, geom, type_id, user_id, task_id, status FROM {table_name} WHERE task_id = %s LIMIT %s OFFSET %s"
-            cursor.execute(query, (task_id, limit, offset))
+            where_clauses = ["task_id = %s"]
+            args = [task_id]
+            if user_id is not None:
+                where_clauses.append("user_id = %s")
+                args.append(user_id)
+            if task_item_id is not None:
+                where_clauses.append("task_item_id = %s")
+                args.append(task_item_id)
+            where_sql = " AND ".join(where_clauses)
+            query = f"SELECT id, geom, type_id, user_id, task_id, status, task_item_id FROM {table_name} WHERE {where_sql} LIMIT %s OFFSET %s"
+            args.extend([limit, offset])
+            cursor.execute(query, tuple(args))
             temp_r = cursor.fetchall()
             result = []
             for row in temp_r:
-                id, geom, type_id, user_id, task_id, status = row
+                id, geom, type_id, user_id, task_id, status, row_task_item_id = row
                 
                 if geom["geometry"]["type"] == "Polygon":
                     if len(geom["geometry"]["coordinates"]) == 1:
@@ -331,7 +341,7 @@ def fetch_labels_from_db(conn, task_id, table_name="mark", limit=1000, offset=0)
                     geom_str = ','.join(map(str, point_coords))
 
                 # 添加到结果
-                result.append((id, geom_str, type_id, user_id, task_id, status))
+                result.append((id, geom_str, type_id, user_id, task_id, status, row_task_item_id))
                     
             # print(result)
             return result
@@ -459,7 +469,7 @@ from psycopg2.extras import execute_values
 
 import logging
 logger = logging.getLogger(__name__)
-def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id, status, table_name="mark", batch_size=1000):
+def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id, status, task_item_id=None, table_name="mark", batch_size=1000):
     if conn is None:
         return
     try:
@@ -515,7 +525,8 @@ def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id
                                 int(type_id),
                                 user_id,
                                 task_id,
-                                status
+                                status,
+                                task_item_id
                             ))
                     else:  # 单个Polygon的处理
                         # 确保多边形有足够的点
@@ -546,7 +557,8 @@ def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id
                             int(type_id),
                             user_id,
                             task_id,
-                            status
+                            status,
+                            task_item_id
                         ))
             
             if values_list:
@@ -554,7 +566,7 @@ def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id
                 conn.commit()
                 # 关闭自动提交，开始新事务
                 conn.autocommit = False
-                query = f"INSERT INTO {table_name} (geom, type_id, user_id, task_id, status) VALUES %s"
+                query = f"INSERT INTO {table_name} (geom, type_id, user_id, task_id, status, task_item_id) VALUES %s"
                 print(f"准备插入 {len(values_list)} 条数据...")
                 # 分批插入数据
                 for i in range(0, len(values_list), batch_size):
@@ -574,7 +586,7 @@ def insert_segmentation_results_db(conn, task_id, segmentation_polygons, user_id
         traceback.print_exc()  # 打印完整堆栈以便调试
 
 
-def delete_latest_prompt_db(conn, task_id, user_id, table_name="mark"):
+def delete_latest_prompt_db(conn, task_id, user_id, task_item_id=None, table_name="mark"):
     """
     删除指定用户在指定任务中最新添加的一条记录（通常是 SAM 的提示要素）
     """
@@ -588,12 +600,14 @@ def delete_latest_prompt_db(conn, task_id, user_id, table_name="mark"):
         # 1. 过滤任务 ID 和用户 ID
         # 2. 只有几何类型是 Point, LineString 或 Polygon (用于矩形框) 的才考虑
         # 3. 按 ID 降序排列，只删除最上面（最新）的那一条
+        extra_filter = "AND task_item_id = %s" if task_item_id is not None else ""
         delete_query = f"""
             DELETE FROM {table_name}
             WHERE id = (
                 SELECT id FROM {table_name}
                 WHERE task_id = %s 
                 AND user_id = %s
+                {extra_filter}
                 AND (
                     geom::jsonb->'geometry'->>'type' IN ('Point', 'LineString', 'Polygon')
                 )
@@ -603,7 +617,8 @@ def delete_latest_prompt_db(conn, task_id, user_id, table_name="mark"):
         """
 
         # 执行删除
-        cursor.execute(delete_query, (task_id, user_id))
+        params = (task_id, user_id, task_item_id) if task_item_id is not None else (task_id, user_id)
+        cursor.execute(delete_query, params)
 
         # 提交事务
         conn.commit()

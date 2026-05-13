@@ -16,8 +16,7 @@ import Draw , { createBox }from 'ol/interaction/Draw';
 import FeedbackList from './components/FeedbackList';
 import {submitAuditFail, submitAuditPass} from "@/services/audit/api";
 import { LeftOutlined, RightOutlined } from '@ant-design/icons';
-import { Encrypt, Decrypt } from '@/utils/utils';
-import { reqGetMyTaskIds, reqGetTaskList } from '@/services/taskManage/api';
+import { Decrypt } from '@/utils/utils';
 const { TextArea } = Input;
 
 const INITIAL_AUDIT_DATA = {
@@ -42,138 +41,50 @@ export default function AuditPage() {
   const [targetDrawLayerId, setTargetDrawLayerId] = useState(null); // 用于步骤2
   const [visibleLayerIds, setVisibleLayerIds] = useState([]);
 
-  const { taskInfo, markGeoJsonArr, setMap, mapExtent } = useMap();
+  const { taskInfo, markGeoJsonArr, setMap, mapExtent, taskItems, currentTaskItemId } = useMap();
   const {
     initialState: {
       currentState: { currentUser },
     },
   } = useModel('@@initialState');
 
-  // 任务导航
-  const [myTaskIds, setMyTaskIds] = useState([]);
-
-  const normalizeTaskIds = useCallback((list) => {
-    if (!Array.isArray(list)) return [];
-    const ids = list
-      .map((item) => Number(item?.taskid ?? item))
-      .filter((id) => Number.isFinite(id) && id > 0);
-    return Array.from(new Set(ids));
+  const getTaskId = useMemo(() => {
+    const rawTaskId = Decrypt(window.sessionStorage.getItem('taskId'));
+    const numericTaskId = Number(rawTaskId);
+    return Number.isFinite(numericTaskId) ? numericTaskId : null;
   }, []);
 
-  const getCurrentTaskId = () => {
-    const decrypted = Decrypt(window.sessionStorage.getItem('taskId'));
-    const taskId = Number(decrypted);
-    return Number.isFinite(taskId) ? taskId : null;
-  };
+  const getTaskItemId = useMemo(() => {
+    const rawTaskItemId = window.sessionStorage.getItem('taskItemId');
+    if (!rawTaskItemId) return currentTaskItemId;
+    const numericTaskItemId = Number(rawTaskItemId);
+    return Number.isFinite(numericTaskItemId) ? numericTaskItemId : currentTaskItemId;
+  }, [currentTaskItemId]);
 
-  const goToTaskId = useCallback((nextTaskId) => {
-    if (!nextTaskId) return false;
-    window.sessionStorage.setItem('taskId', Encrypt(nextTaskId));
+  const currentTaskItem = useMemo(() => {
+    if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
+    return taskItems.find((item) => Number(item?.taskItemId) === Number(getTaskItemId)) || taskItems[0];
+  }, [getTaskItemId, taskItems]);
+
+  const switchTaskItem = useCallback((nextTaskItemId) => {
+    if (!nextTaskItemId || Number(nextTaskItemId) === Number(getTaskItemId)) return;
+    window.sessionStorage.setItem('taskItemId', String(nextTaskItemId));
     window.location.reload();
-    return true;
-  }, []);
+  }, [getTaskItemId]);
 
-  const getNeighborTaskId = useCallback((direction, taskId = getCurrentTaskId()) => {
-    if (!taskId || myTaskIds.length === 0) return null;
-    const idx = myTaskIds.indexOf(taskId);
-    if (idx === -1) return null;
+  const navigateTask = useCallback((direction) => {
+    if (!Array.isArray(taskItems) || taskItems.length === 0) return;
+    const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
+    if (idx === -1) return;
     const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
-    if (nextIdx < 0 || nextIdx >= myTaskIds.length) return null;
-    return myTaskIds[nextIdx];
-  }, [myTaskIds]);
-
-  const removeTaskFromNavigation = useCallback((taskId) => {
-    if (!taskId) return;
-    const nextIds = myTaskIds.filter((id) => id !== taskId);
-    setMyTaskIds(nextIds);
-    window.sessionStorage.setItem('auditTaskIds', JSON.stringify(nextIds));
-  }, [myTaskIds]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadNavigableTaskIds = async () => {
-      const currentTaskId = getCurrentTaskId();
-
-      // 1) 优先读取“开始审核”写入的批次任务ID（若存在）
-      try {
-        const raw = window.sessionStorage.getItem('auditTaskIds');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          const batchIds = normalizeTaskIds(parsed);
-          if (batchIds.length > 0) {
-            let ids = batchIds;
-            if (currentTaskId && !ids.includes(currentTaskId)) {
-              ids = [currentTaskId, ...ids];
-            }
-            if (active) setMyTaskIds(Array.from(new Set(ids)));
-            return;
-          }
-        }
-      } catch (e) {
-        // ignore and continue fallback
-      }
-
-      // 2) 先尝试个人任务接口
-      try {
-        const personalRes = await reqGetMyTaskIds({ pageSize: 1000 });
-        const personalList = Array.isArray(personalRes?.data)
-          ? personalRes.data
-          : (personalRes?.data?.list || personalRes?.data?.records || []);
-        let ids = normalizeTaskIds(personalList);
-        if (currentTaskId && !ids.includes(currentTaskId)) {
-          ids = [];
-        }
-        if (ids.length > 0) {
-          if (active) setMyTaskIds(ids);
-          window.sessionStorage.setItem('auditTaskIds', JSON.stringify(ids));
-          return;
-        }
-      } catch (e) {
-        // ignore and continue fallback
-      }
-
-      // 3) 回退到全任务列表（审核页需要可切换）
-      try {
-        const allRes = await reqGetTaskList({ current: 1, pageSize: 1000 });
-        const allList = Array.isArray(allRes?.data)
-          ? allRes.data
-          : (allRes?.data?.list || allRes?.data?.records || []);
-        let ids = normalizeTaskIds(
-          allList.filter((item) => item?.status !== 1), // 排除已审核通过任务
-        );
-        if (currentTaskId && !ids.includes(currentTaskId)) {
-          ids = [currentTaskId, ...ids];
-        }
-        ids = Array.from(new Set(ids));
-        if (active) setMyTaskIds(ids);
-        window.sessionStorage.setItem('auditTaskIds', JSON.stringify(ids));
-      } catch (e) {
-        if (active) setMyTaskIds([]);
-      }
-    };
-
-    loadNavigableTaskIds();
-    return () => {
-      active = false;
-    };
-  }, [normalizeTaskIds]);
-
-  const navigateTask = useCallback(async (direction) => {
-    const currentTaskId = getCurrentTaskId();
-    if (!currentTaskId || myTaskIds.length === 0) return;
-    const nextTaskId = getNeighborTaskId(direction, currentTaskId);
-    if (!nextTaskId) {
-      const idx = myTaskIds.indexOf(currentTaskId);
-      if (idx === -1) {
-        message.warning('当前任务不在可切换列表中，请返回任务管理页重新进入');
-        return;
-      }
-      message.info(direction === 'prev' ? '已是第一个任务' : '已是最后一个任务');
+    if (nextIdx < 0 || nextIdx >= taskItems.length) {
+      message.info(direction === 'prev' ? '已是第一张影像' : '已是最后一张影像');
       return;
     }
-    goToTaskId(nextTaskId);
-  }, [myTaskIds, getNeighborTaskId, goToTaskId]);
+    const nextTaskItemId = taskItems[nextIdx]?.taskItemId;
+    if (!nextTaskItemId) return;
+    switchTaskItem(nextTaskItemId);
+  }, [getTaskItemId, switchTaskItem, taskItems]);
 
   // 核心流程变更：审核决策状态
   const [auditDecision, setAuditDecision] = useState(null); // 'pass', 'fail', or null
@@ -590,6 +501,7 @@ export default function AuditPage() {
     try {
       await submitAuditPass({
         taskId: taskInfo?.data[0].taskid,
+        taskItemId: getTaskItemId,
         corrections: auditData
       });
       message.destroy('submit_pass');
@@ -597,7 +509,7 @@ export default function AuditPage() {
     } catch (error) {
       message.error({ content: '提交失败!', key: 'submit_pass' });
     }
-  }, [auditData, taskInfo, handlePostSubmitStayInAudit]);
+  }, [auditData, taskInfo, getTaskItemId, handlePostSubmitStayInAudit]);
 
   // --- “不通过”流程的处理函数 ---
   // --- 重构 handleSaveFeatureFeedback ---
@@ -637,6 +549,7 @@ export default function AuditPage() {
     try {
       await submitAuditFail({
         taskId,
+        taskItemId: getTaskItemId,
         overallFeedback,
         featureFeedback: feedbackArray // 发送数组而不是对象
       });
@@ -646,7 +559,7 @@ export default function AuditPage() {
     } catch (error) {
       message.error({ content: '提交失败!', key: 'submit_fail' });
     }
-  }, [overallFeedback, featureFeedback, taskInfo, handlePostSubmitStayInAudit]);
+  }, [overallFeedback, featureFeedback, taskInfo, getTaskItemId, handlePostSubmitStayInAudit]);
 
   // --- 步骤导航 ---
   const nextStep = () => setCurrentStep(currentStep + 1);
@@ -662,17 +575,10 @@ export default function AuditPage() {
   }, []);
 
   const handlePostSubmitStayInAudit = useCallback((successText) => {
-    const currentTaskId = getCurrentTaskId();
-    const nextTaskId = getNeighborTaskId('next', currentTaskId);
-    removeTaskFromNavigation(currentTaskId);
     message.success(successText);
-    if (nextTaskId) {
-      goToTaskId(nextTaskId);
-      return;
-    }
     resetToDecision();
-    message.info('当前已是最后一个任务，已保留在审核页');
-  }, [getNeighborTaskId, goToTaskId, removeTaskFromNavigation, resetToDecision]);
+    message.info('已保留在当前任务，可继续审核当前任务内其他影像');
+  }, [resetToDecision]);
 
   // 新增：用于切换图层可见性的回调函数
   const toggleLayerVisibility = useCallback((typeId, isVisible) => {
@@ -896,22 +802,24 @@ return (
         <button
           className="task-nav-btn"
           onClick={() => navigateTask('prev')}
-          disabled={myTaskIds.length === 0}
+          disabled={(taskItems?.length || 0) <= 1}
         >
           <LeftOutlined />
         </button>
       </Tooltip>
-      <span className="task-nav-label">{taskInfo?.data[0]?.taskname || '审核任务'}</span>
-      {myTaskIds.length > 0 && (
+      <span className="task-nav-label">
+        {currentTaskItem?.itemName || taskInfo?.data[0]?.taskname || '审核任务'}
+      </span>
+      {(taskItems?.length || 0) > 0 && (
         <span className="task-nav-progress">
-          {myTaskIds.indexOf(getCurrentTaskId()) + 1} / {myTaskIds.length}
+          {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1} / {taskItems.length}
         </span>
       )}
       <Tooltip title="跳转下一个任务">
         <button
           className="task-nav-btn"
           onClick={() => navigateTask('next')}
-          disabled={myTaskIds.length === 0}
+          disabled={(taskItems?.length || 0) <= 1}
         >
           <RightOutlined />
         </button>

@@ -22,6 +22,8 @@ public interface MarkService extends IService<Mark> {
 
     List<Mark> getMarkByTaskId(Integer taskId);
 
+    List<Mark> getMarkByTaskItem(Integer taskId, Integer taskItemId);
+
     void deleteMarkByTaskId(int taskId);
 
     List<Mark> selectMarkById(int taskId);

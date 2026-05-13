@@ -36,6 +36,10 @@ public class Mark implements Serializable {
     @TableField("task_id")
     private Integer taskId;
 
+    @ApiModelProperty("任务影像项ID")
+    @TableField("task_item_id")
+    private Integer taskItemId;
+
     @ApiModelProperty("用户ID")
     @TableField("user_id")
     private Integer userId;

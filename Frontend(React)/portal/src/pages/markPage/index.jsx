@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Button, Form, Input, message, Popconfirm, Tag, Slider, Select, Tooltip } from 'antd';
 import { reqSaveService, reqExportService, reqAuditTask, reqAssistFunction, reqUqdateLabel,
   reqGetModelList,reqInferenceFunction, reqSplitPolygon, reqUnionPolygons} from '@/services/map/api';
-import { reqGetMyTaskIds } from '@/services/taskManage/api';
 import { Vector as VectorLayer } from 'ol/layer';
 import { Vector as VectorSource } from 'ol/source';
 import { Fill, Stroke, Style } from 'ol/style';
@@ -109,8 +108,6 @@ export default function () {
     markSource: new VectorSource(),
     currentLayer: '',
   });
-  // 任务导航：当前用户的任务 ID 列表
-  const [myTaskIds, setMyTaskIds] = useState([]);
   const {
     initialState: {
       currentState: { currentUser },
@@ -118,7 +115,7 @@ export default function () {
   } = useModel('@@initialState');
 
   //挂载地图并定位服务 hook
-  const { typeList, taskInfo, setMap, mapRef, markGeoJsonArr, mapExtent, refreshMarkGeoJsonArr, taskSource, localImagePath } = useMap();
+  const { typeList, taskInfo, setMap, mapRef, markGeoJsonArr, mapExtent, refreshMarkGeoJsonArr, taskSource, localImagePath, taskItems, currentTaskItemId } = useMap();
   const access = useAccess(); // access 实例的成员: canAdmin, canUser
   let select, modify, shapeDraw; // 将交互变量声明在组件顶层
   const selectRef = useRef(null);
@@ -960,6 +957,24 @@ export default function () {
     return taskId;
   }, []);
 
+  const getTaskItemId = useMemo(() => {
+    const rawTaskItemId = window.sessionStorage.getItem('taskItemId');
+    if (!rawTaskItemId) return currentTaskItemId;
+    const numericId = Number(rawTaskItemId);
+    return Number.isFinite(numericId) ? numericId : currentTaskItemId;
+  }, [currentTaskItemId]);
+
+  const currentTaskItem = useMemo(() => {
+    if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
+    return taskItems.find((item) => Number(item?.taskItemId) === Number(getTaskItemId)) || taskItems[0];
+  }, [getTaskItemId, taskItems]);
+
+  const switchTaskItem = useCallback((nextTaskItemId) => {
+    if (!nextTaskItemId || Number(nextTaskItemId) === Number(getTaskItemId)) return;
+    window.sessionStorage.setItem('taskItemId', String(nextTaskItemId));
+    window.location.reload();
+  }, [getTaskItemId]);
+
   const resolveFeatureTypeName = useCallback((feature) => {
     if (!feature) return '';
     const typeId = feature.get('typeId') ?? toolbarState?.sourceKey;
@@ -1225,6 +1240,7 @@ export default function () {
         const requestData = {
           userid: currentUserId,
           id: taskId,
+          taskItemId: getTaskItemId,
           jsondataArr,
           typeArr: taskInfo.data[0].userArr.filter(({ username }) => username == currentUser)[0].typeArr,
           //TODO
@@ -1398,36 +1414,26 @@ useEffect(() => {
   fetchModelList();
 }, [taskInfo]);
 
-// 加载当前用户的任务 ID 列表（用于上下任务导航）
-useEffect(() => {
-  reqGetMyTaskIds({ pageSize: 1000 }).then(res => {
-    if (res?.data) {
-      const list = Array.isArray(res.data) ? res.data : (res.data.list || res.data.records || []);
-      setMyTaskIds(list.map(t => t.taskid).filter(Boolean));
-    }
-  }).catch(() => {});
-}, []);
-
-// 上下任务导航：自动保存后跳转
+// 任务内影像导航：自动保存后跳转
 const navigateTask = useCallback(async (direction) => {
-  const currentTaskId = parseInt(getTaskId);
-  if (!currentTaskId || myTaskIds.length === 0) return;
-  const idx = myTaskIds.indexOf(currentTaskId);
+  if (!Array.isArray(taskItems) || taskItems.length === 0) return;
+  const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
   if (idx === -1) return;
   const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
-  if (nextIdx < 0 || nextIdx >= myTaskIds.length) {
+  if (nextIdx < 0 || nextIdx >= taskItems.length) {
     message.info(direction === 'prev' ? '已是第一个任务' : '已是最后一个任务');
     return;
   }
   try {
     await save();
-    const nextTaskId = myTaskIds[nextIdx];
-    window.sessionStorage.setItem('taskId', Encrypt(nextTaskId));
+    const nextTaskItemId = taskItems[nextIdx]?.taskItemId;
+    if (!nextTaskItemId) return;
+    window.sessionStorage.setItem('taskItemId', String(nextTaskItemId));
     window.location.reload();
   } catch (e) {
     message.error('保存失败，无法跳转');
   }
-}, [getTaskId, myTaskIds, save]);
+}, [getTaskItemId, save, taskItems]);
 
 // 辅助功能（模型训练）
   const handleAssistClick = async () => {
@@ -1477,6 +1483,7 @@ const navigateTask = useCallback(async (direction) => {
       const hide = message.loading('正在调用辅助功能...');
       const result = await reqAssistFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         mapfile_path: getMapfilePath(),
         task_type: taskType,
         user_id: userId,
@@ -1560,6 +1567,7 @@ const navigateTask = useCallback(async (direction) => {
       // 调用推理接口
       const result = await reqInferenceFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         mapfile_path: getMapfilePath(),
         user_id: userId,
         model_id: selectedModelId,
@@ -1623,6 +1631,7 @@ const navigateTask = useCallback(async (direction) => {
       const hide = message.loading('正在提取目标...');
       const result = await reqAssistFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         mapfile_path: getMapfilePath(),
         task_type: taskType,
         user_id: userId,
@@ -1722,6 +1731,7 @@ const navigateTask = useCallback(async (direction) => {
       // 6. 发送请求
       const result = await reqAssistFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         mapfile_path: getMapfilePath(),
         task_type: taskType,
         user_id: userId,
@@ -1775,6 +1785,7 @@ const navigateTask = useCallback(async (direction) => {
       const hide = message.loading('正在全图检测建筑并分割，请稍候（可能需要数十秒）...');
       const result = await reqAssistFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         mapfile_path: getMapfilePath(),
         task_type: taskType,
         user_id: userId,
@@ -1847,6 +1858,7 @@ const navigateTask = useCallback(async (direction) => {
       const hide = message.loading('正在进行模型推理...');
       const result = await reqInferenceFunction({
         taskid: taskId,
+        taskItemId: getTaskItemId,
         user_id: userId,
         model: selectedModel,
         parameters,
@@ -1890,7 +1902,7 @@ const navigateTask = useCallback(async (direction) => {
       await save();
 
       const hide = message.loading('正在更新样本...');
-      const result = await reqUqdateLabel({ taskid: taskId });
+      const result = await reqUqdateLabel({ taskid: taskId, taskItemId: getTaskItemId });
       hide();
       if (result.code === 200) {
         message.success(result.message);
@@ -2014,6 +2026,24 @@ const navigateTask = useCallback(async (direction) => {
           <span className="top-info-label">任务类型：</span>
           <span className="top-info-type">{taskInfo?.data[0].type}</span>
         </div>
+        {taskItems?.length > 0 && (
+          <>
+            <div className="top-info-sep" />
+            <div className="top-info-item">
+              <span className="top-info-label">当前影像：</span>
+              <Select
+                size="small"
+                value={currentTaskItem?.taskItemId}
+                style={{ minWidth: 220 }}
+                onChange={switchTaskItem}
+                options={taskItems.map((item) => ({
+                  value: item.taskItemId,
+                  label: `${item.itemIndex || 1}. ${item.itemName || item.mapserver || '未命名影像'}`,
+                }))}
+              />
+            </div>
+          </>
+        )}
         {taskInfo?.data[0].auditfeedback && (
           <>
             <div className="top-info-sep" />
@@ -2031,22 +2061,22 @@ const navigateTask = useCallback(async (direction) => {
           <button
             className="task-nav-btn"
             onClick={() => navigateTask('prev')}
-            disabled={myTaskIds.length === 0}
+            disabled={(taskItems?.length || 0) <= 1}
           >
             <LeftOutlined />
           </button>
         </Tooltip>
         <span className="task-nav-label">{taskInfo?.data[0].taskname}</span>
-        {myTaskIds.length > 0 && (
+        {(taskItems?.length || 0) > 0 && (
           <span className="task-nav-progress">
-            {myTaskIds.indexOf(parseInt(getTaskId)) + 1} / {myTaskIds.length}
+            {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1} / {taskItems.length}
           </span>
         )}
         <Tooltip title="保存并跳转下一个任务">
           <button
             className="task-nav-btn"
             onClick={() => navigateTask('next')}
-            disabled={myTaskIds.length === 0}
+            disabled={(taskItems?.length || 0) <= 1}
           >
             <RightOutlined />
           </button>

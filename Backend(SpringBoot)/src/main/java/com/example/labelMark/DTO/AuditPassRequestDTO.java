@@ -14,6 +14,9 @@ public class AuditPassRequestDTO {
     @JsonProperty("taskId")
     private Integer taskId;
 
+    @JsonProperty("taskItemId")
+    private Integer taskItemId;
+
     @JsonProperty("corrections")
     private CorrectionsDTO corrections;
 }

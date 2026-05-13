@@ -25,6 +25,8 @@ function useMap() {
   // 记录任务来源，供标注页面使用
   const [taskSource, setTaskSource] = useState('geoserver');
   const [localImagePath, setLocalImagePath] = useState(null);
+  const [taskItems, setTaskItems] = useState([]);
+  const [currentTaskItemId, setCurrentTaskItemId] = useState(null);
 
   const setMap = (map) => {
     mapRef.current = map;
@@ -34,9 +36,20 @@ function useMap() {
     try {
       let TASKID = window.sessionStorage.getItem('taskId');
       let taskId = Decrypt(TASKID);
-      let taskResult = await reqStartMark({ taskid: taskId });
+      const storedTaskItemId = window.sessionStorage.getItem('taskItemId');
+      let taskResult = await reqStartMark({
+        taskid: taskId,
+        taskItemId: storedTaskItemId ? Number(storedTaskItemId) : undefined,
+      });
       if (taskResult && taskResult.markGeoJsonArr) {
         setMarkGeoJsonArr(taskResult.markGeoJsonArr);
+        if (taskResult.taskItems) {
+          setTaskItems(taskResult.taskItems);
+        }
+        if (taskResult.currentTaskItemId) {
+          setCurrentTaskItemId(taskResult.currentTaskItemId);
+          window.sessionStorage.setItem('taskItemId', String(taskResult.currentTaskItemId));
+        }
         return true;
       }
     } catch (error) {
@@ -51,18 +64,27 @@ function useMap() {
     let nativeSRS, declaredSRS, crsCode;
     let coverageName;
 
-    let TASKID = window.sessionStorage.getItem('taskId');
-    let taskId = Decrypt(TASKID);
-    const hide = message.loading('正在获取数据', 0);
-    try {
-      let typeResult = await reqGetCategoryList();
-      setTypeList(typeResult);
-      let taskResult = await reqStartMark({ taskid: taskId });
-      setTaskInfo(taskResult);
-      setMarkGeoJsonArr(taskResult.markGeoJsonArr);
+      let TASKID = window.sessionStorage.getItem('taskId');
+      let taskId = Decrypt(TASKID);
+      const storedTaskItemId = window.sessionStorage.getItem('taskItemId');
+      const hide = message.loading('正在获取数据', 0);
+      try {
+        let typeResult = await reqGetCategoryList();
+        setTypeList(typeResult);
+        let taskResult = await reqStartMark({
+          taskid: taskId,
+          taskItemId: storedTaskItemId ? Number(storedTaskItemId) : undefined,
+        });
+        setTaskInfo(taskResult);
+        setMarkGeoJsonArr(taskResult.markGeoJsonArr);
+        setTaskItems(taskResult.taskItems || []);
+        if (taskResult.currentTaskItemId) {
+          setCurrentTaskItemId(taskResult.currentTaskItemId);
+          window.sessionStorage.setItem('taskItemId', String(taskResult.currentTaskItemId));
+        }
 
-      // ===== 判断任务来源 =====
-      const source = taskResult.taskSource || 'geoserver';
+        // ===== 判断任务来源 =====
+        const source = taskResult.taskSource || 'geoserver';
       setTaskSource(source);
 
       if (source === 'local') {
@@ -77,7 +99,8 @@ function useMap() {
             return match ? decodeURIComponent(match[1]) : '';
           };
           const token = getCookieVal('TOKEN');
-          const resp = await fetch(`/wegismarkapi/task/getLocalImage?taskId=${taskId}`, {
+          const currentItemPart = taskResult.currentTaskItemId ? `&taskItemId=${taskResult.currentTaskItemId}` : '';
+          const resp = await fetch(`/wegismarkapi/task/getLocalImage?taskId=${taskId}${currentItemPart}`, {
             headers: token ? { token } : {},
           });
           if (!resp.ok) {
@@ -189,7 +212,7 @@ function useMap() {
   }, []);
 
   return { typeList, taskInfo, setMap, mapRef, markGeoJsonArr, mapExtent,
-           refreshMarkGeoJsonArr, taskSource, localImagePath };
+           refreshMarkGeoJsonArr, taskSource, localImagePath, taskItems, currentTaskItemId };
 }
 
 export default useMap;

@@ -5,9 +5,11 @@ import com.example.labelMark.DTO.prov.ProvEntityRef;
 import com.example.labelMark.config.MinioConfig;
 import com.example.labelMark.controller.ServerController;
 import com.example.labelMark.domain.Dataset;
+import com.example.labelMark.domain.FileMetadata;
 import com.example.labelMark.domain.Server;
 import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.domain.SysUser;
+import com.example.labelMark.mapper.FileMetadataMapper;
 import com.example.labelMark.mapper.ServerMapper;
 import com.example.labelMark.mapper.SysUserMapper;
 import com.example.labelMark.service.*;
@@ -69,6 +71,8 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
 
     @Resource
     private CoordinateSystemUtils coordinateSystemUtils;
+    @Resource
+    private FileMetadataMapper fileMetadataMapper;
 
     private static final Logger logger = LoggerFactory.getLogger(ServerService.class);
     @Override
@@ -210,6 +214,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                         logger.info("文件下载完成: {}", filename);
                     } catch (Exception e) {
                         logger.error("MinIO 文件下载失败: {}", filename, e);
+                        throw new IllegalStateException("MinIO 文件下载失败: " + filename, e);
                     }
                 } else {
                     logger.info("文件已存在，跳过下载: {}", localTifPathInContainer);
@@ -237,6 +242,13 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                 // === 2️⃣ 检查并发布 Coverage ===
                 // 动态获取坐标系 - 从本地文件路径检测
                 String coordinateSystem = coordinateSystemUtils.getCoordinateSystemFromFile(localTifPathInContainer);
+                if ("UNKNOWN".equalsIgnoreCase(coordinateSystem) || "NONE".equalsIgnoreCase(coordinateSystem)) {
+                    FileMetadata metadata = fileMetadataMapper.selectById(fileId);
+                    if (metadata != null && metadata.getCrsCode() != null && !metadata.getCrsCode().trim().isEmpty()) {
+                        coordinateSystem = metadata.getCrsCode().trim().toUpperCase();
+                        logger.info("检测失败，回退使用上传元数据坐标系: {}", coordinateSystem);
+                    }
+                }
                 logger.info("为文件 {} 检测到坐标系: {}", filename, coordinateSystem);
 
                 // 检查是否为无坐标系

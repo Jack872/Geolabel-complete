@@ -259,6 +259,7 @@ public class MarkController {
         String taskId = request.get("taskid").toString();
         String userId = request.get("user_id").toString();
         String modelId = request.get("model_id") != null ? request.get("model_id").toString() : "";
+        Integer taskItemId = request.get("taskItemId") == null ? null : Integer.valueOf(request.get("taskItemId").toString());
 
 // 2. 获取 parameters 对象（做好防空处理）
         @SuppressWarnings("unchecked")
@@ -290,15 +291,16 @@ public class MarkController {
         // 5. 设置文件路径（本地任务直接用 localImagePath，去掉 .tif 后缀）
         String mapfilePathStr;
         com.example.labelMark.domain.Task _task1 = taskService.selectTaskById(Integer.parseInt(taskId));
-        if (_task1 != null && "local".equals(_task1.getTaskSource()) && _task1.getLocalImagePath() != null) {
-            String lp = _task1.getLocalImagePath();
+        com.example.labelMark.domain.TaskItem _taskItem1 = taskService.resolveTaskItem(Integer.parseInt(taskId), taskItemId);
+        if (_taskItem1 != null && "local".equals(_taskItem1.getTaskSource()) && _taskItem1.getLocalImagePath() != null) {
+            String lp = _taskItem1.getLocalImagePath();
             mapfilePathStr = lp.replaceAll("(?i)\\.tiff?$", "");
         } else {
-            String file_name = taskService.getServerById(Integer.parseInt(taskId));
+            String file_name = _taskItem1 != null ? _taskItem1.getMapServer() : taskService.getServerById(Integer.parseInt(taskId));
             // 防御：本地任务的 map_server 形如 "local:xxx"，含冒号，不能用 Path.of
             if (file_name != null && file_name.startsWith("local:")) {
-                if (_task1 != null && _task1.getLocalImagePath() != null) {
-                    mapfilePathStr = _task1.getLocalImagePath().replaceAll("(?i)\\.tiff?$", "");
+                if (_taskItem1 != null && _taskItem1.getLocalImagePath() != null) {
+                    mapfilePathStr = _taskItem1.getLocalImagePath().replaceAll("(?i)\\.tiff?$", "");
                 } else {
                     mapfilePathStr = file_name;
                 }
@@ -310,6 +312,7 @@ public class MarkController {
         // 准备请求体
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("taskid", taskId);
+        requestBody.put("taskItemId", taskItemId);
         requestBody.put("mapfile_path", mapfilePathStr);
         requestBody.put("user_id", userId);
         requestBody.put("model", modelId);
@@ -342,6 +345,7 @@ public class MarkController {
         String userId = request.get("user_id") != null ? request.get("user_id").toString() : null;
         String modelName = request.get("modelName") != null ? request.get("modelName").toString() : null;
         String tasktype = request.get("task_type") != null ? request.get("task_type").toString() : "";
+        Integer taskItemId = request.get("taskItemId") == null ? null : Integer.valueOf(request.get("taskItemId").toString());
 
         // 2. 获取业务参数 Map (来自前端的 fixedParameters 或交互参数)
         @SuppressWarnings("unchecked")
@@ -389,16 +393,17 @@ public class MarkController {
         // 设置文件路径（本地任务直接用 localImagePath，去掉 .tif 后缀）
         String mapfilePathStr2;
         com.example.labelMark.domain.Task _task2 = taskService.selectTaskById(Integer.parseInt(taskId));
-        if (_task2 != null && "local".equals(_task2.getTaskSource()) && _task2.getLocalImagePath() != null) {
-            String lp = _task2.getLocalImagePath();
+        com.example.labelMark.domain.TaskItem _taskItem2 = taskService.resolveTaskItem(Integer.parseInt(taskId), taskItemId);
+        if (_taskItem2 != null && "local".equals(_taskItem2.getTaskSource()) && _taskItem2.getLocalImagePath() != null) {
+            String lp = _taskItem2.getLocalImagePath();
             mapfilePathStr2 = lp.replaceAll("(?i)\\.tiff?$", "");
         } else {
-            String file_name = taskService.getServerById(Integer.parseInt(taskId));
+            String file_name = _taskItem2 != null ? _taskItem2.getMapServer() : taskService.getServerById(Integer.parseInt(taskId));
             // 防御：本地任务的 map_server 形如 "local:xxx"，含冒号，不能用 Path.of
             if (file_name != null && file_name.startsWith("local:")) {
                 // 回退：尝试从 task 对象获取 localImagePath
-                if (_task2 != null && _task2.getLocalImagePath() != null) {
-                    mapfilePathStr2 = _task2.getLocalImagePath().replaceAll("(?i)\\.tiff?$", "");
+                if (_taskItem2 != null && _taskItem2.getLocalImagePath() != null) {
+                    mapfilePathStr2 = _taskItem2.getLocalImagePath().replaceAll("(?i)\\.tiff?$", "");
                 } else {
                     mapfilePathStr2 = file_name; // 最后兜底，Python 侧会报错但不会崩 Java
                 }
@@ -412,6 +417,7 @@ public class MarkController {
         // 这样做的好处是：前端增加任何新参数（如线选坐标），Java 都不需要改代码，Python 直接就能收到
         requestBody.putAll(params);
         requestBody.put("taskid", taskId);
+        requestBody.put("taskItemId", taskItemId);
         requestBody.put("mapfile_path", mapfilePathStr2);
         requestBody.put("functionName", functionName);
         requestBody.put("assistInput", assistInput);
@@ -552,12 +558,21 @@ public class MarkController {
     public Map<String, Object> PythonScript_updatelabel(@RequestBody Map<String, Object> request) { // 返回 Map
         //得到前端传回的taskid，并且设置python文件以及tif影像所在位置
         Integer taskId = Integer.valueOf(request.get("taskid").toString());
-        Path mapfile_path = Paths.get(System.getProperty("user.dir")+ File.separator + "src/main/java/com/example/labelMark/resource/output");
+        Integer taskItemId = request.get("taskItemId") == null ? null : Integer.valueOf(request.get("taskItemId").toString());
+        com.example.labelMark.domain.TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        String mapfilePathStr;
+        if (taskItem != null && "local".equals(taskItem.getTaskSource()) && taskItem.getLocalImagePath() != null) {
+            mapfilePathStr = taskItem.getLocalImagePath();
+        } else {
+            String fileName = taskItem != null ? taskItem.getMapServer() : taskService.getServerById(taskId);
+            mapfilePathStr = resolveCoveragePath(fileName);
+        }
 
         // 准备请求体
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("taskid", taskId.toString());
-        requestBody.put("mapfile_path", mapfile_path.toString());
+        requestBody.put("mapfile_path", mapfilePathStr);
+        requestBody.put("taskItemId", taskItemId);
 
         try {
             // 立即执行更新样本功能，不使用队列
