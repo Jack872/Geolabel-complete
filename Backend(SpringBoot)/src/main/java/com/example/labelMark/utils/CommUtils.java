@@ -21,6 +21,9 @@ public class CommUtils {
             File file = new File(tifPath);
             AbstractGridFormat format = GridFormatFinder.findFormat(file);
             GridCoverage2DReader reader = format.getReader(file);
+            if (reader == null) {
+                return "UNKNOWN";
+            }
             CoordinateReferenceSystem crs = reader.getCoordinateReferenceSystem();
 
             // 返回 EPSG 代码，比如 "EPSG:3301"

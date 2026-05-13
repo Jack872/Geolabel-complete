@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { history, SelectLang } from 'umi';
 import styles from './index.less';
 import { LoginForm, ProFormText, ProFormRadio } from '@ant-design/pro-form';
-import logo from '@/assets/LUUlogo.png';
+import logo from '@/assets/LUUlogo.svg';
 import logoSVG from '@/assets/LUUlogo.svg';
 import backgroundImg from '@/assets/background.jpg';
 import { register } from '@/services/register/api';

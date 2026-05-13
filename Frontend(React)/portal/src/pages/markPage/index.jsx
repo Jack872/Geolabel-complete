@@ -1221,12 +1221,12 @@ export default function () {
       try {
         const hide = message.loading('正在保存');
         console.log('Sending request to save data...');
-        const currentUserId = taskInfo.data[0].userArr.filter(({ username }) => username == currentUser)[0].userid;
+        const currentUserId = taskInfo.data?.[0]?.userArr.filter(({ username }) => username == currentUser)[0].userid;
         const requestData = {
           userid: currentUserId,
           id: taskId,
           jsondataArr,
-          typeArr: taskInfo.data[0].userArr.filter(({ username }) => username == currentUser)[0].typeArr,
+          typeArr: taskInfo.data?.[0]?.userArr.filter(({ username }) => username == currentUser)[0].typeArr,
           //TODO
           setAsSubmitter: false, // 添加该字段表示将当前用户设为唯一执行者
           // [新增] 传递删除列表给后端
@@ -1432,7 +1432,7 @@ const navigateTask = useCallback(async (direction) => {
 // 辅助功能（模型训练）
   const handleAssistClick = async () => {
     let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
+    const taskType = taskInfo?.data?.[0]?.type;
 
     if (!assistFunction || assistFunction === 'none') {
       message.error('请先选择一个模型！');
@@ -1595,7 +1595,7 @@ const navigateTask = useCallback(async (direction) => {
   // 提取目标功能（XGBoost固定参数）
   const handleExtractTarget = async () => {
     let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
+    const taskType = taskInfo?.data?.[0]?.type;
     const userId = getUserId();
 
     if (!userId) {
@@ -1647,7 +1647,7 @@ const navigateTask = useCallback(async (direction) => {
 
   const handleSamPreAnnotation = async () => {
     let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
+    const taskType = taskInfo?.data?.[0]?.type;
     const userId = getUserId();
 
     if (!userId) {
@@ -1810,7 +1810,7 @@ const navigateTask = useCallback(async (direction) => {
     }
 
     let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
+    const taskType = taskInfo?.data?.[0]?.type;
     const userId = getUserId();
     if (!userId) {
       message.error('无法获取用户 ID，请检查用户信息');
@@ -1865,7 +1865,7 @@ const navigateTask = useCallback(async (direction) => {
   };
 
 
-  const isObjectDetection = taskInfo?.data[0].type === '目标检测'; // 判断是否为目标检测任务
+  const isObjectDetection = taskInfo?.data?.[0]?.type === '目标检测'; // 判断是否为目标检测任务
 
 // 定义模型选项
   const objectDetectionModels = [
@@ -2007,19 +2007,19 @@ const navigateTask = useCallback(async (direction) => {
       <div className="top-info-bar">
         <div className="top-info-item">
           <span className="top-info-label">任务名称：</span>
-          <span className="top-info-name">{taskInfo?.data[0].taskname}</span>
+          <span className="top-info-name">{taskInfo?.data?.[0]?.taskname}</span>
         </div>
         <div className="top-info-sep" />
         <div className="top-info-item">
           <span className="top-info-label">任务类型：</span>
-          <span className="top-info-type">{taskInfo?.data[0].type}</span>
+          <span className="top-info-type">{taskInfo?.data?.[0]?.type}</span>
         </div>
-        {taskInfo?.data[0].auditfeedback && (
+        {taskInfo?.data?.[0]?.auditfeedback && (
           <>
             <div className="top-info-sep" />
             <div className="top-info-item">
               <span className="top-info-label">审核反馈：</span>
-              <span className="top-info-feedback">{taskInfo?.data[0].auditfeedback}</span>
+              <span className="top-info-feedback">{taskInfo?.data?.[0]?.auditfeedback}</span>
             </div>
           </>
         )}
@@ -2036,7 +2036,7 @@ const navigateTask = useCallback(async (direction) => {
             <LeftOutlined />
           </button>
         </Tooltip>
-        <span className="task-nav-label">{taskInfo?.data[0].taskname}</span>
+        <span className="task-nav-label">{taskInfo?.data?.[0]?.taskname}</span>
         {myTaskIds.length > 0 && (
           <span className="task-nav-progress">
             {myTaskIds.indexOf(parseInt(getTaskId)) + 1} / {myTaskIds.length}
@@ -2214,7 +2214,7 @@ const navigateTask = useCallback(async (direction) => {
           </div>
 
           {/* 辅助模型（地物分类任务） */}
-          {taskInfo?.data[0].type === '地物分类' && (
+          {taskInfo?.data?.[0]?.type === '地物分类' && (
             <div className="model-block">
               <div className="model-block-title"><ExperimentOutlined /> 辅助模型</div>
               <div className="assist-btns">

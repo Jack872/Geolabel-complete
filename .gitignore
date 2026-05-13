@@ -73,3 +73,9 @@ Geolabel-complete/
 
 # Claude persistent memory
 memory/
+
+# Local dev environment configuration
+Backend(SpringBoot)/src/main/resources/application-dev.yml
+
+# Frontend personal config (copy from config.example.js)
+Frontend(React)/portal/src/config.js

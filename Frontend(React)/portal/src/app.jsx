@@ -3,7 +3,7 @@ import { history, request } from 'umi';
 import RightContent from '@/components/RightContent';
 import { currentState as queryCurrentUser } from './services/login/api';
 import { message } from 'antd';
-import logo from '@/assets/LUUlogo.png';
+import logo from '@/assets/LUUlogo.svg';
 import logoSVG from '@/assets/LUUlogo.svg';
 
 const loginPath = '/user/login';

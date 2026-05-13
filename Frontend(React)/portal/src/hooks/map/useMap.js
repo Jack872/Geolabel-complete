@@ -10,6 +10,7 @@ import { transformExtent, Projection, addProjection } from 'ol/proj';
 import Tile from 'ol/layer/Tile';
 import ImageLayer from 'ol/layer/Image';
 import Static from 'ol/source/ImageStatic';
+import { GEOSERVER_URL } from '@/config';
 
 // 预注册像素坐标投影，供本地任务的 readFeatures/writeFeatures 使用
 const _pixelProj = new Projection({ code: 'pixel', units: 'pixels', extent: [0, 0, 65536, 65536] });
@@ -58,8 +59,8 @@ function useMap() {
       let typeResult = await reqGetCategoryList();
       setTypeList(typeResult);
       let taskResult = await reqStartMark({ taskid: taskId });
-      setTaskInfo(taskResult);
-      setMarkGeoJsonArr(taskResult.markGeoJsonArr);
+      setTaskInfo(taskResult || { data: [{ taskname: '无' }] });
+      setMarkGeoJsonArr(taskResult?.markGeoJsonArr || []);
 
       // ===== 判断任务来源 =====
       const source = taskResult.taskSource || 'geoserver';
@@ -136,7 +137,7 @@ function useMap() {
       }
 
       // ===== GeoServer 任务：原有逻辑 =====
-      mapserver = taskResult.data[0].mapserver;
+      mapserver = taskResult?.data?.[0]?.mapserver;
       let geoResult = await reqGetGeoServerInfo(mapserver);
       if (geoResult) {
         setMapExtent(geoResult.coverage.nativeBoundingBox);
@@ -158,7 +159,7 @@ function useMap() {
     if (mapserver) {
       try {
         const tmsSource = new XYZ({
-          url: `http://localhost:8081/geoserver/gwc/service/tms/1.0.0/LUU:${coverageName}@EPSG%3A900913@png/{z}/{x}/{-y}.png`,
+          url: `${GEOSERVER_URL}/geoserver/gwc/service/tms/1.0.0/LUU:${coverageName}@EPSG%3A900913@png/{z}/{x}/{-y}.png`,
           projection: 'EPSG:3857',
           tileGrid: createXYZ({ maxZoom: 20, tileSize: 256 }),
           transition: 0.1,
@@ -170,7 +171,14 @@ function useMap() {
     }
 
     let extent3857;
-    if (crsCode && !crsCode.endsWith('3857')) {
+    // 优先使用 latLonBoundingBox (EPSG:4326) 投影到 3857，兼容所有 CRS
+    if (map4326Extent) {
+      extent3857 = transformExtent(
+        [map4326Extent.minx, map4326Extent.miny, map4326Extent.maxx, map4326Extent.maxy],
+        'EPSG:4326',
+        'EPSG:3857'
+      );
+    } else if (crsCode && !crsCode.endsWith('3857')) {
       const extentNative = [mapExtent.minx, mapExtent.miny, mapExtent.maxx, mapExtent.maxy];
       extent3857 = transformExtent(extentNative, crsCode, 'EPSG:3857');
     } else if (mapExtent) {
@@ -179,12 +187,14 @@ function useMap() {
 
     if (baseLayer) {
       mapRef.current.addLayer(baseLayer);
-      let view = mapRef.current.getView();
-      view.fit(extent3857, {
-        maxZoom: 22,
-        duration: 600,
-        callback: () => { view.animate({ zoom: view.getZoom() - 1 }); },
-      });
+      if (extent3857) {
+        let view = mapRef.current.getView();
+        view.fit(extent3857, {
+          maxZoom: 22,
+          duration: 600,
+          callback: () => { view.animate({ zoom: view.getZoom() - 1 }); },
+        });
+      }
     }
   }, []);
 

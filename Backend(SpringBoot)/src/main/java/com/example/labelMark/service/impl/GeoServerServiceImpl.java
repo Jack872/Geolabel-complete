@@ -236,42 +236,44 @@ public class GeoServerServiceImpl implements GeoServerService {
 
     @Override
     public String publish(String storeName, String seryear, String setName, String coordinateSystem) {
-        // 不要自动转换为默认坐标系，保持原始值
-        if (coordinateSystem == null || coordinateSystem.trim().isEmpty()) {
-            coordinateSystem = "NONE"; // 无坐标系而不是默认坐标系
-        }
-        
-        // 检查是否为无坐标系
-        boolean isPixelCRS = coordinateSystem.equals("NONE") || coordinateSystem.equals("UNKNOWN");
-        
-        logger.info("发布GeoServer服务，使用坐标系: {} (像素坐标系: {})", coordinateSystem, isPixelCRS);
-        
-        // 如果是无坐标系，不发布到GeoServer，直接返回
-        if (isPixelCRS) {
-            logger.info("无坐标系图片，跳过GeoServer发布");
+        // 处理无坐标系的情况
+        if ("NONE".equalsIgnoreCase(coordinateSystem) || "UNKNOWN".equalsIgnoreCase(coordinateSystem)) {
+            logger.info("无/未知坐标系图片，跳过GeoServer发布: {}", coordinateSystem);
             String readableTime = seryear.replaceAll("[:.]", "").replace("T", "_");
             String coverageName = storeName + "_" + setName + "_" + readableTime + "_pixel";
             return coverageName;
         }
-        
+
+        String readableTime = seryear.replaceAll("[:.]", "").replace("T", "_");
+        String coverageName = storeName + "_" + setName + "_" + readableTime;
+
+        // null → 自动检测模式：不指定SRS，让GeoServer从文件自动检测
+        boolean autoDetect = (coordinateSystem == null || coordinateSystem.trim().isEmpty());
+
+        logger.info("发布GeoServer服务，使用坐标系: {} (自动检测: {})",
+            autoDetect ? "AUTO" : coordinateSystem, autoDetect);
+
         String url = UriComponentsBuilder.fromHttpUrl(geoserverUrl)
                 .pathSegment("rest", "workspaces", "LUU", "coveragestores", storeName, "coverages")
                 .toUriString();
 
         // 构造 coverage 配置
-        String readableTime = seryear.replaceAll("[:.]", "").replace("T", "_");
-        String coverageName = storeName + "_" + setName + "_" + readableTime;
-
         Map<String, Object> cov = new HashMap<>();
         cov.put("name", coverageName);
         cov.put("namespace", Map.of("name", "LUU"));
-        cov.put("srs", coordinateSystem); // 使用动态坐标系
         cov.put("store", Map.of("name", "LUU:" + storeName, "@class", "coverageStore"));
         cov.put("title", storeName);
         cov.put("enabled", true);
-        cov.put("requestSRS", List.of(coordinateSystem)); // 使用动态坐标系
-        cov.put("responseSRS", List.of(coordinateSystem)); // 使用动态坐标系
 
+        if (!autoDetect) {
+            // 有明确CRS时指定SRS
+            cov.put("srs", coordinateSystem);
+            cov.put("requestSRS", List.of(coordinateSystem));
+            cov.put("responseSRS", List.of(coordinateSystem));
+        }
+        // autoDetect=true时不包含srs字段，GeoServer会从TIF文件自动检测
+
+        String effectiveCrs = coordinateSystem; // 可能为null（auto-detect模式）
         Map<String, Object> payload = Map.of("coverage", cov);
 
         HttpHeaders headers = new HttpHeaders();
@@ -282,6 +284,17 @@ public class GeoServerServiceImpl implements GeoServerService {
             // 1. POST 创建 coverage
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
             logger.info("publish success -> {}", resp.getStatusCode());
+
+            // 自动检测模式下，从GeoServer获取检测到的CRS
+            if (autoDetect) {
+                try {
+                    effectiveCrs = getCoverageNativeCrs(coverageName);
+                    logger.info("GeoServer自动检测到CRS: {}", effectiveCrs);
+                } catch (Exception ex) {
+                    logger.warn("获取自动检测的CRS失败: {}", ex.getMessage());
+                    effectiveCrs = "EPSG:3857";
+                }
+            }
 
             // 2. ✅ 关键步骤：调用 /reset 接口强制从数据重算 Native BBox
             try {
@@ -302,19 +315,23 @@ public class GeoServerServiceImpl implements GeoServerService {
                 logger.warn("Failed to reset coverage bbox for: {}", coverageName, ex);
                 // 可选：不抛异常，因为发布本身成功了
             }
-            
-            // 3. 启用 WMTS 和 GWC 缓存 - 使用动态坐标系
+
+            // 3. 启用 WMTS 和 GWC 缓存
+            // 注意：前端TMS URL使用EPSG:900913网格，所以GWC gridSetName必须配置为EPSG:900913
             try {
                 // 设置 GWC 的缓存策略
                 String gwcUrl = UriComponentsBuilder.fromHttpUrl(geoserverUrl)
                         .pathSegment("gwc", "rest", "layers", "LUU:" + coverageName + ".xml")
                         .toUriString();
 
+                // 统一使用EPSG:900913作为gridSetName，因为前端TMS URL固定使用EPSG:900913
+                String gwcGridSet = autoDetect ? "EPSG:900913" : effectiveCrs;
+
                 String xmlContent = "<GeoServerLayer>" +
                         "<enabled>true</enabled>" +
                         "<name>LUU:" + coverageName + "</name>" +
                         "<mimeFormats><string>image/png</string><string>image/jpeg</string></mimeFormats>" +
-                        "<gridSubsets><gridSubset><gridSetName>" + coordinateSystem + "</gridSetName></gridSubset></gridSubsets>" + // 使用动态坐标系
+                        "<gridSubsets><gridSubset><gridSetName>" + gwcGridSet + "</gridSetName></gridSubset></gridSubsets>" +
                         "<metaWidthHeight><int>4</int><int>4</int></metaWidthHeight>" +
                         "<expireCache>0</expireCache>" +
                         "<expireClients>0</expireClients>" +
@@ -332,7 +349,7 @@ public class GeoServerServiceImpl implements GeoServerService {
                 HttpEntity<String> gwcEntity = new HttpEntity<>(xmlContent, gwcHeaders);
 
                 ResponseEntity<String> gwcResp = restTemplate.postForEntity(gwcUrl, gwcEntity, String.class);
-                logger.info("Successfully configured GWC for layer: {} with CRS: {} -> {}", coverageName, coordinateSystem, gwcResp.getStatusCode());
+                logger.info("Successfully configured GWC for layer: {} with gridSet: {} -> {}", coverageName, gwcGridSet, gwcResp.getStatusCode());
             } catch (Exception ex) {
                 logger.warn("Failed to configure GWC for layer: {}", coverageName, ex);
                 // 可选：不抛异常，因为发布本身成功了
@@ -343,6 +360,29 @@ public class GeoServerServiceImpl implements GeoServerService {
             logger.warn("publish fail: {}", e.getMessage());
             throw new IllegalStateException("图层发布失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 从GeoServer查询已发布的Coverage的Native CRS
+     */
+    private String getCoverageNativeCrs(String coverageName) {
+        String url = UriComponentsBuilder.fromHttpUrl(geoserverUrl)
+                .pathSegment("rest", "workspaces", "LUU", "coverages", coverageName + ".json")
+                .toUriString();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBasicAuth(username, password);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+        String body = response.getBody();
+        if (body != null) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\"srs\"\\s*:\\s*\"([^\"]+)\"").matcher(body);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return "EPSG:3857";
     }
 
     private String getBasicAuthToken() {
