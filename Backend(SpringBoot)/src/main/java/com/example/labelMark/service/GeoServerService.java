@@ -32,4 +32,11 @@ public interface GeoServerService {
     boolean checkCoverageExists(String luu, String sername);
 
     ResponseEntity<String> createRemoteGeoServerStore(String sername, String minioHttpUrl) throws IOException, InterruptedException;
+
+    /**
+     * 删除 GeoServer 中的 coveragestore（连带删除 coverage）
+     * @param storeName 存储名称
+     * @return true 如果删除成功或资源不存在
+     */
+    boolean deleteStore(String storeName);
 }

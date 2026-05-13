@@ -36,4 +36,18 @@ public interface ServerService extends IService<Server> {
      * @throws Exception 发布失败抛出异常
      */
     void publishServices(List<Integer> fileIds, Integer userId, String username) throws Exception;
+
+    /**
+     * 根据影像集名称查询服务列表
+     * @param setName 影像集名称
+     * @return 服务列表
+     */
+    List<Server> getServersBySetName(String setName);
+
+    /**
+     * 根据影像集名称删除所有服务
+     * @param setName 影像集名称
+     * @return 删除数量
+     */
+    int deleteServersBySetName(String setName);
 }

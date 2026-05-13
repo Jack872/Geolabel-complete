@@ -67,4 +67,11 @@ public interface DatasetService extends IService<Dataset> {
     boolean addDataSet(Dataset dataset);
 
     boolean editDataSet(Dataset dataset);
+
+    /**
+     * 删除影像集
+     * @param id 影像集ID
+     * @return 是否成功
+     */
+    void deleteDataset(Integer id);
 }

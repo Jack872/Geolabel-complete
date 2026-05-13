@@ -21,7 +21,7 @@ import { PageContainer } from '@ant-design/pro-layout';
 // ===== 保留原接口 (暂时注释，标注 TODO) =====
 import { reqGetfileData, reqEditfileData, reqDeleteFileDataById, reqPublishSet } from '@/services/dataManage/api';
 import { PublishServer } from '@/services/serviceManage/api.js';
-import { reqGetDatasetList,reqEditDataset,reqAddDataset } from '@/services/dataset/api.js';
+import { reqGetDatasetList, reqEditDataset, reqAddDataset, reqDeleteDataSet } from '@/services/dataset/api.js';
 
 const { Option } = Select;
 
@@ -162,11 +162,23 @@ const DatasetCardPage = () => {
 
 
   const handleDeleteDataset = async (dataset) => {
-    message.success('删除成功（前端模拟）');
-    fetchDatasets();
-
-    // TODO: 后端接口调用
-    // await reqDeleteDataset({ setId: dataset.setId });
+    const datasetId = getDatasetId(dataset);
+    if (!datasetId) {
+      message.error('无法获取影像集ID');
+      return;
+    }
+    try {
+      const res = await reqDeleteDataSet(datasetId);
+      if (res.code === 200) {
+        message.success('删除成功');
+        fetchDatasets();
+      } else {
+        message.error(res.message || '删除失败');
+      }
+    } catch (error) {
+      console.error(error);
+      message.error('删除失败，请检查网络或接口');
+    }
   };
 
   /** --------------------

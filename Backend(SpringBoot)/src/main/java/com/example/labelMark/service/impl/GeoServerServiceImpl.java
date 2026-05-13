@@ -385,6 +385,25 @@ public class GeoServerServiceImpl implements GeoServerService {
         return "EPSG:3857";
     }
 
+    @Override
+    public boolean deleteStore(String storeName) {
+        String url = geoserverUrl + "/rest/workspaces/LUU/coveragestores/" + storeName + "?recurse=true";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBasicAuth(username, password);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.DELETE, entity, String.class);
+            logger.info("GeoServer coveragestore 删除成功: {}, status={}", storeName, resp.getStatusCode());
+            return resp.getStatusCode().is2xxSuccessful();
+        } catch (HttpClientErrorException.NotFound e) {
+            logger.warn("GeoServer coveragestore 不存在，跳过: {}", storeName);
+            return true;
+        } catch (Exception e) {
+            logger.error("GeoServer coveragestore 删除失败: {}", storeName, e);
+            return false;
+        }
+    }
+
     private String getBasicAuthToken() {
         String auth = username + ":" + password;
         return Base64.getEncoder().encodeToString(auth.getBytes());

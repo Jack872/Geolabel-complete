@@ -27,6 +27,13 @@ export async function reqEditDataset(params) {
   });
 }
 
+// 删除数据集（影像集）
+export async function reqDeleteDataSet(id) {
+  return request(`/wegismarkapi/dataset/deleteDataSet/${id}`, {
+    method: 'delete',
+    skipErrorHandler: true,
+  });
+}
 
 // 获取影像集
 export async function reqGetDatasetStore(params) {

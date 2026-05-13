@@ -105,6 +105,20 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
     }
 
     @Override
+    public List<Server> getServersBySetName(String setName) {
+        QueryWrapper<Server> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("set_name", setName);
+        return serverMapper.selectList(queryWrapper);
+    }
+
+    @Override
+    public int deleteServersBySetName(String setName) {
+        QueryWrapper<Server> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("set_name", setName);
+        return serverMapper.delete(queryWrapper);
+    }
+
+    @Override
     public boolean createServer(Server server) {
         boolean save = save(server);
         return save;

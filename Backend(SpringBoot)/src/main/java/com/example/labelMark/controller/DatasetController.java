@@ -268,4 +268,20 @@ public class DatasetController {
             return ResultGenerator.getFailResult("查询所有数据集失败：" + e.getMessage());
         }
     }
+    /**
+     * 删除影像集
+     *
+     * @param id 影像集ID
+     * @return 结果
+     */
+    @DeleteMapping("/deleteDataSet/{id}")
+    public Result deleteDataSet(@PathVariable Integer id) {
+        try {
+            datasetService.deleteDataset(id);
+            return ResultGenerator.getSuccessResult("删除成功");
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResultGenerator.getFailResult("删除失败：" + e.getMessage());
+        }
+    }
 }
