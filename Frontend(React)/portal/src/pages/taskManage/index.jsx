@@ -521,29 +521,16 @@ const TaskManage = () => {
       dataIndex: 'status',
       key: 'status',
       sorter: true,
-      sortOrder: 'status',
       valueType: 'select',
+      valueEnum: {
+        0: { text: '审核中' },
+        1: { text: '审核通过' },
+        2: { text: '审核未通过' },
+        3: { text: '未提交' },
+      },
       fieldProps: {
         placeholder: '请选择状态',
         allowClear: true,
-        options: [
-          {
-            label: '审核中',
-            value: 0,
-          },
-          {
-            label: '审核通过',
-            value: 1,
-          },
-          {
-            label: '审核未通过',
-            value: 2,
-          },
-          {
-            label: '未提交',
-            value: 3,
-          },
-        ],
       },
       render: (_, record) => {
         let color, text, icon;
@@ -741,56 +728,66 @@ const TaskManage = () => {
           }),
         }}
         request={async (params, sorter, filter) => {
+          console.log("params in request:", params);
+          // 提取状态筛选参数
+          const { status } = params;
+          const hasStatusFilter = status !== undefined && status !== null && status !== '';
+
           // 获取任务列表数据
           const data = await reqGetTaskList(params, sorter, filter);
 
-          // 对数据进行排序，使"审核中"(status=0)的记录排在前面
           if (data && data.data) {
-            data.data.sort((a, b) => {
-              // 如果a是审核中状态(0)而b不是，a排在前面
+            let items = data.data;
+
+            // 客户端状态筛选（兼容后端未按状态过滤的情况）
+            if (hasStatusFilter) {
+              const statusNum = Number(status);
+              items = items.filter((item) => Number(item.status) === statusNum);
+            }
+
+            // 对数据进行排序，使"审核中"(status=0)的记录排在前面
+            items.sort((a, b) => {
               if (a.status === 0 && b.status !== 0) return -1;
-              // 如果b是审核中状态(0)而a不是，b排在前面
               if (b.status === 0 && a.status !== 0) return 1;
-              // 其他情况保持原有顺序
               return 0;
             });
-          }
 
-          if (data && Array.isArray(data.data)) {
-            const grouped = [];
-            const batchMap = new Map();
-            const isValidBatchId = (batchId) => {
-              if (batchId === null || batchId === undefined) return false;
-              const text = String(batchId).trim();
-              if (!text || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined') {
-                return false;
-              }
-              // 约定：真正批次任务由 publishTaskBySet 生成，批次号通常形如 BATCH_xxx
-              return text.startsWith('BATCH_');
-            };
-            data.data.forEach((item) => {
-              if (isValidBatchId(item.batchId)) {
-                const normalizedBatchId = String(item.batchId).trim();
-                if (!batchMap.has(normalizedBatchId)) batchMap.set(normalizedBatchId, []);
-                batchMap.get(normalizedBatchId).push(item);
-              } else {
-                grouped.push(item);
-              }
-            });
-
-            batchMap.forEach((items, batchId) => {
-              const sortedItems = [...items].sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0));
-              const first = sortedItems[0];
-              grouped.push({
-                ...first,
-                _rowKey: `batch-${batchId}`,
-                taskname: `${first.taskname?.replace(/_\d+$/, '') || '批次任务'}（${sortedItems.length}）`,
-                mapserver: '批次折叠',
-                isBatchGroup: true,
-                children: sortedItems.map((t) => ({ ...t, _rowKey: `task-${t.taskid}` })),
+            // 批次折叠分组
+            if (Array.isArray(items)) {
+              const grouped = [];
+              const batchMap = new Map();
+              const isValidBatchId = (batchId) => {
+                if (batchId === null || batchId === undefined) return false;
+                const text = String(batchId).trim();
+                if (!text || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined') {
+                  return false;
+                }
+                return text.startsWith('BATCH_');
+              };
+              items.forEach((item) => {
+                if (isValidBatchId(item.batchId)) {
+                  const normalizedBatchId = String(item.batchId).trim();
+                  if (!batchMap.has(normalizedBatchId)) batchMap.set(normalizedBatchId, []);
+                  batchMap.get(normalizedBatchId).push(item);
+                } else {
+                  grouped.push(item);
+                }
               });
-            });
-            data.data = grouped;
+
+              batchMap.forEach((batchItems, batchId) => {
+                const sortedItems = [...batchItems].sort((a, b) => (a.batchIndex || 0) - (b.batchIndex || 0));
+                const first = sortedItems[0];
+                grouped.push({
+                  ...first,
+                  _rowKey: `batch-${batchId}`,
+                  taskname: `${first.taskname?.replace(/_\d+$/, '') || '批次任务'}（${sortedItems.length}）`,
+                  mapserver: '批次折叠',
+                  isBatchGroup: true,
+                  children: sortedItems.map((t) => ({ ...t, _rowKey: `task-${t.taskid}` })),
+                });
+              });
+              data.data = grouped;
+            }
           }
 
           return data;

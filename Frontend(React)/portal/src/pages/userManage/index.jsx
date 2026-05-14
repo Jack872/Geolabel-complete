@@ -1,4 +1,4 @@
-import { Tabs, Card, Button, message, Avatar, Select, Tree, Popconfirm } from 'antd';
+import { Tabs, Card, Button, message, Avatar, Select, Popconfirm } from 'antd';
 // 引入头像icon
 import { DeleteOutlined, EditOutlined, RedoOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -11,41 +11,22 @@ import {
   reqNewUser,
   reqDeleteUser,
   reqEditUser,
-  reqRoleList,
   reqResetPassword,
 } from '@/services/userManage/api';
 import { reqCreateTeam, reqGetMyTeamCode, reqGetTeamList } from '@/services/teamManage/api';
-import { getOrgList } from '@/services/orgManage/api';
 import CollectionCreateForm from './components/index.jsx';
 import CreateTeamForm from './components/CreateTeamForm.jsx';
 import { useRef } from 'react';
 
 const App = () => {
-  // 控制机构列表数据展示
-  const [orgCode, setOrgCode] = useState(1);
   const actionRef = useRef();
   const [visible, setVisible] = useState(false);
   const [teamFormVisible, setTeamFormVisible] = useState(false);
   const [initialValue, setInitialValue] = useState({});
-  const [treeData, setTreeData] = useState([]);
   const [teamCode, setTeamCode] = useState(null);
   const [teamOptions, setTeamOptions] = useState([]);
   const { userList, getUserList } = useModel('userModel');
   const access = useAccess();
-
-  const getRoleList = async () => {
-    const result = await reqRoleList();
-    if (result.code == 200) {
-      let treeData = [];
-      result.data.forEach((item, index) => {
-        treeData.push({
-          title: item.rolename,
-          key: index,
-        });
-      });
-      setTreeData(treeData);
-    }
-  };
 
   // 获取当前管理员的团队码
   const getMyTeamCode = useCallback(async () => {
@@ -77,15 +58,9 @@ const App = () => {
   }, [access.canAdmin]);
 
   useEffect(() => {
-    getRoleList();
     getMyTeamCode();
     getTeamList();
   }, [getMyTeamCode, getTeamList]);
-
-  const onSelect = (selectedKeys, info) => {
-    console.log(selectedKeys);
-    setOrgCode(selectedKeys[0] ? 0 : 1);
-  };
 
   const onCreate = async (values) => {
     const hide = message.loading('正在修改');
@@ -136,20 +111,8 @@ const App = () => {
   return (
     <PageContainer>
       <ProCard style={{ marginTop: 8 }} gutter={8} ghost>
-        <ProCard colSpan={4} layout="left" bordered direction="column" className={styles.content}>
-          <div className={styles.title}>RS-Labeler</div>
-          <Tree
-            defaultExpandAll={true}
-            defaultSelectedKeys={[0]}
-            onSelect={onSelect}
-            treeData={treeData}
-          />
-          {/* </Access> */}
-        </ProCard>
         <ProCard layout="left" bordered className={styles.content}>
           <div className={styles.title}>
-            {/* 当前部门为：{unit} */}
-            当前视图：{orgCode ? '管理员' : '普通用户'}
             {visible && (
               <CollectionCreateForm
                 defaultValue={initialValue}
@@ -171,7 +134,7 @@ const App = () => {
               />
             )}
           </div>
-          {access.canAdmin && orgCode === 1 && (
+          {access.canAdmin && (
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center' }}>
               <Button
                 type="primary"
@@ -190,7 +153,6 @@ const App = () => {
           )}
           <div>
             <UserTable
-              params={{ isAdmin: orgCode}}
               actionRef={actionRef}
               setVisible={setVisible}
               setInitialValue={setInitialValue}

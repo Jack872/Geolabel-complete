@@ -55,11 +55,11 @@ const ExtraContent = ({ currentUser, onRefreshScore }) => {
   return (
     <div className={styles.extraContent}>
       <div className={styles.statItem} style={{ padding: '0 40px' }}>
-        <Statistic 
+        <Statistic
           title={
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
               gap: '12px',
               fontSize: '16px',
               fontWeight: '500',
@@ -72,7 +72,7 @@ const ExtraContent = ({ currentUser, onRefreshScore }) => {
                 icon={<ReloadOutlined style={{ fontSize: '14px' }} />}
                 loading={refreshing}
                 onClick={handleRefreshScore}
-                style={{ 
+                style={{
                   padding: '4px 8px',
                   height: '32px',
                   fontSize: '14px',
@@ -98,15 +98,15 @@ const ExtraContent = ({ currentUser, onRefreshScore }) => {
             </div>
           }
           value={typeof currentUser?.score === 'number' ? currentUser.score : 0}
-          valueStyle={{ 
-            fontSize: '36px', 
+          valueStyle={{
+            fontSize: '36px',
             fontWeight: 'bold',
             color: '#1890ff',
             lineHeight: '44px'
           }}
           suffix={
-            <span style={{ 
-              fontSize: '18px', 
+            <span style={{
+              fontSize: '18px',
               color: '#8c8c8c',
               marginLeft: '8px',
               fontWeight: 'normal'
@@ -142,9 +142,9 @@ const Workplace = () => {
       const userInfo = await getCurrentUserInfo();
       if (userInfo) {
         // 更新全局状态中的用户信息
-        setInitialState((s) => ({ 
-          ...s, 
-          currentState: userInfo 
+        setInitialState((s) => ({
+          ...s,
+          currentState: userInfo
         }));
       }
     } catch (error) {
@@ -266,7 +266,7 @@ const Workplace = () => {
           if (assignedResult.code == 200) {
             const assignedTaskData = Array.isArray(assignedResult.data) ? assignedResult.data : [];
             setTaskList(assignedTaskData); // 首页项目列表显示分配的任务
-            
+
             if (assignedTaskData.length > 0) {
               assignedChartData = processTaskStatusData(assignedTaskData);
             }
@@ -310,7 +310,8 @@ const Workplace = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '300px'
+          height: '100%',
+          minHeight: '300px'
         }}>
           <Skeleton active paragraph={{ rows: 6 }} />
         </div>
@@ -319,7 +320,7 @@ const Workplace = () => {
 
     if (taskStatusData.length > 0) {
       return (
-        <div className={styles.chartContainer}>
+        <div className={styles.chartContainer} style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <Pie
             data={taskStatusData}
             angleField="value"
@@ -330,15 +331,16 @@ const Workplace = () => {
               type: 'outer',
               content: '{name}: {percentage}',
               style: {
-                fontSize: 12,
+                fontSize: 14,
                 textAlign: 'center',
+                fontWeight: 500,
               },
             }}
             legend={{
               position: 'bottom',
               itemName: {
                 style: {
-                  fontSize: 12,
+                  fontSize: 14,
                 },
               },
             }}
@@ -364,7 +366,8 @@ const Workplace = () => {
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        height: '300px',
+        height: '100%',
+        minHeight: '300px',
         color: '#8c8c8c'
       }}>
         <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
@@ -465,12 +468,12 @@ const Workplace = () => {
           }}
         />
       }
-      extraContent={<ExtraContent 
-        currentUser={{ score: parseInt(currentState?.score) || 0 }} 
+      extraContent={<ExtraContent
+        currentUser={{ score: parseInt(currentState?.score) || 0 }}
         onRefreshScore={refreshUserScore}
       />}
     >
-      <Row gutter={[24, 24]}>
+      <Row gutter={[24, 24]} style={{ minHeight: 'calc(100vh - 250px)' }}>
         {/* 进行中的项目 */}
         <Col span={16}>
           <Card
@@ -483,7 +486,8 @@ const Workplace = () => {
             bordered={false}
             extra={<Link to="/taskmanage" style={{ fontSize: '14px' }}>全部项目</Link>}
             loading={loading}
-            bodyStyle={{ padding: '16px' }}
+            bodyStyle={{ padding: '16px', flex: 1, overflowY: 'auto' }}
+            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
           >
             {taskList && taskList.length > 0 ? (
               <Row gutter={[16, 16]}>
@@ -537,7 +541,11 @@ const Workplace = () => {
                 padding: '40px 20px',
                 textAlign: 'center',
                 color: '#8c8c8c',
-                fontSize: '14px'
+                fontSize: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                height: '100%'
               }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
                 暂无进行中的项目
@@ -555,16 +563,16 @@ const Workplace = () => {
               </Title>
             }
             bordered={false}
-            bodyStyle={{ padding: '16px' }}
-            style={{ height: '100%' }}
+            bodyStyle={{ padding: '16px', flex: 1, overflowY: 'auto' }}
+            style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
           >
             {isAdmin ? (
               // 管理员：直接显示创建的任务统计
               renderTaskStatusChart()
             ) : (
               // 普通用户：显示标签页
-              <Tabs 
-                activeKey={activeTab} 
+              <Tabs
+                activeKey={activeTab}
                 onChange={handleTabChange}
                 size="small"
                 style={{ height: '100%' }}

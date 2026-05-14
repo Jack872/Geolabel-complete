@@ -51,6 +51,8 @@ export default function MyDrawer(props) {
     };
   }, [visible, content?.serName]);
 
+  if (!content) return null;
+
   return (
     <Drawer title={content.serName} placement="right" onClose={onClose} open={visible} width={600}>
       <div style={{ padding: '20px 0' }}>
@@ -64,7 +66,7 @@ export default function MyDrawer(props) {
                 <p>正在加载影像缩略图...</p>
               </div>
             )}
-            
+
             {error && !loading && (
               <Alert
                 message="缩略图加载失败"
@@ -74,7 +76,7 @@ export default function MyDrawer(props) {
                 style={{ width: '100%' }}
               />
             )}
-            
+
             {thumbnailUrl && !loading && !error && (
               <Image
                 src={thumbnailUrl}

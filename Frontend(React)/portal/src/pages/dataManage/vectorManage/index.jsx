@@ -239,20 +239,21 @@ const DatasetCardPage = () => {
   };
   /** ProTable 影像表格列 */
   const columns = [
-    { title: '序号', dataIndex: 'index', valueType: 'indexBorder', align: 'center' },
-    { title: '文件名称', dataIndex: 'fileName', align: 'center' },
-    { title: '坐标系', dataIndex: 'crsCode', align: 'center' },
-    { title: '采集开始', dataIndex: 'acquisitionTimeStart', align: 'center' },
-    { title: '波段数', dataIndex: 'bandCount', align: 'center' },
-    { title: '传感器/平台', dataIndex: 'sensorPlatform', align: 'center' },
-    { title: '处理级别', dataIndex: 'processingLevel', align: 'center' },
-    { title: '上传备注', dataIndex: 'uploadDescription', align: 'center', ellipsis: true },
-    { title: '修改时间', dataIndex: 'updateTime', align: 'center' },
-    { title: '状态', dataIndex: 'status', align: 'center', valueEnum: { 0: '未发布', 1: '已发布' } },
+    { title: '序号', dataIndex: 'index', valueType: 'indexBorder', align: 'center', width: 60 },
+    { title: '文件名称', dataIndex: 'fileName', align: 'center', width: 180, ellipsis: true },
+    { title: '坐标系', dataIndex: 'crsCode', align: 'center', width: 100, ellipsis: true },
+    { title: '采集开始', dataIndex: 'acquisitionTimeStart', align: 'center', width: 120, ellipsis: true },
+    { title: '波段数', dataIndex: 'bandCount', align: 'center', width: 80 },
+    { title: '传感器/平台', dataIndex: 'sensorPlatform', align: 'center', width: 120, ellipsis: true },
+    { title: '处理级别', dataIndex: 'processingLevel', align: 'center', width: 100, ellipsis: true },
+    { title: '上传备注', dataIndex: 'uploadDescription', align: 'center', width: 100, ellipsis: true },
+    { title: '修改时间', dataIndex: 'updateTime', align: 'center', width: 160, ellipsis: true },
+    { title: '状态', dataIndex: 'status', align: 'center', width: 80, valueEnum: { 0: '未发布', 1: '已发布' } },
     {
       title: '操作',
       align: 'center',
-      width: 260,
+      width: 180,
+      fixed: 'right',
       render: (_, record) => (
         <Space>
           {/* 编辑按钮 */}
@@ -297,6 +298,7 @@ const DatasetCardPage = () => {
               size="small"
               danger
               icon={<DeleteTwoTone twoToneColor="#ff4d4f" />}
+              style={{ background: 'transparent' }}
             >
               删除
             </Button>
@@ -431,7 +433,7 @@ const DatasetCardPage = () => {
       <Modal
         title={`影像文件 - ${currentDataset?.name}`}
         open={fileModalVisible}
-        width={900}
+        width={1600}
         footer={null}
         onCancel={() => setFileModalVisible(false)}
       >
@@ -453,6 +455,7 @@ const DatasetCardPage = () => {
           dataSource={fileList} // 直接用 handleViewFiles 拉取的文件列表
           rowKey="fileId"
           search={false}
+          scroll={{ x: 1400 }}
           pagination={{ pageSize: 6 }}
         />
       </Modal>
