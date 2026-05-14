@@ -324,8 +324,8 @@ public class GeoServerServiceImpl implements GeoServerService {
                         .pathSegment("gwc", "rest", "layers", "LUU:" + coverageName + ".xml")
                         .toUriString();
 
-                // 统一使用EPSG:900913作为gridSetName，因为前端TMS URL固定使用EPSG:900913
-                String gwcGridSet = autoDetect ? "EPSG:900913" : effectiveCrs;
+                // 前端TMS URL固定使用EPSG:900913，GWC gridSetName必须与之匹配
+                String gwcGridSet = "EPSG:900913";
 
                 String xmlContent = "<GeoServerLayer>" +
                         "<enabled>true</enabled>" +
@@ -339,7 +339,7 @@ public class GeoServerServiceImpl implements GeoServerService {
                         "<serviceConfiguration>false</serviceConfiguration>" +
                         "<mimeType>" + "image/jpeg" + "</mimeType>" +
                         "<reuseTiles>false</reuseTiles>" +
-                        "<cacheBypassAllowed>false</cacheBypassAllowed>" +
+                        "<cacheBypassAllowed>true</cacheBypassAllowed>" +
                         "</GeoServerLayer>";
 
                 HttpHeaders gwcHeaders = new HttpHeaders();

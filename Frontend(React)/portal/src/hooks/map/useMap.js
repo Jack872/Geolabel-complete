@@ -62,7 +62,7 @@ function useMap() {
   useEffect(async () => {
     let mapserver, mapExtent, baseLayer;
     let map4326Extent;
-    let nativeSRS, declaredSRS, crsCode;
+    let crsCode;
     let coverageName;
 
       let TASKID = window.sessionStorage.getItem('taskId');
@@ -167,10 +167,29 @@ function useMap() {
         mapExtent = geoResult.coverage.nativeBoundingBox;
         map4326Extent = geoResult.coverage.latLonBoundingBox;
         coverageName = geoResult.coverage.name;
-        nativeSRS = geoResult.coverage.nativeCRS || geoResult.coverage.nativeSRS;
-        declaredSRS = geoResult.coverage.srs || geoResult.coverage.declaredSRS;
-        if (nativeSRS) {
-          crsCode = typeof nativeSRS === 'string' ? nativeSRS : nativeSRS.type;
+        // 从 nativeBoundingBox.crs 获取实际坐标参考系（nativeBbox 始终使用原生CRS）
+        // 仅当该字段缺失时回退到 srs（声明CRS）
+        const bboxCRS = geoResult.coverage.nativeBoundingBox?.crs;
+        if (bboxCRS) {
+          if (typeof bboxCRS === 'string') {
+            crsCode = bboxCRS;
+          } else if (bboxCRS.$) {
+            crsCode = bboxCRS.$;
+          } else if (bboxCRS.type === 'EPSG' && bboxCRS.properties?.code) {
+            crsCode = `EPSG:${bboxCRS.properties.code}`;
+          }
+        }
+        if (!crsCode) {
+          const rawSRS = geoResult.coverage.srs || geoResult.coverage.declaredSRS;
+          if (rawSRS) {
+            if (typeof rawSRS === 'string') {
+              crsCode = rawSRS;
+            } else if (rawSRS.type === 'EPSG' && rawSRS.properties?.code) {
+              crsCode = `EPSG:${rawSRS.properties.code}`;
+            } else if (rawSRS.type) {
+              crsCode = rawSRS.type;
+            }
+          }
         }
       }
       hide();
@@ -194,11 +213,22 @@ function useMap() {
     }
 
     let extent3857;
-    if (crsCode && !crsCode.endsWith('3857')) {
-      const extentNative = [mapExtent.minx, mapExtent.miny, mapExtent.maxx, mapExtent.maxy];
-      extent3857 = transformExtent(extentNative, crsCode, 'EPSG:3857');
-    } else if (mapExtent) {
-      extent3857 = [mapExtent.minx, mapExtent.miny, mapExtent.maxx, mapExtent.maxy];
+    try {
+      if (crsCode && !crsCode.endsWith('3857')) {
+        const extentNative = [mapExtent.minx, mapExtent.miny, mapExtent.maxx, mapExtent.maxy];
+        extent3857 = transformExtent(extentNative, crsCode, 'EPSG:3857');
+      } else if (mapExtent) {
+        extent3857 = [mapExtent.minx, mapExtent.miny, mapExtent.maxx, mapExtent.maxy];
+      }
+    } catch (e) {
+      console.warn('坐标变换失败，尝试使用 latLonBoundingBox 回退:', e);
+    }
+    // latLonBoundingBox 始终是 EPSG:4326，作为回退方案
+    if (!extent3857 && map4326Extent) {
+      extent3857 = transformExtent(
+        [map4326Extent.minx, map4326Extent.miny, map4326Extent.maxx, map4326Extent.maxy],
+        'EPSG:4326', 'EPSG:3857'
+      );
     }
 
     if (baseLayer) {

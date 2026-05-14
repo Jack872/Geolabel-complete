@@ -6,6 +6,11 @@
  * For details, please see
  * https://pro.ant.design/docs/deploy
  */
+
+const GEOSERVER_HOST = process.env.REACT_APP_GEOSERVER_HOST || 'localhost';
+const GEOSERVER_PORT = process.env.REACT_APP_GEOSERVER_PORT || '8080';
+const GEOSERVER_PROTOCOL = process.env.REACT_APP_GEOSERVER_PROTOCOL || 'http';
+
 export default {
   dev: {
     // 配置代理
@@ -39,10 +44,9 @@ export default {
         '^/nodeapi': '',
       },
     },
-    // geoserver接口
+    // geoserver接口 — 与 src/config.js 统一用环境变量
     '/api3/': {
-      target: 'http://localhost:8081/geoserver/rest',
-      // target: 'http://8.162.6.253:8081/geoserver/rest',
+      target: `${GEOSERVER_PROTOCOL}://${GEOSERVER_HOST}:${GEOSERVER_PORT}/geoserver/rest`,
       changeOrigin: true,
       pathRewrite: {
         '^/api3': ' ',
