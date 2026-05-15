@@ -734,7 +734,7 @@ const TaskManage = () => {
           const hasStatusFilter = status !== undefined && status !== null && status !== '';
 
           // 获取任务列表数据
-          const data = await reqGetTaskList(params, sorter, filter);
+          const data = await reqGetTaskList({ ...params, userId: currentState?.userid }, sorter, filter);
 
           if (data && data.data) {
             let items = data.data;

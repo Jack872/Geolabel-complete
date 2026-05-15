@@ -17,17 +17,20 @@ import { ProTable } from '@ant-design/pro-table';
 import StepUploadModal from '../component/StepUploadModal.jsx';
 import CollectionCreateForm from '@/components/CollectionCreateForm';
 import { PageContainer } from '@ant-design/pro-layout';
+import { useModel } from 'umi';
 
 // ===== 保留原接口 (暂时注释，标注 TODO) =====
 import { reqGetfileData, reqEditfileData, reqDeleteFileDataById, reqPublishSet } from '@/services/dataManage/api';
 import { PublishServer } from '@/services/serviceManage/api.js';
-import { reqGetDatasetList, reqEditDataset, reqAddDataset, reqDeleteDataSet } from '@/services/dataset/api.js';
+import { reqGetDatasetList, reqEditDataset, reqAddDataset, reqDeleteDataSet, reqGetSharedDatasets } from '@/services/dataset/api.js';
+import { getUserByUsername } from '@/services/login/api';
 
 const { Option } = Select;
 
 const DatasetCardPage = () => {
   const [form] = Form.useForm();
   const actionRef = useRef();
+  const { initialState } = useModel('@@initialState');
 
   /** --------------------
    * MOCK STATIC DATA (临时展示)
@@ -65,7 +68,21 @@ const DatasetCardPage = () => {
    ---------------------- */
   const fetchDatasets = async () => {
     try {
-      const res = await reqGetDatasetList();
+      const currentUser = initialState?.currentState?.currentUser;
+      let userId = null;
+
+      if (typeof currentUser === 'object' && currentUser?.userid) {
+        userId = currentUser.userid;
+      } else if (typeof currentUser === 'string') {
+        const response = await getUserByUsername(currentUser);
+        userId = response?.userId || response?.userid || response?.id;
+      }
+
+      if (!userId) {
+        message.error('无法获取用户信息');
+        return;
+      }
+      const res = await reqGetSharedDatasets({ userId });
       if (res.data!=null) {
         setDatasetList(res.data);
         setFilteredList(res.data);

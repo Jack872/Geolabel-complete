@@ -282,6 +282,7 @@ public class SysUserController {
             SysUser latestUser = SysUserService.findByUserId(currentUser.getUserid());
             if (latestUser != null) {
                 map.put("currentUser", latestUser.getUsername());
+                map.put("userid", latestUser.getUserid());
                 map.put("isAdmin", latestUser.getIsadmin());
                 map.put("score", latestUser.getScore() != null ? latestUser.getScore() : 0);
 
