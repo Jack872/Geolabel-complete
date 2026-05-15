@@ -110,7 +110,6 @@ export default function () {
     currentLayer: '',
   });
   // 任务导航：当前用户的任务 ID 列表
-  const [myTaskIds, setMyTaskIds] = useState([]);
   const {
     initialState: {
       currentState: { currentUser },
@@ -972,12 +971,6 @@ export default function () {
     return taskItems.find((item) => Number(item?.taskItemId) === Number(getTaskItemId)) || taskItems[0];
   }, [getTaskItemId, taskItems]);
 
-  const switchTaskItem = useCallback((nextTaskItemId) => {
-    if (!nextTaskItemId || Number(nextTaskItemId) === Number(getTaskItemId)) return;
-    window.sessionStorage.setItem('taskItemId', String(nextTaskItemId));
-    window.location.reload();
-  }, [getTaskItemId]);
-
   const resolveFeatureTypeName = useCallback((feature) => {
     if (!feature) return '';
     const typeId = feature.get('typeId') ?? toolbarState?.sourceKey;
@@ -1423,7 +1416,7 @@ const navigateTask = useCallback(async (direction) => {
   const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
   if (idx === -1) return;
   const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
-  if (nextIdx < 0 || nextIdx >= myTaskIds.length) {
+  if (nextIdx < 0 || nextIdx >= taskItems.length) {
     message.info(direction === 'prev' ? '已是第一个任务' : '已是最后一个任务');
     return;
   }
@@ -2034,16 +2027,9 @@ const navigateTask = useCallback(async (direction) => {
             <div className="top-info-sep" />
             <div className="top-info-item">
               <span className="top-info-label">当前影像：</span>
-              <Select
-                size="small"
-                value={currentTaskItem?.taskItemId}
-                style={{ minWidth: 220 }}
-                onChange={switchTaskItem}
-                options={taskItems.map((item) => ({
-                  value: item.taskItemId,
-                  label: `${item.itemIndex || 1}. ${item.itemName || item.mapserver || '未命名影像'}`,
-                }))}
-              />
+              <span className="top-info-name">
+                {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1}. {currentTaskItem?.itemName || currentTaskItem?.mapserver || '未命名影像'}
+              </span>
             </div>
           </>
         )}

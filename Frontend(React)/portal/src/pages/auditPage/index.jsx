@@ -796,6 +796,30 @@ export default function AuditPage() {
 
 return (
   <div className="audit-container">
+    {/* 顶部居中：任务信息（透明浮层，仅展示） */}
+    <div className="top-info-bar">
+      <div className="top-info-item">
+        <span className="top-info-label">任务名称：</span>
+        <span className="top-info-name">{taskInfo?.data?.[0]?.taskname || '审核任务'}</span>
+      </div>
+      <div className="top-info-sep" />
+      <div className="top-info-item">
+        <span className="top-info-label">任务类型：</span>
+        <span className="top-info-type">{taskInfo?.data?.[0]?.type || '-'}</span>
+      </div>
+      {taskItems?.length > 0 && (
+        <>
+          <div className="top-info-sep" />
+          <div className="top-info-item">
+            <span className="top-info-label">当前影像：</span>
+            <span className="top-info-name">
+              {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1}. {currentTaskItem?.itemName || currentTaskItem?.mapserver || '未命名影像'}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+
     {/* 底部居中：上下任务导航 */}
     <div className="task-nav-bar">
       <Tooltip title="跳转上一个任务">
