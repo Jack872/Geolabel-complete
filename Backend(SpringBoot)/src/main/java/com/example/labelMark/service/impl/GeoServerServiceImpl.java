@@ -1,16 +1,17 @@
 package com.example.labelMark.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.labelMark.config.MinioConfig;
 import com.example.labelMark.domain.Server;
 import com.example.labelMark.service.GeoServerService;
 import com.example.labelMark.service.ServerService;
 import com.example.labelMark.service.SysFileService;
+import com.example.labelMark.vo.LoginUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.*;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -58,12 +59,13 @@ public class GeoServerServiceImpl implements GeoServerService {
     }
 
     @Override
-    public String getCoverageInfo(String mapServer) {
-        Server server = serverService.getOne(new QueryWrapper<Server>().eq("ser_name", mapServer));
+    public String getCoverageInfo(Integer serId) {
+        Server server = serverService.getById(serId);
         if (server == null) {
-            throw new IllegalStateException("未找到对应服务记录: " + mapServer);
+            throw new IllegalStateException("未找到对应服务记录，serId: " + serId);
         }
 
+        String mapServer = server.getSerName();
         String coverageName = null;
         String publishUrl = server.getPublishUrl();
         if (publishUrl != null && !publishUrl.trim().isEmpty()) {

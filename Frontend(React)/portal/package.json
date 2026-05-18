@@ -65,6 +65,7 @@
     "ol-layerswitcher": "3.8.3",
     "omit.js": "^2.0.2",
     "pretty-bytes": "^6.0.0",
+    "proj4": "^2.20.8",
     "rc-menu": "^9.0.13",
     "rc-util": "^5.14.0",
     "react": "^17.0.0",

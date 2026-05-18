@@ -17,7 +17,7 @@ import java.util.Map;
  * @createDate 2024/4/17
  */
 public interface GeoServerService {
-    String getCoverageInfo(String mapServer);
+    String getCoverageInfo(Integer serId);
 
     ResponseEntity<byte[]> getGeoserverImg(String layerName, int width, int height, String bbox, String srs);
 

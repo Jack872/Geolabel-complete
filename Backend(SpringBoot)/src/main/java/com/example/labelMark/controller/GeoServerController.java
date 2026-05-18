@@ -53,9 +53,9 @@ public class GeoServerController {
         return geoServerService.getGeoserverImg(layerName, width, height, bbox, srs);
     }
 
-    @GetMapping("/coverage/{name}")
-    public String getMeta(@PathVariable String name) {
-        return geoServerService.getCoverageInfo(name);
+    @GetMapping("/coverage/{id}")
+    public String getMeta(@PathVariable Integer id) {
+        return geoServerService.getCoverageInfo(id);
     }
 
 

@@ -81,7 +81,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
 
             Integer serverId = rawItem.getServerId();
             if (serverId == null && "geoserver".equals(taskItem.getTaskSource()) && rawItem.getMapServer() != null) {
-                Server server = serverMapper.selectOne(new QueryWrapper<Server>().eq("ser_name", rawItem.getMapServer()));
+                Server server = serverMapper.selectOne(new QueryWrapper<Server>().eq("ser_name", rawItem.getMapServer()).eq("user_id", userId));
                 serverId = server != null ? server.getSerId() : 0;
             }
             taskItem.setServerId(serverId == null ? 0 : serverId);

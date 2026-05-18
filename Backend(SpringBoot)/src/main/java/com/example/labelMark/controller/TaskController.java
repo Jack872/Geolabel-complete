@@ -605,6 +605,7 @@ public class TaskController {
         taskInfo.setTaskname(task.getTaskName());
         taskInfo.setType(task.getTaskType());
         taskInfo.setMapserver(currentTaskItem != null ? currentTaskItem.getMapServer() : task.getMapServer());
+        taskInfo.setServerId(currentTaskItem != null ? currentTaskItem.getServerId() : task.getServerId());
         taskInfo.setDaterange(task.getDateRange());
         taskInfo.setStatus(task.getStatus());
         taskInfo.setAuditfeedback(task.getAuditFeedback());
@@ -676,13 +677,13 @@ public class TaskController {
             return normalizeCoordinateSystem(coordinateSystemUtils.getCoordinateSystemFromFile(localImagePath), "NONE");
         }
 
-        String mapServer = taskItem != null ? taskItem.getMapServer() : task.getMapServer();
-        if (mapServer == null || mapServer.trim().isEmpty()) {
+        Integer serverId = taskItem != null ? taskItem.getServerId() : task.getServerId();
+        if (serverId == null) {
             return coordinateSystemUtils.getDefaultCoordinateSystem();
         }
 
         try {
-            String coverageInfo = geoServerService.getCoverageInfo(mapServer);
+            String coverageInfo = geoServerService.getCoverageInfo(serverId);
             if (coverageInfo != null && coverageInfo.trim().startsWith("{")) {
                 JsonNode coverageNode = new ObjectMapper().readTree(coverageInfo).path("coverage");
                 String srs = coverageNode.path("srs").asText(null);
@@ -700,7 +701,7 @@ public class TaskController {
                 }
             }
         } catch (Exception e) {
-            log.warn("解析 GeoServer coverage 坐标系失败，mapServer={}, err={}", mapServer, e.getMessage());
+            log.warn("解析 GeoServer coverage 坐标系失败，serverId={}, err={}", serverId, e.getMessage());
         }
 
         return coordinateSystemUtils.getDefaultCoordinateSystem();

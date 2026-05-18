@@ -609,13 +609,13 @@ public class MarkController {
             return normalizeCoordinateSystem(coordinateSystemUtils.getCoordinateSystemFromFile(localImagePath), "NONE");
         }
 
-        String mapServer = taskItem != null ? taskItem.getMapServer() : task.getMapServer();
-        if (mapServer == null || mapServer.trim().isEmpty()) {
+        Integer serverId = taskItem != null ? taskItem.getServerId() : task.getServerId();
+        if (serverId == null) {
             return coordinateSystemUtils.getDefaultCoordinateSystem();
         }
 
         try {
-            String coverageInfo = geoServerService.getCoverageInfo(mapServer);
+            String coverageInfo = geoServerService.getCoverageInfo(serverId);
             if (coverageInfo != null && coverageInfo.trim().startsWith("{")) {
                 JsonNode coverageNode = new ObjectMapper().readTree(coverageInfo).path("coverage");
                 String srs = coverageNode.path("srs").asText(null);
