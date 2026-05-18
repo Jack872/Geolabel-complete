@@ -179,6 +179,53 @@ def get_or_create_auto_yolo():
         raise
 
 
+def resolve_preannotation_yolo(params: dict):
+    model_id = params.get("model_id")
+    model_name = params.get("modelName")
+    preferred_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if model_id in (None, "", "None") and not model_name:
+        raise ValueError("YOLO+SAM 预标注必须使用当前选中的 YOLO 模型，未收到 model_id/modelName")
+
+    conn = connect_db()
+    try:
+        model_info = None
+        if model_id not in (None, "", "None"):
+            try:
+                model_info = fetch_model_by_id(conn, int(model_id))
+            except Exception:
+                model_info = None
+        if not model_info and model_name:
+            model_info = fetch_model_from_db(conn, str(model_name).split(".")[0])
+        if not model_info:
+            raise ValueError(f"未找到可用于 YOLO+SAM 预标注的模型: id={model_id}, name={model_name}")
+
+        model_meta = parse_model_metadata(model_info)
+        validate_model_metadata(model_meta)
+        runtime_meta = dict(model_meta)
+        runtime_meta["modelPath"] = model_info["path"]
+        runtime_meta["path"] = model_info["path"]
+        runtime_meta["modelName"] = model_info.get("model_name")
+
+        built = build_model_from_spec(runtime_meta, torch.device(preferred_device))
+        if built.get("runtime_type") != "yolo":
+            raise ValueError(f"当前模型不是 YOLO，无法走 YOLO+SAM 联合预标注: {runtime_meta.get('modelName')}")
+        print(f"[Auto] 已解析选中的 YOLO 模型: id={model_info.get('model_id')}, name={runtime_meta.get('modelName')}")
+        return built["model"], preferred_device, runtime_meta.get("modelName") or "selected_yolo"
+    finally:
+        if conn:
+            conn.close()
+
+
+def _coerce_int_param(value, default_value: int) -> int:
+    try:
+        if value is None or value == "":
+            return int(default_value)
+        return int(float(value))
+    except Exception:
+        return int(default_value)
+
+
 def resolve_image_path(base_path: str) -> str:
     """兼容本地绝对路径、去后缀路径和 MinIO 本地挂载目录。"""
     if not base_path:
@@ -422,6 +469,8 @@ class AssistFunctionRequest(BaseModel):
     coordinates: Optional[Any] = None
     currentTypeId: Optional[Any] = None
     taskItemId: Optional[int] = None
+    model_id: Optional[int] = None
+    db_crs: str = "EPSG:3857"
 
 
 class AssistMultFunctionRequest(BaseModel):
@@ -453,6 +502,8 @@ class InferenceFunctionRequest(BaseModel):
     inferParams: Optional[dict] = None
     modelScopeStr: str = ""
     taskItemId: Optional[int] = None
+    currentTypeId: Optional[Any] = None
+    db_crs: str = "EPSG:3857"
 
 
 class ReferenceSource(BaseModel):
@@ -607,7 +658,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
 
         # --- 点分支 ---
         if PROMPT_TYPE == 'point' and INTERACTIVE_COORDS:
-            col, row = px_direct(INTERACTIVE_COORDS[0], INTERACTIVE_COORDS[1])
+            col, row = coord_fn(INTERACTIVE_COORDS[0], INTERACTIVE_COORDS[1])
             predict_args["point_coords"] = [[col, row]]
             predict_args["point_labels"] = [1]
             print(f"[SAM] 点提示 原始=({INTERACTIVE_COORDS[0]:.1f},{INTERACTIVE_COORDS[1]:.1f}) → pixel=({col},{row})")
@@ -621,7 +672,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
                 for t in range(dist + 1):
                     curr_x = x0 + (x1 - x0) * t / dist
                     curr_y = y0 + (y1 - y0) * t / dist
-                    c, r = px_direct(curr_x, curr_y)
+                    c, r = coord_fn(curr_x, curr_y)
                     pixel_coords.append([c, r])
             predict_args["point_coords"] = pixel_coords[::5] or pixel_coords[:1]
             predict_args["point_labels"] = np.ones(len(predict_args["point_coords"]), dtype=int).tolist()
@@ -630,8 +681,12 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         elif PROMPT_TYPE == 'bbox' and INTERACTIVE_COORDS:
             is_from_yolo = params.get('_pixel_bbox', False)
             print(f"[SAM] 框原始坐标: {INTERACTIVE_COORDS}, is_yolo={is_from_yolo}")
-            c1, r1 = px_direct(INTERACTIVE_COORDS[0], INTERACTIVE_COORDS[1], is_yolo=is_from_yolo)
-            c2, r2 = px_direct(INTERACTIVE_COORDS[2], INTERACTIVE_COORDS[3], is_yolo=is_from_yolo)
+            if has_crs and not is_from_yolo:
+                c1, r1 = geo_to_pixel(INTERACTIVE_COORDS[0], INTERACTIVE_COORDS[1])
+                c2, r2 = geo_to_pixel(INTERACTIVE_COORDS[2], INTERACTIVE_COORDS[3])
+            else:
+                c1, r1 = px_direct(INTERACTIVE_COORDS[0], INTERACTIVE_COORDS[1], is_yolo=is_from_yolo)
+                c2, r2 = px_direct(INTERACTIVE_COORDS[2], INTERACTIVE_COORDS[3], is_yolo=is_from_yolo)
             predict_args["boxes"] = [float(min(c1, c2)), float(min(r1, r2)), float(max(c1, c2)), float(max(r1, r2))]
             print(f"[SAM] 框提示 角点1=({c1},{r1}) 角点2=({c2},{r2}) → boxes={predict_args['boxes']}")
 
@@ -660,14 +715,19 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         print(
             f"[SAM] 原始mask: shape={raw_mask.shape}, dtype={raw_mask.dtype}, unique={np.unique(raw_mask)}, nonzero={np.count_nonzero(raw_mask)}")
 
-        # samgeo 输出的 mask 值为 255，归一化为 0/1
-        binary_mask = (raw_mask > 0).astype(np.uint8)
+        quality_threshold = float(params.get('param1') or 0.85)
+        quality_threshold = max(0.0, min(1.0, quality_threshold))
+        mask_threshold = quality_threshold * 255.0
+
+        # samgeo 输出通常是 0-255 掩膜，这里按质量阈值二值化
+        binary_mask = (raw_mask >= mask_threshold).astype(np.uint8)
+        print(f"[SAM] 质量阈值: {quality_threshold:.3f}, mask_threshold={mask_threshold:.2f}, binary_nonzero={np.count_nonzero(binary_mask)}")
 
         processed_mask = post_process_mask_sam(
             binary_mask, # 修正：传入 binary_mask,
-            min_object_size=int(params.get('param2', 100)),  # 提高最小面积，过滤草地上的噪点
-            hole_size_threshold=int(params.get('param3', 20)),  # 建筑通常没孔洞，设置小一点
-            boundary_smoothing=int(params.get('param4', 3))  # 适当增加平滑度，减少锯齿
+            min_object_size=_coerce_int_param(params.get('param2'), 100),  # 提高最小面积，过滤草地上的噪点
+            hole_size_threshold=_coerce_int_param(params.get('param3'), 20),  # 建筑通常没孔洞，设置小一点
+            boundary_smoothing=_coerce_int_param(params.get('param4'), 3)  # 适当增加平滑度，减少锯齿
         )
         print(f"[SAM] 后处理mask: nonzero={np.count_nonzero(processed_mask)}")
 
@@ -721,7 +781,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
 
 def auto_building_segmentation(params: dict):
     """一键识别全图建筑并利用 SAM 分割"""
-    yolo_model = get_or_create_auto_yolo()
+    yolo_model, yolo_device, yolo_label = resolve_preannotation_yolo(params)
     TASK_ITEM_ID = params.get('taskItemId')
     raw_path = params['mapfile_path']
     IMAGE_PATH = resolve_image_path(raw_path)
@@ -736,15 +796,20 @@ def auto_building_segmentation(params: dict):
             img_array = img_array.astype(np.uint8)
 
     # 1. YOLO 推理，ultralytics 会自动将 boxes 坐标缩放回原图尺寸
+    conf_threshold = float(params.get("param1") or 0.25)
+    iou_threshold = float(params.get("param3") or 0.7)
+    image_size = int(params.get("param2") or 640)
+
+    print(f"[Auto] 使用 YOLO+SAM 预标注模型: {yolo_label}, conf={conf_threshold}, iou={iou_threshold}, imgsz={image_size}")
     results = yolo_model.predict(
         img_array,
-        conf=0.25,
-        iou=0.7,
-        imgsz=640,
+        conf=conf_threshold,
+        iou=iou_threshold,
+        imgsz=image_size,
         retina_masks=True,
         max_det=500,
-        half=(global_yolo_device or "").startswith("cuda"),
-        device=global_yolo_device or ("cuda" if torch.cuda.is_available() else "cpu")
+        half=(yolo_device or "").startswith("cuda"),
+        device=yolo_device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
     det_boxes = results[0].boxes.xyxy.cpu().numpy()
     print(f"[Auto] 检测到 {len(det_boxes)} 个潜在建筑目标")
@@ -779,7 +844,9 @@ def auto_building_segmentation(params: dict):
         task_params['promptType'] = 'bbox'
         task_params['coordinates'] = padded_box
         task_params['_pixel_bbox'] = True
+        # YOLO 参数与 SAM 后处理参数语义不同，这里显式切换成 SAM 所需参数。
         task_params['param2'] = "100"
+        task_params['param3'] = "20"
         task_params['param4'] = "3"
         task_params['is_pre_annotation'] = True
 
@@ -832,13 +899,13 @@ def auto_building_segmentation(params: dict):
             try:
                 with conn.cursor() as cur:
                     if TASK_ITEM_ID is not None:
-                        cur.execute("DELETE FROM mark WHERE task_id = %s AND task_item_id = %s AND user_id = %s AND status = 1",
+                        cur.execute("DELETE FROM mark WHERE task_id = %s AND task_item_id = %s AND user_id = %s AND status = 2",
                                     (int(params['taskid']), TASK_ITEM_ID, params.get('user_id')))
                     else:
-                        cur.execute("DELETE FROM mark WHERE task_id = %s AND user_id = %s AND status = 1",
+                        cur.execute("DELETE FROM mark WHERE task_id = %s AND user_id = %s AND status = 2",
                                     (int(params['taskid']), params.get('user_id')))
                 insert_segmentation_results_db(conn, int(params['taskid']), all_batch_polygons,
-                                               params.get('user_id'), status=1, task_item_id=TASK_ITEM_ID)
+                                               params.get('user_id'), status=2, task_item_id=TASK_ITEM_ID)
                 conn.commit()
                 poly_count = sum(len(v) for v in all_batch_polygons.values())
                 print(f"[Auto] 批量标注成功：共 {poly_count} 个多边形")
@@ -1850,8 +1917,6 @@ async def inference_function(request: InferenceFunctionRequest):
                               if request.model_id else fetch_model_from_db(conn, request.model))
                 if not model_info:
                     raise HTTPException(status_code=404, detail=f"模型不存在: {model_identifier}")
-                if model_info.get('user_id') != int(request.user_id):
-                    raise HTTPException(status_code=403, detail="无权使用该模型")
             finally:
                 conn.close()
 
@@ -1870,12 +1935,12 @@ async def inference_function(request: InferenceFunctionRequest):
         # 兼容旧 argv 参数位：优先显式 param，其次 inferParams 命名参数
         param1 = request.param1 or str(infer_params.get("conf_threshold", infer_params.get("min_object_size", "")))
         param2 = request.param2 or str(infer_params.get("slice_size", infer_params.get("hole_size_threshold", "")))
-        param3 = request.param3 or str(infer_params.get("boundary_smoothing", ""))
-        param4 = request.param4 or str(infer_params.get("overlap_ratio", ""))
+        param3 = request.param3 or str(infer_params.get("iou_threshold", infer_params.get("boundary_smoothing", "")))
+        param4 = request.param4 or str(infer_params.get("overlap_ratio", infer_params.get("mask_threshold", "")))
 
         argv = ["", request.taskid, request.mapfile_path, request.user_id, model_identifier,
                 param1, param2, param3, param4,
-                request.modelScopeStr, class_mapping, request.taskItemId]
+                request.modelScopeStr, class_mapping, request.taskItemId, request.currentTypeId, request.db_crs]
         print(f"收到推理请求: {argv}")
 
         if not torch.cuda.is_available():

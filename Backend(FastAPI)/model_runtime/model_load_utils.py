@@ -60,6 +60,9 @@ def safe_load_model_weights(model, model_path: str, strict: bool = False) -> Tup
         "sample_keys": [],
         "model_path": model_path,
         "all_keys": [],
+        "model_key_count": 0,
+        "matched_key_count": 0,
+        "matched_key_ratio": 0.0,
     }
 
     try:
@@ -67,9 +70,18 @@ def safe_load_model_weights(model, model_path: str, strict: bool = False) -> Tup
         state_dict = extract_state_dict(checkpoint)
         normalized_state = normalize_state_dict_keys(state_dict)
         all_keys = list(normalized_state.keys())
+        model_state_keys = list(model.state_dict().keys())
+        model_state_key_set = set(model_state_keys)
+        matched_key_count = sum(1 for key in all_keys if key in model_state_key_set)
         load_info["all_keys"] = all_keys
         load_info["key_count"] = len(all_keys)
         load_info["sample_keys"] = all_keys[:10]
+        load_info["model_key_count"] = len(model_state_keys)
+        load_info["matched_key_count"] = matched_key_count
+        load_info["matched_key_ratio"] = (
+            float(matched_key_count) / float(len(model_state_keys))
+            if model_state_keys else 0.0
+        )
 
         result = model.load_state_dict(normalized_state, strict=strict)
         missing_keys = list(getattr(result, "missing_keys", []) or [])
@@ -80,7 +92,8 @@ def safe_load_model_weights(model, model_path: str, strict: bool = False) -> Tup
         load_info["unexpected_keys"] = unexpected_keys
         load_info["message"] = (
             f"权重加载完成: strict={strict}, key_count={load_info['key_count']}, "
-            f"missing={len(missing_keys)}, unexpected={len(unexpected_keys)}"
+            f"missing={len(missing_keys)}, unexpected={len(unexpected_keys)}, "
+            f"matched={matched_key_count}/{len(model_state_keys)}"
         )
         return model, load_info
     except Exception as exc:

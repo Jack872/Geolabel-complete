@@ -2,6 +2,19 @@
  * 坐标系管理工具
  * 提供坐标系的动态获取和转换功能
  */
+import proj4 from 'proj4';
+import { register } from 'ol/proj/proj4';
+
+const COMMON_PROJECTION_DEFS = {
+  'EPSG:3301': '+proj=lcc +lat_0=57.5175539305556 +lon_0=24 +lat_1=59.3333333333333 +lat_2=58 +x_0=500000 +y_0=6375000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs',
+  'EPSG:2154': '+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs',
+  'EPSG:32633': '+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs',
+  'EPSG:32634': '+proj=utm +zone=34 +datum=WGS84 +units=m +no_defs',
+  'EPSG:25832': '+proj=utm +zone=32 +ellps=GRS80 +units=m +no_defs',
+  'EPSG:25833': '+proj=utm +zone=33 +ellps=GRS80 +units=m +no_defs',
+};
+
+let commonProjectionsRegistered = false;
 
 // 常用坐标系配置
 export const COORDINATE_SYSTEMS = {
@@ -55,6 +68,26 @@ export const COORDINATE_SYSTEMS = {
 // 默认坐标系
 export const DEFAULT_CRS = 'EPSG:3857';
 
+export const normalizeCoordinateCode = (crs) => {
+  if (!crs || typeof crs !== 'string') return DEFAULT_CRS;
+  const raw = crs.trim().toUpperCase();
+  if (!raw) return DEFAULT_CRS;
+  if (raw === 'NONE' || raw === 'UNKNOWN' || raw === 'PIXEL') return raw === 'PIXEL' ? 'pixel' : raw;
+  const epsgMatch = raw.match(/EPSG[:/](\d+)/);
+  if (epsgMatch) return `EPSG:${epsgMatch[1]}`;
+  if (/^\d+$/.test(raw)) return `EPSG:${raw}`;
+  return raw;
+};
+
+export const registerCommonProjections = () => {
+  if (commonProjectionsRegistered) return;
+  Object.entries(COMMON_PROJECTION_DEFS).forEach(([code, definition]) => {
+    proj4.defs(code, definition);
+  });
+  register(proj4);
+  commonProjectionsRegistered = true;
+};
+
 /**
  * 获取坐标系信息
  * @param {string} crs 坐标系代码
@@ -74,12 +107,13 @@ export const getCoordinateSystemInfo = (crs) => {
  * @returns {boolean} 是否有效
  */
 export const isValidCoordinateSystem = (crs) => {
-  if (!crs || typeof crs !== 'string') return false;
-  if (crs === 'NONE' || crs === 'UNKNOWN') return true;
+  const normalized = normalizeCoordinateCode(crs);
+  if (!normalized || typeof normalized !== 'string') return false;
+  if (normalized === 'NONE' || normalized === 'UNKNOWN' || normalized === 'pixel') return true;
   
   // 支持 EPSG:XXXX 和 ESRI:XXXX 格式
   const pattern = /^(EPSG|ESRI):\d+$/i;
-  return pattern.test(crs);
+  return pattern.test(normalized);
 };
 
 /**
@@ -176,8 +210,9 @@ export const areCoordinateSystemsCompatible = (sourceCrs, targetCrs) => {
  * @returns {object} 转换参数
  */
 export const getTransformationParams = (sourceCrs, targetCrs) => {
+  registerCommonProjections();
   return {
-    dataProjection: sourceCrs || DEFAULT_CRS,
-    featureProjection: targetCrs || 'EPSG:3857' // 地图显示坐标系
+    dataProjection: normalizeCoordinateCode(sourceCrs || DEFAULT_CRS),
+    featureProjection: normalizeCoordinateCode(targetCrs || 'EPSG:3857') // 地图显示坐标系
   };
 };

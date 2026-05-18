@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -36,17 +37,22 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
     public List<Map<String, Object>> getModelMapByUserId(Integer userId, String taskType) {
         // 1. 获取模型实体列表
         List<Model> modelList = getModelListByUserId(userId, taskType);
+        return convertModelsToMap(modelList);
+    }
 
-        // 2. 将实体列表转换为前端需要的格式 [{id: 1, name: 'yolo2', type: 'xxx'}, ...]
+    @Override
+    public List<Map<String, Object>> getModelMapByTaskType(String taskType) {
+        List<Model> modelList = getModelListByTaskType(taskType);
+        return convertModelsToMap(modelList);
+    }
+
+    private List<Map<String, Object>> convertModelsToMap(List<Model> modelList) {
         return modelList.stream()
                 .map(model -> {
                     Map<String, Object> map = new HashMap<>();
-                    // 请注意：这里的 getter 方法 (getId, getModelName, getType)
-                    // 需要根据你实际的 Model 实体类中的方法名进行替换
-                    map.put("id", model.getModelId());             // 对应前端 model.id
-                    map.put("name", model.getModelName());    // 对应前端 model.name
-                    // 如果你的 Model 类中存类型的是 taskType 或者其他字段，请替换对应的 getter
-                    map.put("type", model.getModelType());         // 对应前端 model.type
+                    map.put("id", model.getModelId());
+                    map.put("name", model.getModelName());
+                    map.put("type", model.getModelType());
                     map.put("taskType", model.getTaskType());
                     map.put("inputNum", model.getInputNum());
                     map.put("outputNum", model.getOutputNum());
@@ -66,31 +72,29 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
     @Override
     public List<Map<String, Object>> getModelMapByUserId(Integer userId) {
         List<Model> modelList = getModelListByUserIdWithoutTaskType(userId);
-        return modelList.stream()
-                .map(model -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("id", model.getModelId());
-                    map.put("name", model.getModelName());
-                    map.put("type", model.getModelType());
-                    map.put("taskType", model.getTaskType());
-                    map.put("inputNum", model.getInputNum());
-                    map.put("outputNum", model.getOutputNum());
-                    map.put("status", model.getStatus());
-
-                    Map<String, Object> modelMeta = parseModelDes(model.getModelDes());
-                    map.put("description", String.valueOf(modelMeta.getOrDefault("description", "")));
-                    map.put("details", buildLegacyDetails(modelMeta));
-                    map.put("classMapping", modelMeta.getOrDefault("classMapping", new HashMap<>()));
-                    map.put("inferParams", modelMeta.getOrDefault("inferParams", new HashMap<>()));
-                    map.put("applicableTypeIds", modelMeta.getOrDefault("applicableTypeIds", Collections.emptyList()));
-                    return map;
-                })
-                .collect(Collectors.toList());
+        return convertModelsToMap(modelList);
     }
 
     @Override
     public List<Model> getModelListByUserId(Integer userId, String taskType) {
         return modelMapper.selectByUserId(userId, taskType);
+    }
+
+    @Override
+    public List<Model> getModelListByTaskType(String taskType) {
+        Map<Integer, Model> merged = new LinkedHashMap<>();
+
+        if (taskType != null && !taskType.trim().isEmpty()) {
+            QueryWrapper<Model> taskTypeQuery = new QueryWrapper<>();
+            taskTypeQuery.eq("task_type", taskType.trim());
+            list(taskTypeQuery).forEach(model -> merged.put(model.getModelId(), model));
+        }
+
+        QueryWrapper<Model> yoloQuery = new QueryWrapper<>();
+        yoloQuery.and(wrapper -> wrapper.like("model_type", "yolo").or().like("model_name", "yolo"));
+        list(yoloQuery).forEach(model -> merged.put(model.getModelId(), model));
+
+        return merged.values().stream().collect(Collectors.toList());
     }
 
     @Override

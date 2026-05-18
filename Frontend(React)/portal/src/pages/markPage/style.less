@@ -478,7 +478,8 @@
 .ol-scale-line {
   position: absolute !important;
   bottom: 20px !important;
-  left: 20px !important;
+  right: 20px !important;
+  left: auto !important;
   background: #3498db !important;
   border-radius: 6px !important;
   padding: 8px 12px !important;
@@ -494,8 +495,9 @@
 /* 不透明度控制器样式 */
 .opacity-control {
   position: absolute !important;
-  bottom: 80px !important; /* 位于比例尺上方 */
-  left: 20px !important;
+  bottom: 66px !important; /* 位于比例尺上方 */
+  right: 20px !important;
+  left: auto !important;
   background: rgba(255, 255, 255, 0.95) !important;
   border-radius: 8px !important;
   padding: 12px 16px !important;
@@ -641,11 +643,13 @@
   }
 
   .ol-scale-line {
-    left: 15px !important;
+    right: 15px !important;
+    left: auto !important;
   }
 
   .opacity-control {
-    left: 15px !important;
+    right: 15px !important;
+    left: auto !important;
   }
 
   #map-container > div > div:nth-child(2) > div:nth-child(4) {
@@ -673,13 +677,15 @@
   }
 
   .ol-scale-line {
-    left: 15px !important;
+    right: 15px !important;
+    left: auto !important;
     bottom: 15px !important;
   }
 
   .opacity-control {
-    left: 15px !important;
-    bottom: 75px !important; /* 调整移动端位置 */
+    right: 15px !important;
+    left: auto !important;
+    bottom: 68px !important; /* 调整移动端位置 */
     min-width: 180px !important;
     padding: 10px 12px !important;
 
@@ -1127,38 +1133,119 @@
   }
 }
 
+.model-filter-hint {
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #7a869a;
+}
+
+.model-empty-hint {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fafafa;
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.model-meta-card {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7faff;
+  border: 1px solid #e6f4ff;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.6;
+
+  span {
+    color: #7a869a;
+    margin-right: 4px;
+  }
+}
+
+.model-subtitle {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.mapping-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.mapping-index {
+  font-size: 12px;
+  color: #5f6b7a;
+  font-weight: 500;
+}
+
 /* 属性面板独立于模型面板，放置在其左侧 */
 .attribute-panel {
   top: auto !important;
-  right: 16px !important;
-  bottom: 110px !important;
+  left: 16px !important;
+  right: auto !important;
+  bottom: 88px !important;
   width: 300px !important;
-  max-height: 320px !important;
+  max-height: 300px !important;
   z-index: 1002 !important;
 }
 
 /* 参数网格 */
 .param-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-bottom: 8px;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
 
   .param-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
 
     &.full {
       grid-column: 1 / -1;
     }
 
+    .param-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
     label {
-      font-size: 10px;
-      color: #888;
-      font-weight: 500;
+      font-size: 12px;
+      line-height: 1.2;
+      color: #5f6b7a;
+      font-weight: 600;
+      margin: 0;
     }
   }
+}
+
+.param-tip-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #eef4ff;
+  color: #4c7ff7;
+  cursor: help;
+  font-size: 12px;
 }
 
 /* 模型操作按钮 */
@@ -1197,6 +1284,20 @@
   display: flex;
   gap: 6px;
 
+  &.dual {
+    flex-direction: column;
+
+    .ant-tooltip-open,
+    .ant-tooltip-open + * {
+      width: 100%;
+    }
+
+    .ant-tooltip-open,
+    > span {
+      width: 100%;
+    }
+  }
+
   .assist-btn {
     flex: 1;
     padding: 6px 4px;
@@ -1224,6 +1325,12 @@
 
       &:hover {
         background: #d9f7be;
+      }
+
+      &.active {
+        background: linear-gradient(135deg, #95de64, #52c41a);
+        color: #fff;
+        box-shadow: 0 3px 10px rgba(82, 196, 26, 0.28);
       }
     }
   }
@@ -1579,7 +1686,7 @@
   position: absolute !important;
   top: 16px !important;
   right: 16px !important;
-  width: 240px;
+  width: 320px;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 10px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
@@ -1587,7 +1694,7 @@
   z-index: 1001;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 180px);
   overflow-y: auto;
 
   &::-webkit-scrollbar { width: 4px; }
@@ -1627,6 +1734,9 @@
   .pre-annotate-btn {
     font-size: 14px;
     padding: 9px 0;
+    width: 100%;
+    text-align: center;
+    justify-content: center;
   }
 }
 
@@ -1635,29 +1745,43 @@
   top: 16px !important;
   right: 16px !important;
   bottom: auto !important;
-  max-height: calc(100vh - 380px) !important;
+  max-height: calc(100vh - 360px) !important;
   z-index: 1001 !important;
 }
 
 /* 独立属性面板固定右下，避免被模型面板遮挡 */
 .attribute-panel {
   top: auto !important;
-  right: 16px !important;
-  bottom: 110px !important;
+  left: 16px !important;
+  right: auto !important;
+  bottom: 88px !important;
   width: 300px !important;
-  max-height: 320px !important;
+  max-height: 300px !important;
   z-index: 1002 !important;
 }
 
 @media (max-width: 1280px) {
   .model-panel-main {
-    max-height: calc(55vh - 24px) !important;
+    width: 292px !important;
+    max-height: calc(52vh - 24px) !important;
   }
 
   .attribute-panel {
-    bottom: 90px !important;
+    left: 12px !important;
+    right: auto !important;
+    bottom: 78px !important;
     width: 280px !important;
-    max-height: 280px !important;
+    max-height: 260px !important;
+  }
+
+  .ol-scale-line {
+    right: 14px !important;
+    left: auto !important;
+  }
+
+  .opacity-control {
+    right: 14px !important;
+    left: auto !important;
   }
 }
 
@@ -1723,11 +1847,17 @@
 }
 
 /* ── 不透明度控制器：与比例尺同行，放在比例尺右边 ──────────────────────────── */
+.ol-scale-line {
+  right: 20px !important;
+  left: auto !important;
+  bottom: 20px !important;
+}
+
 .opacity-control {
   position: absolute !important;
-  bottom: 20px !important;
-  /* ol-scale-line 宽度约 100px，留出间距 */
-  left: 120px !important;
+  bottom: 64px !important;
+  right: 20px !important;
+  left: auto !important;
   top: auto !important;
   background: rgba(52, 152, 219, 0.9) !important;
   border-radius: 6px !important;
