@@ -138,10 +138,15 @@ export default function AuditPage() {
     }
 
     const allUsers = taskInfo.data[0]?.userArr ?? [];
-    const totalTypeIdArr = [];
+    const typeMap = new Map();
     for (const { typeArr } of allUsers) {
-      totalTypeIdArr.push(...typeArr);
+      for (const typeItem of typeArr || []) {
+        if (!typeMap.has(typeItem.typeId)) {
+          typeMap.set(typeItem.typeId, typeItem);
+        }
+      }
     }
+    const totalTypeIdArr = Array.from(typeMap.values());
 
     const layers = totalTypeIdArr.map(({ typeColor, typeName, typeId }) => {
       const src = new VectorSource({ format: new GeoJSON(), projection: mapProjection });
@@ -233,7 +238,7 @@ export default function AuditPage() {
       mapInstance.addInteraction(selectInteraction);
       selectInteraction.on('select', (e) => {
         if (isProgrammaticSelect.current) return;
-        setSelectedFeatures(e.target.getFeatures().getArray());
+        setSelectedFeatures([...new Set(e.target.getFeatures().getArray())]);
       });
     }
 
@@ -362,10 +367,10 @@ export default function AuditPage() {
 
     const olSelectedFeatures = selectInteraction.getFeatures();
 
-    const stateIds = new Set(selectedFeatures.map(f => f.getId()));
-    const olIds = new Set(olSelectedFeatures.getArray().map(f => f.getId()));
+    const stateFeatures = new Set(selectedFeatures);
+    const olFeatures = new Set(olSelectedFeatures.getArray());
 
-    if (stateIds.size === olIds.size && [...stateIds].every(id => olIds.has(id))) {
+    if (stateFeatures.size === olFeatures.size && [...stateFeatures].every(feature => olFeatures.has(feature))) {
       return;
     }
 
@@ -375,7 +380,7 @@ export default function AuditPage() {
 
       // 2. 执行同步操作
       olSelectedFeatures.clear();
-      selectedFeatures.forEach(feature => olSelectedFeatures.push(feature));
+      [...stateFeatures].forEach(feature => olSelectedFeatures.push(feature));
 
     } finally {
       // 关键修正：使用 setTimeout (宏任务) 来延迟解锁
@@ -413,7 +418,8 @@ export default function AuditPage() {
     });
   };
 
-  const findParentLayer = (feature, map, layers) => layers.find(l => l.getSource && l.getSource().hasFeature(feature));
+  const sourceContainsFeature = (source, feature) => source?.getFeatures?.().some(sourceFeature => sourceFeature === feature);
+  const findParentLayer = (feature, map, layers) => layers.find(l => l.getSource && sourceContainsFeature(l.getSource(), feature));
 
   // 在组件内（return 之前）添加以下函数
 
