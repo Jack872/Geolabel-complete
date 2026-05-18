@@ -161,7 +161,29 @@ public class SysFileController {
 
             // 调用 Service 的事务方法 ---
             // 这样一旦 saveFileAndProvenance 内部任何地方报错，数据库都会全部回滚
-            sysfileService.saveFileAndProvenance(data, userId, updatetime);
+            Integer fileId = sysfileService.saveFileAndProvenance(data, userId, updatetime);
+
+            // 5. 用 file_id 重命名 MinIO 对象，避免不同用户上传同名文件造成冲突
+            String originalFileName = data.getFileName();
+            String newFileName = renameWithFileId(originalFileName, fileId);
+            if (!originalFileName.equals(newFileName)) {
+                try {
+                    CopyObjectRequest copyReq = new CopyObjectRequest(
+                            minioConfig.getBucketName(), originalFileName,
+                            minioConfig.getBucketName(), newFileName);
+                    s3.copyObject(copyReq);
+                    s3.deleteObject(minioConfig.getBucketName(), originalFileName);
+
+                    // 更新数据库中的文件名
+                    SysFile savedFile = new SysFile();
+                    savedFile.setFileId(fileId);
+                    savedFile.setFileName(newFileName);
+                    sysfileService.updateById(savedFile);
+                } catch (Exception e) {
+                    System.err.println("MinIO 文件重命名失败: " + e.getMessage());
+                }
+            }
+
             // 8. 返回成功结果
             return ResponseEntity.ok(Map.of(
                     "success", true,
@@ -252,4 +274,12 @@ public class SysFileController {
         return ResultGenerator.getSuccessResult();
     }
 
+    private String renameWithFileId(String fileName, Integer fileId) {
+        if (fileName == null || fileId == null) return fileName;
+        int dot = fileName.lastIndexOf('.');
+        if (dot > 0) {
+            return fileName.substring(0, dot) + "_" + fileId + fileName.substring(dot);
+        }
+        return fileName + "_" + fileId;
+    }
 }

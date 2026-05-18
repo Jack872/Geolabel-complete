@@ -38,16 +38,18 @@ public interface ServerService extends IService<Server> {
     void publishServices(List<Integer> fileIds, Integer userId, String username) throws Exception;
 
     /**
-     * 根据影像集名称查询服务列表
+     * 根据影像集名称和用户ID查询服务列表
      * @param setName 影像集名称
+     * @param userId 用户ID
      * @return 服务列表
      */
-    List<Server> getServersBySetName(String setName);
+    List<Server> getServersBySetName(String setName, Integer userId);
 
     /**
-     * 根据影像集名称删除所有服务
+     * 根据影像集名称和用户ID删除所有服务
      * @param setName 影像集名称
+     * @param userId 用户ID
      * @return 删除数量
      */
-    int deleteServersBySetName(String setName);
+    int deleteServersBySetName(String setName, Integer userId);
 }

@@ -153,7 +153,7 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void saveFileAndProvenance(MergeMultipartRequest data, Integer userId, String updatetime) {
+    public Integer saveFileAndProvenance(MergeMultipartRequest data, Integer userId, String updatetime) {
         // 1. 在数据库中创建文件记录
         SysFile sysFile = new SysFile();
         sysFile.setFileName(data.getFileName());
@@ -218,6 +218,8 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
                 Collections.singletonList(outputEntity),
                 activityParams
         );
+
+        return fileId;
     }
 
     private FileMetadata buildFileMetadata(MergeMultipartRequest data, Integer fileId) {
