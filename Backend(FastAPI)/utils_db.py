@@ -408,33 +408,44 @@ def connect_multiple_holes(exterior_coords, interior_coords_list):
     return current_exterior
 
 
-def delete_existing_results_db(conn, task_id, table_name="mark", batch_size=1000):
+def delete_existing_results_db(conn, task_id, user_id=None, task_item_id=None, status=None, table_name="mark", batch_size=1000):
     if conn is None:
         return
     try:
         with conn.cursor() as cursor:
-            # 获取最小和最大 id，逐步删除
-            cursor.execute(f"SELECT MIN(id), MAX(id) FROM {table_name} WHERE task_id = %s", (task_id,))
+            where_clauses = ["task_id = %s"]
+            args = [task_id]
+            if user_id is not None:
+                where_clauses.append("user_id = %s")
+                args.append(user_id)
+            if task_item_id is not None:
+                where_clauses.append("task_item_id = %s")
+                args.append(task_item_id)
+            if status is not None:
+                where_clauses.append("status = %s")
+                args.append(status)
+
+            where_sql = " AND ".join(where_clauses)
+            cursor.execute(f"SELECT MIN(id), MAX(id) FROM {table_name} WHERE {where_sql}", tuple(args))
             min_id, max_id = cursor.fetchone()
             if min_id is None or max_id is None:
-                print(f"没有找到 task_id {task_id} 的数据，无需删除。")
+                print(f"没有找到 task_id {task_id} 对应条件的数据，无需删除。")
                 return
 
-            # 分批删除
             current_min_id = min_id
             while current_min_id <= max_id:
                 delete_query = f"""
                     DELETE FROM {table_name}
-                    WHERE task_id = %s
+                    WHERE {where_sql}
                     AND id >= %s
                     AND id < %s + %s
                 """
-                cursor.execute(delete_query, (task_id, current_min_id, current_min_id, batch_size))
+                cursor.execute(delete_query, tuple(args + [current_min_id, current_min_id, batch_size]))
                 conn.commit()
                 current_min_id += batch_size
                 if cursor.rowcount == 0:
                     break
-            print(f"已删除 task_id {task_id} 的原有数据,{min_id,max_id}。")
+            print(f"已删除 task_id {task_id} 的原有数据, id 范围: {(min_id, max_id)}。")
     except psycopg2.Error as e:
         print(f"Error deleting existing results from database: {e}")
         conn.rollback()

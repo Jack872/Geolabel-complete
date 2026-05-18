@@ -26,6 +26,14 @@ public interface ModelService extends IService<Model> {
     List<Map<String, Object>> getModelMapByUserId(Integer userId, String taskType);
 
     /**
+     * 仅按任务类型获取模型列表，并格式化为 Map
+     *
+     * @param taskType 任务类型
+     * @return 模型列表
+     */
+    List<Map<String, Object>> getModelMapByTaskType(String taskType);
+
+    /**
      * 根据用户ID获取所有模型列表，并格式化为 Map（不过滤任务类型）
      *
      * @param userId   用户ID
@@ -39,6 +47,14 @@ public interface ModelService extends IService<Model> {
      * @return List<Model>
      */
     List<Model> getModelListByUserId(Integer userId, String taskType);
+
+    /**
+     * 仅按任务类型获取原始模型列表
+     *
+     * @param taskType 任务类型
+     * @return List<Model>
+     */
+    List<Model> getModelListByTaskType(String taskType);
 
     /**
      * 根据用户ID获取所有模型列表（不过滤任务类型）

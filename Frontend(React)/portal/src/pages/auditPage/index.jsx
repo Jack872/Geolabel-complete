@@ -17,7 +17,10 @@ import FeedbackList from './components/FeedbackList';
 import {submitAuditFail, submitAuditPass} from "@/services/audit/api";
 import { LeftOutlined, RightOutlined } from '@ant-design/icons';
 import { Decrypt } from '@/utils/utils';
+import { getTransformationParams, normalizeCoordinateCode, registerCommonProjections } from '@/utils/coordinateSystem';
 const { TextArea } = Input;
+
+registerCommonProjections();
 
 const INITIAL_AUDIT_DATA = {
   deleted_feature_ids: [],
@@ -41,7 +44,7 @@ export default function AuditPage() {
   const [targetDrawLayerId, setTargetDrawLayerId] = useState(null); // 用于步骤2
   const [visibleLayerIds, setVisibleLayerIds] = useState([]);
 
-  const { taskInfo, markGeoJsonArr, setMap, mapExtent, taskItems, currentTaskItemId } = useMap();
+  const { taskInfo, markGeoJsonArr, setMap, mapExtent, taskItems, currentTaskItemId, mapProjectionCode } = useMap();
   const {
     initialState: {
       currentState: { currentUser },
@@ -103,6 +106,14 @@ export default function AuditPage() {
   const isProgrammaticSelect = useRef(false); // 新增：同步锁
   const [featureFeedback, setFeatureFeedback] = useState({});
   const [currentFeatureFeedback, setCurrentFeatureFeedback] = useState('');
+  const taskCoordinateSystem = useMemo(
+    () => normalizeCoordinateCode(taskInfo?.data?.[0]?.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857'),
+    [taskInfo],
+  );
+  const mapProjection = useMemo(
+    () => normalizeCoordinateCode(mapProjectionCode || mapInstance?.getView?.()?.getProjection?.()?.getCode?.() || taskCoordinateSystem),
+    [mapInstance, taskCoordinateSystem, mapProjectionCode],
+  );
 
   /** 获取透明颜色 */
   const getTransparentColor = useCallback((color, opacity = 0.2) => {
@@ -133,17 +144,17 @@ export default function AuditPage() {
     }
 
     const layers = totalTypeIdArr.map(({ typeColor, typeName, typeId }) => {
-      const src = new VectorSource({ format: new GeoJSON(), projection: 'EPSG:3857' });
+      const src = new VectorSource({ format: new GeoJSON(), projection: mapProjection });
 
       for (const item of markGeoJsonArr) {
         if (typeId === item.typeId && item.markGeoJson) {
           try {
             // 动态获取坐标系信息
-            const dataProjection = item.coordinateSystem || 'EPSG:3301'; // 从数据中获取坐标系，默认为EPSG:3301
-            const features = new GeoJSON().readFeatures(item.markGeoJson, {
-              dataProjection: dataProjection,
-              featureProjection: 'EPSG:3857',
-            });
+            const dataProjection = normalizeCoordinateCode(item.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857');
+            const features = new GeoJSON().readFeatures(
+              item.markGeoJson,
+              getTransformationParams(dataProjection, mapProjection),
+            );
             features.forEach((f) => {
               // 这是最关键的修正！为每个 feature 设置一个稳定的 ID ️
               f.setId(item.markId || f.ol_uid);
@@ -185,7 +196,7 @@ export default function AuditPage() {
 
     console.log('✅ 已生成审核图层:', layers);
     return layers;
-  }, [taskInfo, markGeoJsonArr, getTransparentColor]);
+  }, [taskInfo, markGeoJsonArr, getTransparentColor, mapProjection]);
 
   useEffect(() => {
     if (!mapInstance || !auditLayers.length) return;
@@ -254,8 +265,7 @@ export default function AuditPage() {
 
             const geoJsonFormat = new GeoJSON();
             const featureGeoJSON = geoJsonFormat.writeFeatureObject(newFeature, {
-              dataProjection: taskInfo?.coordinateSystem || 'EPSG:3301', // 动态获取坐标系
-              featureProjection: 'EPSG:3857',
+              ...getTransformationParams(taskCoordinateSystem, mapProjection),
             });
 
             // 记录新增的要素
@@ -312,8 +322,7 @@ export default function AuditPage() {
 
           const shapeModifications = modifiedFeatures.map(feature => {
             const newGeometry = format.writeGeometryObject(feature.getGeometry(), {
-              dataProjection: taskInfo?.coordinateSystem || 'EPSG:3301', // 动态获取坐标系
-              featureProjection: 'EPSG:3857',
+              ...getTransformationParams(taskCoordinateSystem, mapProjection),
             });
             return {
               featureId: feature.get('markId') || feature.getId(),

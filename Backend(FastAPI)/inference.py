@@ -2,8 +2,11 @@ import json
 import sys
 import os
 import rasterio
-from pyproj import Transformer
+from affine import Affine
+from pyproj import CRS, Transformer
 from shapely import MultiPolygon, Polygon
+from shapely.geometry import GeometryCollection
+from shapely.ops import transform as shapely_transform
 from utils import crop_image_by_scope, identify_holes_and_split, post_process_mask, prepare_data_for_sklearn
 from utils_db import connect_db, delete_existing_results_db, fetch_labels_from_db, fetch_map_server_from_db, fetch_model_from_db, insert_segmentation_results_db
 from utils_yolo import process_yolo_results, filter_original_labels_with_type
@@ -33,6 +36,12 @@ from model_runtime.model_load_utils import (
 )
 from model_runtime.model_builders import build_model_from_spec
 
+LOCAL_CRS_ALIAS_MAP = {
+    "Estonian Coordinate System of 1997": "EPSG:3301",
+    "WGS 84 / Pseudo-Mercator": "EPSG:3857",
+    "WGS_1984_Web_Mercator_Auxiliary_Sphere": "EPSG:3857",
+}
+
 
 def _safe_json_load(raw, default):
     if raw is None:
@@ -47,7 +56,251 @@ def _safe_json_load(raw, default):
             return json.loads(text)
         except Exception:
             return default
-    return default
+
+
+def _parse_scope_polygons(model_scope_raw):
+    scope_data = _safe_json_load(model_scope_raw, [])
+    polygons = []
+    if not isinstance(scope_data, list):
+        return polygons
+
+    for coords in scope_data:
+        if not isinstance(coords, list) or len(coords) == 0:
+            continue
+        try:
+            shell = coords[0]
+            holes = coords[1:] if len(coords) > 1 else []
+            polygon = Polygon(shell, holes)
+            if polygon.is_valid and not polygon.is_empty:
+                polygons.append(polygon)
+        except Exception as exc:
+            print(f"解析 modelScope 失败，已跳过一个范围: {exc}")
+    return polygons
+
+
+def _clip_polygon_dict_by_scope(polygons_by_type, scope_polygons):
+    if not scope_polygons:
+        return polygons_by_type
+
+    clipped = {}
+    for type_id, polygons in polygons_by_type.items():
+        clipped_items = []
+        for polygon in polygons:
+            if polygon is None or polygon.is_empty:
+                continue
+            for scope_polygon in scope_polygons:
+                try:
+                    if not polygon.intersects(scope_polygon):
+                        continue
+                    intersection = polygon.intersection(scope_polygon)
+                    if intersection.is_empty:
+                        continue
+                    if isinstance(intersection, Polygon):
+                        clipped_items.append(intersection)
+                    elif isinstance(intersection, MultiPolygon):
+                        clipped_items.extend([geom for geom in intersection.geoms if not geom.is_empty])
+                    elif isinstance(intersection, GeometryCollection):
+                        clipped_items.extend([
+                            geom for geom in intersection.geoms
+                            if isinstance(geom, Polygon) and not geom.is_empty
+                        ])
+                except Exception as exc:
+                    print(f"裁剪 modelScope 时失败，已跳过一个面: {exc}")
+        if clipped_items:
+            clipped[type_id] = clipped_items
+    return clipped
+
+
+def _override_type_id(polygons_by_type, current_type_id):
+    if current_type_id in (None, "", "None"):
+        return polygons_by_type
+    try:
+        resolved_type_id = int(current_type_id)
+    except Exception:
+        return polygons_by_type
+
+    merged = []
+    for polygons in polygons_by_type.values():
+        merged.extend(polygons)
+    return {resolved_type_id: merged} if merged else {}
+
+
+def _transform_polygon_dict_to_3857(polygons_by_type, transformer):
+    if transformer is None:
+        return polygons_by_type
+
+    transformed = {}
+    for type_id, polygons in polygons_by_type.items():
+        next_polygons = []
+        for polygon in polygons:
+            try:
+                transformed_polygon = shapely_transform(transformer.transform, polygon)
+                if transformed_polygon is not None and not transformed_polygon.is_empty:
+                    next_polygons.append(transformed_polygon)
+            except Exception as exc:
+                print(f"坐标转换到 EPSG:3857 失败，已跳过一个面: {exc}")
+        if next_polygons:
+            transformed[type_id] = next_polygons
+    return transformed
+
+
+def normalize_crs(crs_like):
+    if crs_like is None:
+        return None
+
+    if isinstance(crs_like, CRS):
+        return crs_like
+
+    if hasattr(crs_like, "to_epsg"):
+        try:
+            epsg = crs_like.to_epsg()
+            if epsg:
+                return CRS.from_epsg(epsg)
+        except Exception:
+            pass
+
+    raw = crs_like.to_string() if hasattr(crs_like, "to_string") else str(crs_like)
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    upper_raw = raw.upper()
+    if upper_raw in {"NONE", "UNKNOWN", "PIXEL"}:
+        return None
+
+    if raw.isdigit():
+        raw = f"EPSG:{raw}"
+
+    for alias, target_epsg in LOCAL_CRS_ALIAS_MAP.items():
+        if alias.lower() in raw.lower():
+            return CRS.from_user_input(target_epsg)
+
+    try:
+        return CRS.from_user_input(raw)
+    except Exception:
+        pass
+
+    try:
+        return CRS.from_wkt(raw)
+    except Exception as exc:
+        raise ValueError(f"无法识别坐标系: {raw}") from exc
+
+
+def _build_spatial_context(image_path, db_crs_raw="EPSG:3857"):
+    with rasterio.open(image_path) as src:
+        tif_crs = normalize_crs(src.crs)
+        image_transform = src.transform
+        image_width = src.width
+        image_height = src.height
+
+    has_crs = tif_crs is not None
+    db_crs = normalize_crs(db_crs_raw) if has_crs else None
+    tif_to_db = None
+
+    if has_crs:
+        if db_crs is None:
+            raise ValueError(f"输出坐标系无效: {db_crs_raw}")
+        tif_to_db = Transformer.from_crs(tif_crs, db_crs, always_xy=True)
+        print(f"推理坐标模式: TIF={tif_crs.to_string()} -> DB={db_crs.to_string()}")
+        vectorize_transform = image_transform
+    else:
+        print("推理坐标模式: 无坐标系影像，使用像素投影翻转坐标")
+        vectorize_transform = Affine(1.0, 0.0, 0.0, 0.0, -1.0, float(image_height))
+
+    return {
+        "has_crs": has_crs,
+        "image_transform": image_transform,
+        "image_width": image_width,
+        "image_height": image_height,
+        "vectorize_transform": vectorize_transform,
+        "tif_to_db": tif_to_db,
+    }
+
+
+def _finalize_polygon_dict(polygons_by_type, spatial_context, model_scope_polygons=None, current_type_id=None,
+                           simplify_tolerance=0.0):
+    finalized = {}
+    tif_to_db = spatial_context.get("tif_to_db")
+    for type_id, polygons in (polygons_by_type or {}).items():
+        next_polygons = []
+        for polygon in polygons:
+            if polygon is None or polygon.is_empty:
+                continue
+            current_polygon = polygon
+            if simplify_tolerance and simplify_tolerance > 0:
+                current_polygon = current_polygon.simplify(simplify_tolerance, preserve_topology=True)
+            if tif_to_db is not None:
+                current_polygon = shapely_transform(tif_to_db.transform, current_polygon)
+            if current_polygon is not None and not current_polygon.is_empty:
+                next_polygons.append(current_polygon)
+        if next_polygons:
+            finalized[type_id] = next_polygons
+
+    finalized = _clip_polygon_dict_by_scope(finalized, model_scope_polygons or [])
+    finalized = _override_type_id(finalized, current_type_id)
+    return finalized
+
+
+def _vectorize_mask_to_output_polygons(mask, class_index_to_type_id, background_class_index, spatial_context,
+                                       model_scope_polygons=None, current_type_id=None, simplify_tolerance=0.0):
+    polygons_by_type = identify_holes_and_split(
+        mask,
+        spatial_context["vectorize_transform"],
+        class_index_to_type_id,
+        background_class_index
+    )
+    return _finalize_polygon_dict(
+        polygons_by_type,
+        spatial_context,
+        model_scope_polygons=model_scope_polygons,
+        current_type_id=current_type_id,
+        simplify_tolerance=simplify_tolerance,
+    )
+
+
+def _pixel_point_to_native_coords(px, py, spatial_context):
+    if spatial_context.get("has_crs"):
+        return spatial_context["image_transform"] * (px, py)
+
+    image_height = spatial_context["image_height"]
+    return float(px), float(image_height - py)
+
+
+def _build_detection_polygon_from_slice(box, offset_x, offset_y, spatial_context):
+    output_corners = []
+    for i in range(4):
+        px = float(box[i][0] + offset_x)
+        py = float(box[i][1] + offset_y)
+        x_out, y_out = _pixel_point_to_native_coords(px, py, spatial_context)
+        output_corners.append((x_out, y_out))
+    return Polygon(output_corners)
+
+
+def _assert_weight_compatibility(load_info, model_path, runtime_meta, runtime_type):
+    if not load_info.get("ok"):
+        return
+
+    matched_key_count = int(load_info.get("matched_key_count") or 0)
+    matched_key_ratio = float(load_info.get("matched_key_ratio") or 0.0)
+    missing_count = len(load_info.get("missing_keys", []) or [])
+    unexpected_count = len(load_info.get("unexpected_keys", []) or [])
+
+    severe_mismatch = (
+        matched_key_count == 0
+        or matched_key_ratio < 0.35
+        or (missing_count > matched_key_count and unexpected_count > matched_key_count)
+    )
+    if not severe_mismatch:
+        return
+
+    raise ValueError(
+        "模型权重与当前网络结构严重不匹配，已停止本次预标注，避免整图错误覆盖。"
+        f" model_path={model_path}, runtime_type={runtime_type}, "
+        f"framework={runtime_meta.get('framework')}, arch={runtime_meta.get('arch')}, "
+        f"matched={matched_key_count}/{load_info.get('model_key_count')}, "
+        f"missing_keys={missing_count}, unexpected_keys={unexpected_count}, "
+        f"sample_keys={load_info.get('sample_keys')}"
+    )
 
 
 def parse_model_metadata(model_inf: dict):
@@ -80,25 +333,115 @@ def resolve_image_path(base_path: str) -> str:
     return candidates[0]
 
 
-def predict_torch_model(model, image_tensor, device):
+def _decode_segmentation_logits(logits, num_classes, background_class_index, conf_threshold):
+    if logits is None or not torch.is_tensor(logits):
+        raise ValueError(f"无法解析分割模型输出 logits，输出类型={type(logits)}")
+
+    if logits.dim() != 4:
+        raise ValueError(f"分割 logits 维度异常，期望 4 维 [B,C,H,W]，实际为 {tuple(logits.shape)}")
+
+    logits_channels = int(logits.shape[1])
+    is_single_channel = logits_channels == 1 or int(num_classes or 0) == 1
+
+    if is_single_channel:
+        prob = torch.sigmoid(logits)[0, 0]
+        binary_mask = (prob >= float(conf_threshold)).to(torch.uint8).cpu().numpy()
+        background_idx = int(background_class_index if background_class_index is not None else 1)
+        predicted_mask = np.where(binary_mask == 1, 0, background_idx).astype(np.uint8)
+        prob_np = prob.detach().cpu().numpy()
+        debug_binary_mask = binary_mask
+    else:
+        probabilities = torch.softmax(logits, dim=1)
+        predicted_mask = torch.argmax(probabilities, dim=1).squeeze().cpu().numpy().astype(np.uint8)
+        prob_np = torch.max(probabilities[0], dim=0).values.detach().cpu().numpy()
+        debug_binary_mask = (predicted_mask != int(background_class_index)).astype(np.uint8)
+
+    foreground_ratio = float(np.mean(debug_binary_mask))
+    print(
+        f"[seg_debug] logits_shape={tuple(logits.shape)} "
+        f"prob_min={float(prob_np.min()):.6f} prob_max={float(prob_np.max()):.6f} "
+        f"prob_mean={float(prob_np.mean()):.6f} threshold={float(conf_threshold):.6f} "
+        f"foreground_ratio={foreground_ratio:.6f} mask_unique={np.unique(debug_binary_mask).tolist()} "
+        f"binary_mask_mean={float(debug_binary_mask.mean()):.6f}"
+    )
+    return predicted_mask
+
+
+def _log_input_debug(image_tensor):
+    tensor_cpu = image_tensor.detach().float().cpu()
+    if tensor_cpu.dim() == 4:
+        sample = tensor_cpu[0]
+    elif tensor_cpu.dim() == 3:
+        sample = tensor_cpu
+    else:
+        sample = tensor_cpu.reshape(1, -1)
+
+    if sample.dim() >= 3:
+        channel_mean = sample.view(sample.shape[0], -1).mean(dim=1).numpy().tolist()
+    else:
+        channel_mean = [float(sample.mean().item())]
+
+    print(
+        f"[input_debug] shape={tuple(tensor_cpu.shape)} "
+        f"min={float(tensor_cpu.min().item()):.6f} max={float(tensor_cpu.max().item()):.6f} "
+        f"mean={float(tensor_cpu.mean().item()):.6f} channel_mean={channel_mean}"
+    )
+
+
+def _pad_segmentation_input(image_tensor, multiple=32):
+    if image_tensor.dim() != 4:
+        raise ValueError(f"分割模型输入维度异常，期望 [B,C,H,W]，实际为 {tuple(image_tensor.shape)}")
+
+    _, _, original_h, original_w = image_tensor.shape
+    pad_h = (multiple - original_h % multiple) % multiple
+    pad_w = (multiple - original_w % multiple) % multiple
+
+    if pad_h == 0 and pad_w == 0:
+        return image_tensor, original_h, original_w
+
+    padded_tensor = torch.nn.functional.pad(image_tensor, (0, pad_w, 0, pad_h), mode='constant', value=0.0)
+    print(
+        f"[pad_debug] original_shape=({original_h},{original_w}), "
+        f"padded_shape=({original_h + pad_h},{original_w + pad_w}), multiple={multiple}"
+    )
+    return padded_tensor, original_h, original_w
+
+
+def _crop_segmentation_output(logits, original_h, original_w):
+    cropped_logits = logits[..., :original_h, :original_w]
+    print(f"[pad_debug] output_cropped_shape=({original_h},{original_w})")
+    return cropped_logits
+
+
+def predict_torch_model(model, image_tensor, device, num_classes, background_class_index, conf_threshold, pad_multiple=None):
     """使用 PyTorch 模型进行预测"""
     model.eval()
     with torch.no_grad():
         image_tensor = image_tensor.unsqueeze(0).to(device)
-        outputs = model(image_tensor)
+        _log_input_debug(image_tensor)
+        model_input = image_tensor
+        original_h = image_tensor.shape[2]
+        original_w = image_tensor.shape[3]
+        if pad_multiple:
+            model_input, original_h, original_w = _pad_segmentation_input(image_tensor, multiple=pad_multiple)
+        outputs = model(model_input)
         if isinstance(outputs, dict):
             outputs = outputs.get("logits", outputs.get("out"))
         elif isinstance(outputs, (list, tuple)):
             outputs = next((item for item in outputs if torch.is_tensor(item)), None)
         elif hasattr(outputs, "logits"):
             outputs = outputs.logits
-        if outputs is None or not torch.is_tensor(outputs):
-            raise ValueError(f"无法解析分割模型输出 logits，输出类型={type(outputs)}")
-        if outputs.shape[2:] != image_tensor.shape[2:]:
-            outputs = torch.nn.functional.interpolate(outputs, size=image_tensor.shape[2:], mode='bilinear',
+        if outputs.shape[2:] != model_input.shape[2:]:
+            outputs = torch.nn.functional.interpolate(outputs, size=model_input.shape[2:], mode='bilinear',
                                                       align_corners=False)
-        probabilities = torch.softmax(outputs, dim=1)
-        predicted_mask = torch.argmax(probabilities, dim=1).squeeze().cpu().numpy()
+        if pad_multiple:
+            outputs = _crop_segmentation_output(outputs, original_h, original_w)
+        predicted_mask = _decode_segmentation_logits(
+            outputs,
+            num_classes=num_classes,
+            background_class_index=background_class_index,
+            conf_threshold=conf_threshold,
+        )
     return predicted_mask.astype(np.uint8)
 
 def predict_sklearn_model(model, X, image_shape):
@@ -124,7 +467,7 @@ def predict_large_image_with_overlap(model, image, block_size, overlap, predict_
     for i in range(0, padded_H - overlap_h, step_h):
         for j in range(0, padded_W - overlap_w, step_w):
             block = padded_image[:, i:i + block_h, j:j + block_w]
-            if predict_func.__name__ == "predict_torch_model":
+            if device is not None:
                 block_tensor = torch.from_numpy(block).float().to(device)
                 block_pred = predict_func(model, block_tensor, device)
             else:  # predict_sklearn_model
@@ -230,21 +573,13 @@ def inference(argv=None):
     USER_ID = int(argv[3])
     MODEL_identifier = str(argv[4])  # 可以是 model_name 或 model_id
     TASK_ITEM_ID = int(argv[11]) if len(argv) > 11 and argv[11] not in (None, "", "None") else None
-    # model_scope_str = argv[9]  # 模型作用范围
+    CURRENT_TYPE_ID = argv[12] if len(argv) > 12 else None
+    DB_CRS_RAW = argv[13] if len(argv) > 13 and argv[13] not in (None, "", "None") else "EPSG:3857"
+    model_scope_str = argv[9]
 
     # 类别映射
     class_mapping = argv[10]
-
-    # 解析 model_scope
-    # try:
-    #     model_scope = json.loads(model_scope_str)
-    #     if not model_scope:
-    #         print("No model scope provided, will process entire image.")
-    #     else:
-    #         print("Model scope coordinates:", model_scope)
-    # except json.JSONDecodeError as e:
-    #     print(f"Error decoding model scope: {e}")
-    #     model_scope_str = None
+    model_scope_polygons = _parse_scope_polygons(model_scope_str)
 
     # 连接数据库
     conn = connect_db()
@@ -283,7 +618,8 @@ def inference(argv=None):
 
     # 提取 user_id 和 status
     user_id = USER_ID
-    status = 0
+    # status=2 约定为模型预标注结果，仅与其他模型预标注结果相互覆盖
+    status = 2
     # type_arr = fetch_typeid_from_db(conn, TASK_ID)
 
     # 定义模型保存路径
@@ -321,15 +657,23 @@ def inference(argv=None):
             safe_default = hard_default if hard_default is not None else (1 if cast_type is int else 0.0)
             return cast_type(safe_default)
 
+    try:
+        spatial_context = _build_spatial_context(IMAGE_PATH, DB_CRS_RAW)
+    except Exception as exc:
+        print(f"初始化推理坐标上下文失败: {exc}")
+        conn.close()
+        return
+
+    runtime_meta = dict(model_meta)
+    runtime_meta["modelPath"] = model_save_path
+    runtime_meta["path"] = model_save_path
+    runtime_meta["modelName"] = model_inf.get("model_name")
     model_status = model_inf.get("status", 1)
+    segmentation_pad_multiple = 32 if str(runtime_meta.get("framework", "")).lower() == "smp" else None
 
     # 兼容历史状态：0/1 都允许推理
     if model_status in [0, 1]:
         # 统一模型构造入口（从 framework + arch 出发）
-        runtime_meta = dict(model_meta)
-        runtime_meta["modelPath"] = model_save_path
-        runtime_meta["path"] = model_save_path
-        runtime_meta["modelName"] = model_inf.get("model_name")
 
         framework_hint = str(runtime_meta.get("framework") or "").lower()
         arch_hint = str(runtime_meta.get("arch") or "").lower()
@@ -438,11 +782,19 @@ def inference(argv=None):
                 conn.close()
                 return
 
+            try:
+                _assert_weight_compatibility(load_info, model_save_path, runtime_meta, MODEL_TYPE)
+            except ValueError as exc:
+                print(str(exc))
+                conn.close()
+                return
+
             if load_info.get("missing_keys") or load_info.get("unexpected_keys"):
                 print(
                     f"[model_load][warn] model_path={model_save_path} | framework={runtime_meta.get('framework')} | "
                     f"arch={runtime_meta.get('arch')} | missing_keys={len(load_info.get('missing_keys', []))} | "
                     f"unexpected_keys={len(load_info.get('unexpected_keys', []))} | "
+                    f"matched={load_info.get('matched_key_count')}/{load_info.get('model_key_count')} | "
                     f"sample_keys={load_info.get('sample_keys')} | message={load_info.get('message')}"
                 )
             else:
@@ -467,6 +819,7 @@ def inference(argv=None):
             min_object_size = _get_param("min_object_size", argv[5], int, 50)
             hole_size_threshold = _get_param("hole_size_threshold", argv[6], int, 10)
             boundary_smoothing = _get_param("boundary_smoothing", argv[7], int, 1)
+            seg_conf_threshold = _get_param("conf_threshold", 0.5, float, 0.5)
 
             # 直接加载整个图像
             with rasterio.open(IMAGE_PATH) as src:
@@ -480,10 +833,32 @@ def inference(argv=None):
             if MODEL_TYPE in ["light_unet", "unet", "fast_scnn", "deeplab", "segformer"]:
                 if H <= block_size[0] and W <= block_size[1]:
                     image_tensor = torch.from_numpy(image).float().to(device)
-                    predicted_mask = predict_torch_model(model, image_tensor, device)
+                    predicted_mask = predict_torch_model(
+                        model,
+                        image_tensor,
+                        device,
+                        num_classes=num_classes,
+                        background_class_index=background_class_index,
+                        conf_threshold=seg_conf_threshold,
+                        pad_multiple=segmentation_pad_multiple,
+                    )
                 else:
                     predicted_mask = predict_large_image_with_overlap(
-                        model, image, block_size, overlap, predict_torch_model, device)
+                        model,
+                        image,
+                        block_size,
+                        overlap,
+                        lambda run_model, block_tensor, run_device: predict_torch_model(
+                            run_model,
+                            block_tensor,
+                            run_device,
+                            num_classes=num_classes,
+                            background_class_index=background_class_index,
+                            conf_threshold=seg_conf_threshold,
+                            pad_multiple=segmentation_pad_multiple,
+                        ),
+                        device,
+                    )
 
             # 后处理掩膜
             predicted_mask = post_process_mask(
@@ -494,21 +869,24 @@ def inference(argv=None):
             )
 
             # 转换为多边形
-            segmentation_polygons = identify_holes_and_split(
-                predicted_mask, window_transform,
+            segmentation_polygons = _vectorize_mask_to_output_polygons(
+                predicted_mask,
                 class_index_to_type_id,
-                background_class_index
+                background_class_index,
+                spatial_context,
+                model_scope_polygons=model_scope_polygons,
+                current_type_id=CURRENT_TYPE_ID,
             )
 
-            # 更新数据库结果
+            delete_existing_results_db(conn, TASK_ID, user_id=user_id, task_item_id=TASK_ITEM_ID, status=status)
             insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status, TASK_ITEM_ID)
             torch.cuda.empty_cache()
 
         elif MODEL_TYPE == "yolo":
             conf_threshold = _get_param("conf_threshold", argv[5], float, 0.3)
             slice_size = _get_param("slice_size", argv[6], int, 640)
-            overlap_ratio = _get_param("overlap_ratio", 0.1, float, 0.1)
-            iou_threshold = _get_param("iou_threshold", 0.7, float, 0.7)
+            iou_threshold = _get_param("iou_threshold", argv[7], float, 0.7)
+            overlap_ratio = _get_param("overlap_ratio", argv[8], float, 0.1)
 
             # --- 原始代码的大图读取部分 ---
             with rasterio.open(IMAGE_PATH) as src:
@@ -519,8 +897,6 @@ def inference(argv=None):
                     image = image[:, :, :3]  # 去掉 Alpha 通道
 
                 # 💥 【关键修复 1：强制转换 16 位图为 8 位图】
-                import numpy as np
-
                 if image.dtype != np.uint8:
                     print(f"⚠️ 警告: 发现非 8位 图像 (当前为 {image.dtype})，正在强制拉伸为 8位 uint8...")
                     # 将像素值线性映射到 0-255
@@ -529,28 +905,6 @@ def inference(argv=None):
                 # 记录原始图像尺寸和坐标转换参数
                 ori_H, ori_W, _ = image.shape
                 image_transform = src.transform
-
-            # 动态坐标系检测
-            source_crs = None
-            target_crs = 'EPSG:3857'
-            has_crs = False
-
-            try:
-                with rasterio.open(IMAGE_PATH) as src_crs_check:
-                    if src_crs_check.crs:
-                        source_crs = src_crs_check.crs.to_string()
-                        has_crs = True
-                        print(f"从影像文件检测到坐标系: {source_crs}")
-                    else:
-                        print("影像无坐标系，使用像素坐标模式（本地任务）")
-            except Exception as e:
-                print(f"无法检测影像坐标系，使用像素坐标模式: {e}")
-
-            if has_crs:
-                transformer = Transformer.from_crs(source_crs, target_crs, always_xy=True)
-                print(f"坐标系转换初始化: {source_crs} -> {target_crs}")
-            else:
-                transformer = None
 
             # --- 定义切片参数 ---
             stride = int(slice_size * (1 - overlap_ratio))
@@ -613,22 +967,7 @@ def inference(argv=None):
                             if type_id is None: continue
 
                             # *** 关键步骤：坐标还原 ***
-                            geo_corners = []
-                            for i in range(4):
-                                px = box[i][0] + x1
-                                py = box[i][1] + y1
-                                # 大图像素 -> 原始地理坐标
-                                x_native, y_native = image_transform * (px, py)
-                                if transformer is not None:
-                                    # 有坐标系：转换到 EPSG:3857
-                                    x_out, y_out = transformer.transform(x_native, y_native)
-                                else:
-                                    # 无坐标系：直接使用像素坐标
-                                    x_out, y_out = px, py
-                                geo_corners.append((x_out, y_out))
-
-                            # 创建多边形
-                            poly = Polygon(geo_corners)
+                            poly = _build_detection_polygon_from_slice(box, x1, y1, spatial_context)
                             if type_id not in detection_polygons:
                                 detection_polygons[type_id] = []
                             detection_polygons[type_id].append(poly)
@@ -660,9 +999,13 @@ def inference(argv=None):
             # delete_existing_results_db(conn, TASK_ID)
             # insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status)
 
-            # 直接删除旧数据
-            delete_existing_results_db(conn, TASK_ID)
-            # 只插入这次检测到的新数据 (哪怕是 0 个，也就什么都不插入)
+            detection_polygons = _finalize_polygon_dict(
+                detection_polygons,
+                spatial_context,
+                model_scope_polygons=model_scope_polygons,
+                current_type_id=CURRENT_TYPE_ID,
+            )
+            delete_existing_results_db(conn, TASK_ID, user_id=user_id, task_item_id=TASK_ITEM_ID, status=status)
             insert_segmentation_results_db(conn, TASK_ID, detection_polygons, user_id, status, TASK_ITEM_ID)
 
             torch.cuda.empty_cache()
@@ -705,17 +1048,50 @@ def inference(argv=None):
             block_size = (1024, 1024)
             overlap = (128, 128)
             _, H, W = image.shape
+            seg_conf_threshold = _get_param("conf_threshold", 0.5, float, 0.5)
             
             if H <= block_size[0] and W <= block_size[1]:
                 image_tensor = torch.from_numpy(image).float().to(device)
+                _log_input_debug(image_tensor.unsqueeze(0))
+                model_input = image_tensor.unsqueeze(0)
+                original_h = model_input.shape[2]
+                original_w = model_input.shape[3]
+                if segmentation_pad_multiple:
+                    model_input, original_h, original_w = _pad_segmentation_input(model_input, multiple=segmentation_pad_multiple)
                 with torch.no_grad():
-                    outputs = model(image_tensor.unsqueeze(0))
-                predicted_mask = torch.argmax(torch.softmax(outputs, dim=1), dim=1).squeeze().cpu().numpy()
+                    outputs = model(model_input)
+                if outputs.shape[2:] != model_input.shape[2:]:
+                    outputs = torch.nn.functional.interpolate(outputs, size=model_input.shape[2:], mode='bilinear',
+                                                              align_corners=False)
+                if segmentation_pad_multiple:
+                    outputs = _crop_segmentation_output(outputs, original_h, original_w)
+                predicted_mask = _decode_segmentation_logits(
+                    outputs,
+                    num_classes=num_classes,
+                    background_class_index=background_class_index,
+                    conf_threshold=seg_conf_threshold,
+                )
             else:
                 def torchscript_predict(model, block_tensor, device):
+                    _log_input_debug(block_tensor.unsqueeze(0))
+                    model_input = block_tensor.unsqueeze(0)
+                    original_h = model_input.shape[2]
+                    original_w = model_input.shape[3]
+                    if segmentation_pad_multiple:
+                        model_input, original_h, original_w = _pad_segmentation_input(model_input, multiple=segmentation_pad_multiple)
                     with torch.no_grad():
-                        outputs = model(block_tensor.unsqueeze(0))
-                    return torch.argmax(torch.softmax(outputs, dim=1), dim=1).squeeze().cpu().numpy()
+                        outputs = model(model_input)
+                    if outputs.shape[2:] != model_input.shape[2:]:
+                        outputs = torch.nn.functional.interpolate(outputs, size=model_input.shape[2:], mode='bilinear',
+                                                                  align_corners=False)
+                    if segmentation_pad_multiple:
+                        outputs = _crop_segmentation_output(outputs, original_h, original_w)
+                    return _decode_segmentation_logits(
+                        outputs,
+                        num_classes=num_classes,
+                        background_class_index=background_class_index,
+                        conf_threshold=seg_conf_threshold,
+                    )
                 
                 predicted_mask = predict_large_image_with_overlap(
                     model, image, block_size, overlap, torchscript_predict, device
@@ -731,11 +1107,15 @@ def inference(argv=None):
                 hole_size_threshold=hole_size_threshold,
                 boundary_smoothing=boundary_smoothing
             )
-            segmentation_polygons = identify_holes_and_split(
-                predicted_mask, window_transform,
+            segmentation_polygons = _vectorize_mask_to_output_polygons(
+                predicted_mask,
                 class_index_to_type_id,
-                background_class_index
+                background_class_index,
+                spatial_context,
+                model_scope_polygons=model_scope_polygons,
+                current_type_id=CURRENT_TYPE_ID,
             )
+            delete_existing_results_db(conn, TASK_ID, user_id=user_id, task_item_id=TASK_ITEM_ID, status=status)
             insert_segmentation_results_db(conn, TASK_ID, segmentation_polygons, user_id, status, TASK_ITEM_ID)
             torch.cuda.empty_cache()
         except Exception as e:

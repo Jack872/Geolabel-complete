@@ -8,12 +8,15 @@ import com.example.labelMark.service.TaskService;
 import com.example.labelMark.service.ModelService; // 新增导入
 import com.example.labelMark.service.TypeService;
 import com.example.labelMark.service.TaskAcceptedService;
+import com.example.labelMark.service.GeoServerService;
 import com.example.labelMark.utils.CoordinateConverter;
+import com.example.labelMark.utils.CoordinateSystemUtils;
 import com.example.labelMark.utils.ResultGenerator;
 import com.example.labelMark.vo.constant.Result;
 import com.example.labelMark.vo.constant.StatusEnum;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -97,6 +100,10 @@ public class MarkController {
 
     @Resource
     private TaskExecutorService taskExecutorService;
+    @Resource
+    private GeoServerService geoServerService;
+    @Resource
+    private CoordinateSystemUtils coordinateSystemUtils;
 
     /**
      * 将任务中的 map_server 字段解析为可被 Python 直接读取的本地栅格路径。
@@ -270,6 +277,7 @@ public class MarkController {
         String param2 = params.get("param2") != null ? params.get("param2").toString() : "";
         String param3 = params.get("param3") != null ? params.get("param3").toString() : "";
         String param4 = params.get("param4") != null ? params.get("param4").toString() : "";
+        Object currentTypeId = params.get("currentTypeId");
 
         ObjectMapper objectMapper = new ObjectMapper();
         String categoryMappingStr = "{}";
@@ -308,6 +316,7 @@ public class MarkController {
                 mapfilePathStr = resolveCoveragePath(file_name);
             }
         }
+        String taskCoordinateSystem = resolveTaskCoordinateSystem(_task1, _taskItem1);
 
         // 准备请求体
         Map<String, Object> requestBody = new HashMap<>();
@@ -322,6 +331,10 @@ public class MarkController {
         requestBody.put("param4", param4);
         requestBody.put("categoryMapping", categoryMappingStr); // 使用处理后的JSON字符串
         requestBody.put("modelScopeStr", modelScopeStr);
+        requestBody.put("db_crs", taskCoordinateSystem);
+        if (currentTypeId != null) {
+            requestBody.put("currentTypeId", currentTypeId);
+        }
 
         // 将任务提交到队列异步执行
         taskExecutorService.executeInferenceFunctionAsync(requestBody);
@@ -411,6 +424,7 @@ public class MarkController {
                 mapfilePathStr2 = resolveCoveragePath(file_name);
             }
         }
+        String taskCoordinateSystem = resolveTaskCoordinateSystem(_task2, _taskItem2);
 
         // 准备请求体
         Map<String, Object> requestBody = new HashMap<>();
@@ -425,6 +439,7 @@ public class MarkController {
         requestBody.put("categoryMapping", categoryMapping); // 使用处理后的JSON字符串
         requestBody.put("user_id", userId);
         requestBody.put("modelScopeStr", modelScopeStr);
+        requestBody.put("db_crs", taskCoordinateSystem);
         requestBody.put("tasktype", tasktype);
 
 
@@ -503,36 +518,26 @@ public class MarkController {
     public Map<String, Object> getModelList(@RequestBody Map<String, String> request) {
         // 获取前端传来的用户ID和任务类型
         String userIdStr = request.get("user_id");
-        String taskType = request.get("task_type"); // 新增任务类型参数
+        String taskType = request.get("task_type");
         System.out.println("当前userid为" + userIdStr + ", taskType为" + taskType);
 
         Map<String, Object> response = new HashMap<>();
 
-        if (userIdStr == null || userIdStr.trim().isEmpty()) {
+        if (taskType == null || taskType.trim().isEmpty()) {
             response.put("code", StatusEnum.FAIL.code);
-            response.put("message", "用户ID不能为空");
+            response.put("message", "任务类型不能为空");
             return response;
         }
 
         try {
-            Integer userId = Integer.valueOf(userIdStr);
             List<Map<String, Object>> modelMap;
-
-            // 根据是否传递task_type来决定获取模型的方式
-            if (taskType != null && !taskType.trim().isEmpty()) {
-                // 按任务类型筛选模型
-                modelMap = modelService.getModelMapByUserId(userId, taskType);
-                System.out.println("按任务类型筛选 - Model List for user " + userId + " and taskType " + taskType + ": " + modelMap);
-            } else {
-                // 获取该用户的全部模型数据
-                modelMap = modelService.getModelMapByUserId(userId);
-                System.out.println("获取全部模型 - Model List for user " + userId + ": " + modelMap);
-            }
+            modelMap = modelService.getModelMapByTaskType(taskType);
+            System.out.println("按任务类型筛选全部模型 - taskType " + taskType + ": " + modelMap);
 
             if (modelMap.isEmpty()) {
                 response.put("code", StatusEnum.SUCCESS.code);
-                response.put("message", taskType != null ? "该用户在此任务类型下没有关联的模型" : "该用户没有关联的模型");
-                response.put("data", new HashMap<>()); // 返回空 Map
+                response.put("message", "当前任务类型下没有可用模型");
+                response.put("data", new HashMap<>());
             } else {
                 response.put("code", StatusEnum.SUCCESS.code);
                 response.put("message", "成功获取模型列表");
@@ -541,10 +546,6 @@ public class MarkController {
 
             return response;
 
-        } catch (NumberFormatException e) {
-            response.put("code", StatusEnum.FAIL.code);
-            response.put("message", "无效的用户ID格式");
-            return response;
         } catch (Exception e) {
             e.printStackTrace();
             response.put("code", StatusEnum.FAIL.code);
@@ -595,6 +596,58 @@ public class MarkController {
             errorResponse.put("message", "更新样本失败: " + e.getMessage());
             return errorResponse;
         }
+    }
+
+    private String resolveTaskCoordinateSystem(com.example.labelMark.domain.Task task,
+                                               com.example.labelMark.domain.TaskItem taskItem) {
+        String taskSource = taskItem != null ? taskItem.getTaskSource() : task.getTaskSource();
+        if ("local".equalsIgnoreCase(taskSource)) {
+            String localImagePath = taskItem != null ? taskItem.getLocalImagePath() : task.getLocalImagePath();
+            if (localImagePath == null || localImagePath.trim().isEmpty()) {
+                return "NONE";
+            }
+            return normalizeCoordinateSystem(coordinateSystemUtils.getCoordinateSystemFromFile(localImagePath), "NONE");
+        }
+
+        String mapServer = taskItem != null ? taskItem.getMapServer() : task.getMapServer();
+        if (mapServer == null || mapServer.trim().isEmpty()) {
+            return coordinateSystemUtils.getDefaultCoordinateSystem();
+        }
+
+        try {
+            String coverageInfo = geoServerService.getCoverageInfo(mapServer);
+            if (coverageInfo != null && coverageInfo.trim().startsWith("{")) {
+                JsonNode coverageNode = new ObjectMapper().readTree(coverageInfo).path("coverage");
+                String srs = coverageNode.path("srs").asText(null);
+                if (srs != null && !srs.trim().isEmpty()) {
+                    return normalizeCoordinateSystem(srs, coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+
+                JsonNode bboxCrsNode = coverageNode.path("nativeBoundingBox").path("crs");
+                if (bboxCrsNode.isTextual()) {
+                    return normalizeCoordinateSystem(bboxCrsNode.asText(), coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+                String bboxCrsText = bboxCrsNode.path("$").asText(null);
+                if (bboxCrsText != null && !bboxCrsText.trim().isEmpty()) {
+                    return normalizeCoordinateSystem(bboxCrsText, coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("解析 GeoServer coverage 坐标系失败: " + e.getMessage());
+        }
+
+        return coordinateSystemUtils.getDefaultCoordinateSystem();
+    }
+
+    private String normalizeCoordinateSystem(String crs, String fallback) {
+        if (crs == null || crs.trim().isEmpty()) {
+            return fallback;
+        }
+        String normalized = crs.trim().toUpperCase();
+        if ("PIXEL".equals(normalized) || "UNKNOWN".equals(normalized)) {
+            return "NONE";
+        }
+        return normalized;
     }
 
     @PostMapping("/geometry/split")

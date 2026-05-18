@@ -60,10 +60,27 @@ public class GeoServerServiceImpl implements GeoServerService {
     @Override
     public String getCoverageInfo(String mapServer) {
         Server server = serverService.getOne(new QueryWrapper<Server>().eq("ser_name", mapServer));
-        String coverageName = mapServer + "_" + server.getSetName() + "_" +
-                server.getSerYear()
-                        .replaceAll("[:.]", "")
-                        .replace("T", "_");
+        if (server == null) {
+            throw new IllegalStateException("未找到对应服务记录: " + mapServer);
+        }
+
+        String coverageName = null;
+        String publishUrl = server.getPublishUrl();
+        if (publishUrl != null && !publishUrl.trim().isEmpty()) {
+            String normalized = publishUrl.trim();
+            int idx = normalized.lastIndexOf('/');
+            if (idx >= 0 && idx < normalized.length() - 1) {
+                coverageName = normalized.substring(idx + 1).replace(".json", "").trim();
+            }
+        }
+
+        if (coverageName == null || coverageName.isEmpty()) {
+            coverageName = mapServer + "_" + server.getSetName() + "_" +
+                    server.getSerYear()
+                            .replaceAll("[:.]", "")
+                            .replace("T", "_");
+        }
+
         String url = UriComponentsBuilder.fromHttpUrl(geoserverUrl)
                 .pathSegment("rest", "workspaces", "LUU", "coveragestores",
                         mapServer, "coverages", coverageName + ".json")

@@ -26,6 +26,8 @@ import com.example.labelMark.service.ProvenanceService;
 import com.example.labelMark.service.TypeService;
 import com.example.labelMark.service.TaskExecutorService;
 import com.example.labelMark.service.TaskNotificationService;
+import com.example.labelMark.service.GeoServerService;
+import com.example.labelMark.utils.CoordinateSystemUtils;
 import com.example.labelMark.utils.ResultGenerator;
 import com.example.labelMark.vo.LoginUser;
 import com.example.labelMark.vo.TaskInfoDTO;
@@ -33,6 +35,7 @@ import com.example.labelMark.vo.constant.Result;
 import com.example.labelMark.vo.constant.StatusEnum;
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
@@ -118,6 +121,10 @@ public class TaskController {
     private MinioConfig minioConfig;
     @Resource
     private ApplicationContext applicationContext;
+    @Resource
+    private GeoServerService geoServerService;
+    @Resource
+    private CoordinateSystemUtils coordinateSystemUtils;
 
 
     @PostMapping("/createTask")
@@ -295,6 +302,16 @@ public class TaskController {
         if (taskid != null) {
             marks = markService.getMarkByTaskId(taskid);
         }
+        String taskCoordinateSystem = coordinateSystemUtils.getDefaultCoordinateSystem();
+        if (taskid != null) {
+            Task currentTask = taskService.selectTaskById(taskid);
+            TaskItem currentTaskItem = null;
+            List<TaskItem> taskItems = taskItemService.listByTaskId(taskid);
+            if (taskItems != null && !taskItems.isEmpty()) {
+                currentTaskItem = taskItems.get(0);
+            }
+            taskCoordinateSystem = resolveTaskCoordinateSystem(currentTask, currentTaskItem);
+        }
 
         // 计算过滤后的总数
         int filteredTotal = result.size();
@@ -314,7 +331,7 @@ public class TaskController {
         response.put("code", 200);
         response.put("data", result);
         response.put("success", true);
-        response.put("markGeoJsonArr", convertGeojson(marks));
+        response.put("markGeoJsonArr", attachCoordinateSystem(convertGeojson(marks), taskCoordinateSystem));
         response.put("total", filteredTotal); // 返回过滤后的总数
         return response;
     }
@@ -529,6 +546,16 @@ public class TaskController {
         if (taskid != null) {
             marks = markService.getMarkByTaskId(taskid);
         }
+        String taskCoordinateSystem = coordinateSystemUtils.getDefaultCoordinateSystem();
+        if (taskid != null) {
+            Task currentTask = taskService.selectTaskById(taskid);
+            TaskItem currentTaskItem = null;
+            List<TaskItem> taskItems = taskItemService.listByTaskId(taskid);
+            if (taskItems != null && !taskItems.isEmpty()) {
+                currentTaskItem = taskItems.get(0);
+            }
+            taskCoordinateSystem = resolveTaskCoordinateSystem(currentTask, currentTaskItem);
+        }
 
         // 计算起始索引和结束索引，实现分页
         int startIndex = (current - 1) * pageSize;
@@ -545,7 +572,7 @@ public class TaskController {
         response.put("code", 200);
         response.put("data", result);
         response.put("success", true);
-        response.put("markGeoJsonArr", convertGeojson(marks));
+        response.put("markGeoJsonArr", attachCoordinateSystem(convertGeojson(marks), taskCoordinateSystem));
         response.put("total", filteredTotal); // 返回过滤后的总数
         return response;
     }
@@ -584,6 +611,7 @@ public class TaskController {
         taskInfo.setTaskClass(task.getTaskClass());
         taskInfo.setScore(task.getScore());
         taskInfo.setTaskSource(currentTaskItem != null ? currentTaskItem.getTaskSource() : task.getTaskSource());
+        taskInfo.setCoordinateSystem(resolveTaskCoordinateSystem(task, currentTaskItem));
         taskInfo.setAnnotationSchema(getCachedTaskAnnotationSchema(task));
         taskInfo.setAnnotationSchemaVersion(task.getAnnotationSchemaVersion() == null ? 1 : task.getAnnotationSchemaVersion());
 
@@ -628,13 +656,79 @@ public class TaskController {
         response.put("code", 200);
         response.put("data", resultList);
         response.put("success", true);
-        response.put("markGeoJsonArr", convertGeojson(marks));
+        response.put("markGeoJsonArr", attachCoordinateSystem(convertGeojson(marks), taskInfo.getCoordinateSystem()));
         response.put("taskTypeAttributes", taskTypeAttributeService.getTaskTypeAttributeDetails(taskid, null));
         response.put("taskItems", buildTaskItemPayload(taskItems));
         response.put("currentTaskItemId", currentTaskItem != null ? currentTaskItem.getTaskItemId() : null);
         response.put("taskSource", currentTaskItem != null ? currentTaskItem.getTaskSource() : (task.getTaskSource() != null ? task.getTaskSource() : "geoserver"));
+        response.put("coordinateSystem", taskInfo.getCoordinateSystem());
         response.put("localImagePath", currentTaskItem != null ? currentTaskItem.getLocalImagePath() : task.getLocalImagePath());
         return response;
+    }
+
+    private String resolveTaskCoordinateSystem(Task task, TaskItem taskItem) {
+        String taskSource = taskItem != null ? taskItem.getTaskSource() : task.getTaskSource();
+        if ("local".equalsIgnoreCase(taskSource)) {
+            String localImagePath = taskItem != null ? taskItem.getLocalImagePath() : task.getLocalImagePath();
+            if (localImagePath == null || localImagePath.trim().isEmpty()) {
+                return "NONE";
+            }
+            return normalizeCoordinateSystem(coordinateSystemUtils.getCoordinateSystemFromFile(localImagePath), "NONE");
+        }
+
+        String mapServer = taskItem != null ? taskItem.getMapServer() : task.getMapServer();
+        if (mapServer == null || mapServer.trim().isEmpty()) {
+            return coordinateSystemUtils.getDefaultCoordinateSystem();
+        }
+
+        try {
+            String coverageInfo = geoServerService.getCoverageInfo(mapServer);
+            if (coverageInfo != null && coverageInfo.trim().startsWith("{")) {
+                JsonNode coverageNode = new ObjectMapper().readTree(coverageInfo).path("coverage");
+                String srs = coverageNode.path("srs").asText(null);
+                if (srs != null && !srs.trim().isEmpty()) {
+                    return normalizeCoordinateSystem(srs, coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+
+                JsonNode bboxCrsNode = coverageNode.path("nativeBoundingBox").path("crs");
+                if (bboxCrsNode.isTextual()) {
+                    return normalizeCoordinateSystem(bboxCrsNode.asText(), coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+                String bboxCrsText = bboxCrsNode.path("$").asText(null);
+                if (bboxCrsText != null && !bboxCrsText.trim().isEmpty()) {
+                    return normalizeCoordinateSystem(bboxCrsText, coordinateSystemUtils.getDefaultCoordinateSystem());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析 GeoServer coverage 坐标系失败，mapServer={}, err={}", mapServer, e.getMessage());
+        }
+
+        return coordinateSystemUtils.getDefaultCoordinateSystem();
+    }
+
+    private String normalizeCoordinateSystem(String crs, String fallback) {
+        if (crs == null || crs.trim().isEmpty()) {
+            return fallback;
+        }
+        String normalized = crs.trim().toUpperCase();
+        if ("PIXEL".equals(normalized) || "UNKNOWN".equals(normalized)) {
+            return "NONE";
+        }
+        return normalized;
+    }
+
+    private List<Map<String, Object>> attachCoordinateSystem(List<Map<String, Object>> markGeoJsonArr,
+                                                             String coordinateSystem) {
+        if (markGeoJsonArr == null || markGeoJsonArr.isEmpty()) {
+            return markGeoJsonArr;
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> item : markGeoJsonArr) {
+            Map<String, Object> next = new HashMap<>(item);
+            next.put("coordinateSystem", coordinateSystem);
+            result.add(next);
+        }
+        return result;
     }
 
     @PostMapping("/publishLocalTask")
@@ -1740,6 +1834,8 @@ public class TaskController {
             for (String taskId : taskIds) {
                 Task task = taskService.selectTaskById(Integer.parseInt(taskId));
                 String mapfilePath = resolveTaskMapfilePath(task);
+                TaskItem currentTaskItem = taskItemService.getDefaultItem(Integer.parseInt(taskId));
+                String taskCoordinateSystem = resolveTaskCoordinateSystem(task, currentTaskItem);
                 // 准备单个推理请求体
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("taskid", taskId);
@@ -1752,6 +1848,7 @@ public class TaskController {
                 requestBody.put("param4", param4);
                 requestBody.put("categoryMapping", categoryMapping);
                 requestBody.put("modelScopeStr", "");
+                requestBody.put("db_crs", taskCoordinateSystem);
 
                 // 提交到异步执行队列
                 taskExecutorService.executeInferenceFunctionAsync(requestBody);

@@ -143,6 +143,35 @@ def _build_smp_unetplusplus(model_meta: Dict[str, Any], device):
     return model, "unet", True
 
 
+def _build_smp_deeplabv3plus(model_meta: Dict[str, Any], device):
+    try:
+        import segmentation_models_pytorch as smp
+    except Exception as exc:
+        raise RuntimeError("unsupported: smp/deeplabv3plus 需要安装 segmentation_models_pytorch") from exc
+
+    ctor = _get_constructor_args(model_meta)
+    variant = str(model_meta.get("variant") or "").strip().lower()
+    encoder_name = (
+        ctor.get("encoder_name")
+        or model_meta.get("encoder")
+        or model_meta.get("backbone")
+    )
+
+    if not encoder_name and variant.startswith("deeplabv3plus-"):
+        encoder_name = variant.split("deeplabv3plus-", 1)[1]
+
+    encoder_name = encoder_name or "resnet50"
+    encoder_weights = ctor.get("encoder_weights", None)
+
+    model = smp.DeepLabV3Plus(
+        encoder_name=encoder_name,
+        encoder_weights=encoder_weights,
+        in_channels=_to_int(model_meta.get("inputChannels"), 3),
+        classes=_to_int(model_meta.get("numClasses"), 2),
+    ).to(device)
+    return model, "deeplab", True
+
+
 def _build_transformers_segformer(model_meta: Dict[str, Any], device):
     try:
         from transformers import SegformerConfig, SegformerForSemanticSegmentation
@@ -220,6 +249,7 @@ MODEL_BUILDERS: Dict[Tuple[str, str], Callable[[Dict[str, Any], Any], Tuple[Any,
     ("native", "deeplabv3plus"): _build_native_deeplabv3plus,
     ("smp", "unet"): _build_smp_unet,
     ("smp", "unetplusplus"): _build_smp_unetplusplus,
+    ("smp", "deeplabv3plus"): _build_smp_deeplabv3plus,
     ("transformers", "segformer"): _build_transformers_segformer,
     ("yolo", "yolo"): _build_yolo,
     ("sklearn", "xgboost"): _build_xgboost,

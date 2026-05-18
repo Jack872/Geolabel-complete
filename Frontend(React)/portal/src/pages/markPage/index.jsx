@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Button, Form, Input, message, Popconfirm, Tag, Slider, Select, Tooltip } from 'antd';
 import { reqSaveService, reqExportService, reqAuditTask, reqAssistFunction, reqUqdateLabel,
   reqGetModelList,reqInferenceFunction, reqSplitPolygon, reqUnionPolygons} from '@/services/map/api';
-import { reqGetMyTaskIds } from '@/services/taskManage/api';
 import { Vector as VectorLayer } from 'ol/layer';
 import { Vector as VectorSource } from 'ol/source';
 import { Fill, Stroke, Style } from 'ol/style';
@@ -17,8 +16,7 @@ import DragBox from 'ol/interaction/DragBox';
 import {
   CheckOutlined, CloseOutlined, DeleteOutlined, RollbackOutlined, UpOutlined,
   SaveOutlined, SyncOutlined, ScissorOutlined, UndoOutlined, RedoOutlined,
-  RobotOutlined, ThunderboltOutlined, AimOutlined, AppstoreOutlined,
-  ExperimentOutlined, BuildOutlined,
+  RobotOutlined, ThunderboltOutlined, AppstoreOutlined, BuildOutlined, QuestionCircleOutlined,
   LeftOutlined, RightOutlined,
   MergeCellsOutlined,
   SplitCellsOutlined,
@@ -34,7 +32,9 @@ import CollectionCreateForm from '@/components/CollectionCreateForm';
 import { Collection } from 'ol';
 import Polygon from 'ol/geom/Polygon';
 import { Text } from 'ol/style';
-import { getCoordinateSystemFromTask, getTransformationParams } from '@/utils/coordinateSystem';
+import { getCoordinateSystemFromTask, getTransformationParams, normalizeCoordinateCode, registerCommonProjections } from '@/utils/coordinateSystem';
+
+registerCommonProjections();
 
 
 // 创建可旋转矩形的几何函数
@@ -97,10 +97,14 @@ export default function () {
   const [showUploader, setShowUploader] = useState(false);
   const [showAuditLoader, setShowAuditLoader] = useState(false);
   const [markSource, setMarkSource] = useState(new VectorSource());
-  const [modelContainerExpanded, setModelContainerExpanded] = useState(false);
   const [fillOpacity, setFillOpacity] = useState(0.1);
   const [modelList, setModelList] = useState([]);
   const [selectedModelId, setSelectedModelId] = useState(null);
+  const [samInteractiveEnabled, setSamInteractiveEnabled] = useState(false);
+  const [samParam1, setSamParam1] = useState('0.85');
+  const [samParam2, setSamParam2] = useState('50');
+  const [samParam3, setSamParam3] = useState('20');
+  const [samParam4, setSamParam4] = useState('1');
   const [activeShape, setActiveShape] = useState('None'); // 当前激活的形状
   const [toolbarState, setToolbarState] = useState({
     drawState: false,
@@ -117,7 +121,10 @@ export default function () {
   } = useModel('@@initialState');
 
   //挂载地图并定位服务 hook
-  const { typeList, taskInfo, setMap, mapRef, markGeoJsonArr, mapExtent, refreshMarkGeoJsonArr, taskSource, localImagePath, taskItems, currentTaskItemId } = useMap();
+  const { typeList, taskInfo, setMap, mapRef, markGeoJsonArr, mapExtent, refreshMarkGeoJsonArr, taskSource, localImagePath, taskItems, currentTaskItemId, mapProjectionCode } = useMap();
+  const taskCoordinateSystem = normalizeCoordinateCode(
+    taskInfo?.data?.[0]?.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857'
+  );
   const access = useAccess(); // access 实例的成员: canAdmin, canUser
   let select, modify, shapeDraw; // 将交互变量声明在组件顶层
   const selectRef = useRef(null);
@@ -126,6 +133,8 @@ export default function () {
   const dragBoxRef = useRef(null);
   const unionFirstFeatureRef = useRef(null);
   const splitFirstFeatureRef = useRef(null);
+  const samInteractiveEnabledRef = useRef(false);
+  const triggerSamInteractiveRef = useRef(null);
   const refreshMarkGeoJsonArrRef = useRef(refreshMarkGeoJsonArr);
   const deletedMarkIdsRef = useRef([]);
   const interactionRunRef = useRef(0);
@@ -236,9 +245,9 @@ export default function () {
     const viewProj = mapRef.current?.getView?.()?.getProjection?.()?.getCode?.() || 'EPSG:3857';
     const writeOptions = viewProj === 'pixel'
       ? { dataProjection: 'pixel', featureProjection: 'pixel' }
-      : {};
+      : getTransformationParams(taskCoordinateSystem, viewProj);
     return format.writeFeatureObject(feature, writeOptions);
-  }, [mapRef]);
+  }, [mapRef, taskCoordinateSystem]);
 
   //修改标注显示部分的代码，将原来标注显示部分的代码由useEffect改为在generateMarkLayer函数中进行,根据用户角色进行判断，仅当用户为管理员时才进行渲染
   const generateMarkLayer = useMemo(() => {
@@ -275,7 +284,7 @@ export default function () {
       vectorLayerArr = totalTypeIdArr.map(({ typeColor, typeName, typeId }) => {
         const typeSource = new VectorSource({
           format:new GeoJSON(),
-          projection: taskInfo?.coordinateSystem || "EPSG:3857" // 动态获取坐标系
+          projection: taskCoordinateSystem // 动态获取坐标系
         });
         typeSource?.set('typeid', typeId);
         for (const item of markGeoJsonArr) {
@@ -283,16 +292,21 @@ export default function () {
             // taskSource==='local' 时坐标是像素坐标，dataProjection 和 featureProjection 都设为 'pixel'
             // 防止 OpenLayers 把像素坐标当经纬度做投影转换
             const isLocal = taskSource === 'local';
+            const dataProjection = normalizeCoordinateCode(item.coordinateSystem || taskCoordinateSystem || 'EPSG:3857');
+            const mapProjection = normalizeCoordinateCode(mapProjectionCode || taskCoordinateSystem || 'EPSG:3857');
             const readOptions = isLocal
               ? { dataProjection: 'pixel', featureProjection: 'pixel' }
-              : {};
+              : getTransformationParams(dataProjection, mapProjection);
             let features = [];
             try {
               features = new GeoJSON().readFeatures(item.markGeoJson, readOptions);
             } catch (e) {
-              // 投影未注册时降级：不做转换直接读
-              features = new GeoJSON().readFeatures(item.markGeoJson,
-                { dataProjection: 'EPSG:4326', featureProjection: 'EPSG:4326' });
+              console.error('读取标注 GeoJSON 失败，已跳过该要素:', e, {
+                markId: item.markId,
+                dataProjection,
+                mapProjection,
+              });
+              continue;
             }
             features.forEach(feature => {
               feature.set('markId', item.markId);
@@ -400,7 +414,7 @@ export default function () {
     vectorLayerArr.push(modelScopeLayer);
 
     return vectorLayerArr;
-  }, [markGeoJsonArr, taskInfo, taskSource, currentUser, mapRef, getTransparentColor]); // 依赖项包含任务状态和用户信息
+  }, [markGeoJsonArr, taskInfo, taskSource, currentUser, mapRef, getTransparentColor, mapProjectionCode, taskCoordinateSystem]); // 依赖项包含任务状态和用户信息
 
   // 管理图层的添加和移除
   useEffect(() => {
@@ -576,6 +590,13 @@ export default function () {
           feature.set('attrJson', {});
         }
         setFeaturePanelVersion((prev) => prev + 1);
+
+        const geometryType = feature.getGeometry()?.getType?.();
+        if (samInteractiveEnabledRef.current && ['Point', 'LineString', 'Polygon'].includes(geometryType)) {
+          setTimeout(() => {
+            triggerSamInteractiveRef.current?.({ silentNoPrompt: true });
+          }, 0);
+        }
       });
       shapeDraw.on('drawstart', () => {
         console.log('[draw] start', shapeSelect.current?.value);
@@ -1217,7 +1238,7 @@ export default function () {
         const viewProj = mapRef.current?.getView()?.getProjection()?.getCode?.() || 'EPSG:3857';
         const writeOptions = viewProj === 'pixel'
           ? { dataProjection: 'pixel', featureProjection: 'pixel' }
-          : {};
+          : getTransformationParams(taskCoordinateSystem, viewProj);
         const geoJson = format.writeFeatures(features, writeOptions);
 
         jsondataArr.push({
@@ -1338,16 +1359,16 @@ export default function () {
     setShowAuditLoader(false);
   }, []);
 
-  // 机器学习辅助生成按键（模型及参数选择）——区分目标识别和地物分类
-  const [assistInput, setAssistInput] = useState('');
-  const [modelName, setModelName] = useState(''); // 新增模型名称状态
-  const [assistFunction, setAssistFunction] = useState('');
   const [param1, setParam1] = useState('');
   const [param2, setParam2] = useState('');
   const [param3, setParam3] = useState('');
   const [param4, setParam4] = useState('');
-  const [categoryMapping, setCategoryMapping] = useState(JSON.stringify({0: '类别一ID', 1: '类别二ID', 2: '类别三ID'}, null, 2));
+  const [categoryMappingObj, setCategoryMappingObj] = useState({});
   const [modelResults, setModelResults] = useState({}); // 新增用于存储后端返回的字典
+  useEffect(() => {
+    samInteractiveEnabledRef.current = samInteractiveEnabled;
+  }, [samInteractiveEnabled]);
+
 // 定义获取 user_id 的函数
   const getUserId = () => {
     const user = taskInfo?.data?.[0]?.userArr?.find(({ username }) => username === currentUser);
@@ -1363,19 +1384,144 @@ export default function () {
     }
     return taskInfo?.data?.[0]?.mapserver || '';
   };
+  const currentTaskType = taskInfo?.data?.[0]?.type || '';
+  const currentLayerTypeId = toolbarState?.sourceKey == null ? null : Number(toolbarState.sourceKey);
+  const isYoloSamTaskType = currentTaskType === '地物提取' || currentTaskType === '地物分类';
+  const availableTaskTypes = useMemo(() => {
+    const taskUsers = taskInfo?.data?.[0]?.userArr || [];
+    const currentTaskUser = taskUsers.find((item) => item?.username === currentUser);
+    return currentTaskUser?.typeArr || [];
+  }, [currentUser, taskInfo]);
 
-// 定义路径映射
-  const getModelPathByTaskType = (taskType) => {
-    const userId = getUserId();
-    const pathMap = {
-      '目标检测': '/home/change/labelcode/labelMark/trained_models/' + userId +'/detection_results',
-      '地物分类': '/home/change/labelcode/labelMark/trained_models/' + userId + '/segmentation_results',
-    };
-    return pathMap[taskType] || '/models/default';
-  };
+  const getModelFamily = useCallback((model) => {
+    const raw = `${model?.type || ''} ${model?.name || ''}`.toLowerCase();
+    if (raw.includes('deeplab')) return 'deeplab';
+    if (raw.includes('unet')) return 'unet';
+    if (raw.includes('yolo')) return 'yolo';
+    return 'generic';
+  }, []);
 
-// 状态定义（模型推理组件）
-  const [selectedModel, setSelectedModel] = useState('');
+  const getDefaultInferParams = useCallback((family) => {
+    if (family === 'yolo') {
+      return { param1: '0.3', param2: '640', param3: '0.5', param4: '100' };
+    }
+    if (family === 'unet' || family === 'deeplab') {
+      return { param1: '50', param2: '10', param3: '1', param4: '0.1' };
+    }
+    return { param1: '0.3', param2: '640', param3: '10', param4: '1' };
+  }, []);
+
+  const buildCategoryMappingObject = useCallback((model) => {
+    if (model?.classMapping && typeof model.classMapping === 'object' && !Array.isArray(model.classMapping)) {
+      return Object.fromEntries(
+        Object.entries(model.classMapping).map(([key, value]) => [String(key), value == null ? undefined : Number(value)])
+      );
+    }
+
+    if (typeof model?.details === 'string' && model.details.trim()) {
+      const mapping = {};
+      model.details.split(';').forEach((pair) => {
+        const [typeId, classIndex] = pair.split(':').map((item) => item?.trim());
+        if (typeId && classIndex) {
+          mapping[classIndex] = Number(typeId);
+        }
+      });
+      return mapping;
+    }
+
+    return {};
+  }, []);
+
+  const filteredModelList = useMemo(() => {
+    return (modelList || []).filter((model) => {
+      const family = getModelFamily(model);
+      if (family === 'yolo') return true;
+      return !(model?.taskType && currentTaskType && model.taskType !== currentTaskType);
+    });
+  }, [currentTaskType, getModelFamily, modelList]);
+
+  const selectedPreAnnotateModel = useMemo(() => (
+    (modelList || []).find((model) => Number(model?.id) === Number(selectedModelId)) || null
+  ), [modelList, selectedModelId]);
+
+  const selectedModelFamily = useMemo(() => (
+    selectedPreAnnotateModel ? getModelFamily(selectedPreAnnotateModel) : 'generic'
+  ), [getModelFamily, selectedPreAnnotateModel]);
+
+  const modelClassIndexList = useMemo(() => {
+    if (!selectedPreAnnotateModel) return [];
+    const fromMapping = Object.keys(categoryMappingObj || {})
+      .map((key) => Number(key))
+      .filter((value) => Number.isInteger(value))
+      .sort((a, b) => a - b);
+    if (fromMapping.length > 0) {
+      return fromMapping;
+    }
+    const outputNum = Number(selectedPreAnnotateModel?.outputNum || 0);
+    if (outputNum > 0) {
+      return Array.from({ length: outputNum }, (_, index) => index);
+    }
+    return [0];
+  }, [categoryMappingObj, selectedPreAnnotateModel]);
+
+  const paramSchema = useMemo(() => {
+    if (selectedModelFamily === 'yolo') {
+      return [
+        { key: 'param1', label: '置信度阈值', placeholder: '0.3', tip: '范围建议 0.1 - 0.9，推荐 0.25 - 0.4。值越大，筛选越严格，误检更少但漏检可能增加；值越小，召回更高，但会带来更多候选结果。' },
+        { key: 'param2', label: '切片尺寸', placeholder: '640', tip: '范围建议 256 - 1024，推荐 512 或 640。值越大，上下文更完整，但显存和耗时更高；值越小，速度更快，但大目标可能被切碎。' },
+        { key: 'param3', label: 'IoU阈值', placeholder: '0.5', tip: '范围建议 0.3 - 0.8，推荐 0.5。值越大，允许保留更多重叠检测框；值越小，去重更激进，结果更干净但可能压掉邻近目标。' },
+        { key: 'param4', label: '切片重叠率', placeholder: '0.1', tip: '范围建议 0 - 0.5，推荐 0.1 - 0.2。值越大，切片边缘目标更不容易漏掉，但推理时间更长；值越小，速度更快，但边界区域可能出现漏检。' },
+      ];
+    }
+    if (selectedModelFamily === 'unet') {
+      return [
+        { key: 'param1', label: '最小目标面积', placeholder: '50', tip: '范围建议 0 - 5000，推荐 30 - 200。值越大，越会过滤小碎片和噪点；值越小，能保留更多细小目标，但杂点也会更多。' },
+        { key: 'param2', label: '孔洞填充阈值', placeholder: '10', tip: '范围建议 0 - 500，推荐 5 - 30。值越大，内部小孔洞越容易被自动填平；值越小，能保留更多原始细节和镂空结构。' },
+        { key: 'param3', label: '边界平滑系数', placeholder: '1', tip: '范围建议 0 - 10，推荐 1 - 3。值越大，边界越圆滑、锯齿更少；值越小，轮廓更贴近原始像素，但会更毛躁。' },
+        { key: 'param4', label: '掩膜阈值', placeholder: '0.1', tip: '范围建议 0 - 1，推荐 0.05 - 0.3。值越大，前景判定更保守，面会变小；值越小，前景更容易被保留，面会更大。' },
+      ];
+    }
+    if (selectedModelFamily === 'deeplab') {
+      return [
+        { key: 'param1', label: '最小目标面积', placeholder: '50', tip: '范围建议 0 - 5000，推荐 30 - 200。值越大，越偏向保留大面对象；值越小，小斑块更容易被保留。' },
+        { key: 'param2', label: '孔洞填充阈值', placeholder: '10', tip: '范围建议 0 - 500，推荐 5 - 30。值越大，内部小孔更容易被补平；值越小，洞和细碎结构保留更多。' },
+        { key: 'param3', label: '边界平滑系数', placeholder: '1', tip: '范围建议 0 - 10，推荐 1 - 3。值越大，轮廓更顺滑；值越小，边界更锐利但可能更锯齿。' },
+        { key: 'param4', label: '置信度补偿', placeholder: '0.1', tip: '范围建议 0 - 1，推荐 0.05 - 0.3。值越大，会更积极地保留边缘和弱响应区域；值越小，结果更保守。' },
+      ];
+    }
+    return [
+      { key: 'param1', label: '参数1', placeholder: '0.3', tip: '当前模型未配置专用说明。' },
+      { key: 'param2', label: '参数2', placeholder: '640', tip: '当前模型未配置专用说明。' },
+      { key: 'param3', label: '参数3', placeholder: '10', tip: '当前模型未配置专用说明。' },
+      { key: 'param4', label: '参数4', placeholder: '1', tip: '当前模型未配置专用说明。' },
+    ];
+  }, [currentTaskType, selectedModelFamily]);
+
+  const samParamSchema = useMemo(() => ([
+    { key: 'param1', label: '质量阈值', placeholder: '0.85', tip: '范围建议 0 - 1，推荐 0.7 - 0.95。值越大，保留的前景区域越严格，误提取更少；值越小，结果更积极，但更容易带入边缘噪点。' },
+    { key: 'param2', label: '最小目标面积', placeholder: '50', tip: '范围建议 0 - 5000，推荐 30 - 200。值越大，越会过滤细小碎片和噪点；值越小，能保留更多细小目标，但杂点也会更多。' },
+    { key: 'param3', label: '孔洞填充阈值', placeholder: '20', tip: '范围建议 0 - 500，推荐 5 - 30。值越大，目标内部的小孔洞更容易被自动补平；值越小，能保留更多中空和细节结构。' },
+    { key: 'param4', label: '边界平滑系数', placeholder: '1', tip: '范围建议 0 - 10，推荐 1 - 3。值越大，边界越圆滑、锯齿更少；值越小，轮廓更贴近原始掩膜，但会更毛躁。' },
+  ]), []);
+
+  useEffect(() => {
+    if (selectedModelId && !filteredModelList.some((model) => Number(model?.id) === Number(selectedModelId))) {
+      setSelectedModelId(null);
+    }
+  }, [filteredModelList, selectedModelId]);
+
+  useEffect(() => {
+    if (!selectedPreAnnotateModel) return;
+    const defaults = getDefaultInferParams(getModelFamily(selectedPreAnnotateModel));
+    const inferParams = selectedPreAnnotateModel?.inferParams && typeof selectedPreAnnotateModel.inferParams === 'object'
+      ? selectedPreAnnotateModel.inferParams
+      : {};
+    setParam1(String(inferParams.param1 ?? defaults.param1));
+    setParam2(String(inferParams.param2 ?? defaults.param2));
+    setParam3(String(inferParams.param3 ?? defaults.param3));
+    setParam4(String(inferParams.param4 ?? defaults.param4));
+    setCategoryMappingObj(buildCategoryMappingObject(selectedPreAnnotateModel));
+  }, [buildCategoryMappingObject, getDefaultInferParams, getModelFamily, selectedPreAnnotateModel]);
 
   // 获取模型列表
 useEffect(() => {
@@ -1383,15 +1529,9 @@ useEffect(() => {
     if (!taskInfo?.data?.[0]) {
       return;
     }
-    const userId = getUserId(); // 获取当前用户ID
-
-    if (!userId) {
-      return;
-    }
     const taskType = taskInfo?.data?.[0]?.type;
     try {
       const response = await reqGetModelList({
-        user_id: userId,
         task_type: taskType
       });
       if (response.code === 200) {
@@ -1431,226 +1571,82 @@ const navigateTask = useCallback(async (direction) => {
   }
 }, [getTaskItemId, save, taskItems]);
 
-// 辅助功能（模型训练）
-  const handleAssistClick = async () => {
-    let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
-
-    if (!assistFunction || assistFunction === 'none') {
-      message.error('请先选择一个模型！');
-      return;
-    }
-
-    const userId = getUserId();
-    if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
-      return;
-    }
-
-    let parameters = {};
-    if (taskType === '目标检测') {
-      parameters = {
-        param1: param1,
-        param2: param2,
-        param3: param3,
-        param4: param4,
-        categoryMapping: categoryMapping,
-      };
-    } else {
-      parameters = {
-        param1: param1,
-        param2: param2,
-        param3: param3,
-        param4: param4,
-        categoryMapping: categoryMapping,
-      };
-    }
-
-    // 获取"模型作用范围"图层的多边形坐标
-    const modelScopeLayer = generateMarkLayer.find(layer => layer.get('typeid') === 'modelScope');
-    const modelScopeFeatures = modelScopeLayer.getSource().getFeatures();
-    const modelScopeCoordinates = modelScopeFeatures.map(feature => feature.getGeometry().getCoordinates());
-    parameters.modelScope = modelScopeCoordinates.length > 0 ? modelScopeCoordinates : [];
-
-    try {
-      //先保存当前页面的样本到数据库中
-      await save();
-
-      const hide = message.loading('正在调用辅助功能...');
-      const result = await reqAssistFunction({
-        taskid: taskId,
-        taskItemId: getTaskItemId,
-        mapfile_path: getMapfilePath(),
-        task_type: taskType,
-        user_id: userId,
-        functionName: assistFunction,
-        assistInput: assistInput || '150',
-        modelName: modelName,
-        parameters,
-      });
-      hide();
-      if (result.code === 200) {
-        message.success(result.message);
-        setModelResults(result.data || {}); // 存储后端返回的字典数据
-        // 刷新标注数据而不是整个页面
-        await refreshMarkGeoJsonArr();
-      } else {
-        message.error(result.message || '调用辅助功能失败');
-      }
-    } catch (error) {
-      message.error('调用辅助功能失败：' + error.message);
-    }
-  };
-
-
   // 模型推理功能
   const handleModelInference = async () => {
-    if (!selectedModelId) {
-      message.warning('请先选择模型');
+    if (!selectedPreAnnotateModel) {
+      message.warning('请先选择预标注模型');
       return;
     }
 
     const taskId = getTaskId;
     const userId = getUserId();
-    const taskType = taskInfo?.data[0]?.type;
 
     if (!userId) {
       message.error('无法获取用户 ID，请检查用户信息');
       return;
     }
 
-    // 获取选中的模型信息
-    const selectedModel = modelList.find(m => m.id === selectedModelId);
-    if (!selectedModel) {
-      message.error('未找到选中的模型');
-      return;
-    }
-
     try {
-      // 先保存当前标注
       await save();
-      const hide = message.loading('正在进行模型推理...');
-      // 构建类别映射（根据任务类型）
-      const categoryMapping = {};
-      // 假设 selectedModel.model_des 的值是 "3: 0; 5:1"
-      if (selectedModel && selectedModel.details && typeof selectedModel.details === 'string') {
-        // 1. 使用分号 (;) 将字符串切分成多个键值对部分
-        // 结果变成数组: ["3: 0", " 5:1"]
-        const mappingPairs = selectedModel.details.split(';');
-
-        mappingPairs.forEach(pair => {
-          // 去除多余的空格（防止末尾多一个分号导致切出空字符串报错）
-          // eslint-disable-next-line no-param-reassign
-          pair = pair.trim();
-          if (!pair) return; // 如果是空的就跳过
-
-          // 2. 使用冒号 (:) 分割出 typeId 和 classIndex
-          const parts = pair.split(':');
-
-          if (parts.length === 2) {
-            // 3. 提取并转换成整数 (trim() 可以去掉 " 0" 前面的空格)
-            const typeId = parseInt(parts[0].trim(), 10);
-            const classIndex = parseInt(parts[1].trim(), 10);
-
-            // 4. 构建 Python 需要的反向映射格式：{ classIndex: typeId }
-            if (!isNaN(typeId) && !isNaN(classIndex)) {
-              categoryMapping[classIndex] = typeId;
-            }
-          }
-        });
-      }
-
-      // 调用推理接口
-      const result = await reqInferenceFunction({
-        taskid: taskId,
-        taskItemId: getTaskItemId,
-        mapfile_path: getMapfilePath(),
-        user_id: userId,
+      const hide = message.loading('正在启动预标注...');
+      const modelScopeLayer = generateMarkLayer.find((layer) => layer.get('typeid') === 'modelScope');
+      const modelScopeFeatures = modelScopeLayer?.getSource?.().getFeatures?.() || [];
+      const modelScopeCoordinates = modelScopeFeatures.map((feature) => feature.getGeometry().getCoordinates());
+      const requestParameters = {
+        param1: param1 || '',
+        param2: param2 || '',
+        param3: param3 || '',
+        param4: param4 || '',
+        categoryMapping: categoryMappingObj || {},
+        modelScope: modelScopeCoordinates.length > 0 ? modelScopeCoordinates : [],
+        currentTypeId: currentLayerTypeId,
         model_id: selectedModelId,
-        // 新增：将所有算法特征参数封装在 parameters 对象中
-        parameters: {
-          param1: '0.3',   // 置信度
-          param2: '640',   // 切片尺寸
-          param3: '10',   // boundary_smoothing
-          param4: '1',    // 其他参数
-          // 直接传对象和数组，不要用 JSON.stringify
-          categoryMapping: categoryMapping || {},
-          modelScope: []  // 传空数组或者具体的范围数据
-        }
-      });
+      };
+
+      const result = selectedModelFamily === 'yolo' && isYoloSamTaskType
+        ? await reqAssistFunction({
+          taskid: taskId,
+          taskItemId: getTaskItemId,
+          mapfile_path: getMapfilePath(),
+          task_type: currentTaskType,
+          user_id: userId,
+          model_id: selectedModelId,
+          functionName: 'auto_building_sam',
+          assistInput: '1',
+          modelName: selectedPreAnnotateModel?.name || 'YOLO+SAM',
+          parameters: requestParameters,
+        })
+        : await reqInferenceFunction({
+          taskid: taskId,
+          taskItemId: getTaskItemId,
+          mapfile_path: getMapfilePath(),
+          user_id: userId,
+          model_id: selectedModelId,
+          parameters: requestParameters,
+        });
 
       hide();
 
       if (result.code === 200) {
-        message.success(result.message || '推理任务已启动');
-        // 等待一段时间后刷新标注显示
+        setModelResults({
+          selectedValue: `${selectedPreAnnotateModel.name || '所选模型'} 已启动预标注`,
+          params: { param1, param2, param3, param4 },
+        });
+        message.success(result.message || '预标注任务已启动');
         setTimeout(async () => {
           await refreshMarkGeoJsonArr();
           message.success('标注已更新');
         }, 3000);
       } else {
-        message.error(result.message || '推理失败');
+        message.error(result.message || '预标注失败');
       }
     } catch (error) {
-      message.error('推理失败：' + error.message);
+      message.error('预标注失败：' + error.message);
     }
   };
 
-  // 提取目标功能（XGBoost固定参数）
-  const handleExtractTarget = async () => {
-    let taskId = getTaskId;
-    const taskType = taskInfo?.data?.[0]?.type;
-    const userId = getUserId();
-
-    if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
-      return;
-    }
-
-    // 固定参数设置
-    const fixedParameters = {
-      param1: '100',
-      param2: '800',
-      param3: '10',
-      param4: '1',
-      categoryMapping: JSON.stringify({}),
-    };
-
-    // 获取"模型作用范围"图层的多边形坐标
-    const modelScopeLayer = generateMarkLayer.find(layer => layer.get('typeid') === 'modelScope');
-    const modelScopeFeatures = modelScopeLayer.getSource().getFeatures();
-    const modelScopeCoordinates = modelScopeFeatures.map(feature => feature.getGeometry().getCoordinates());
-    fixedParameters.modelScope = modelScopeCoordinates.length > 0 ? modelScopeCoordinates : [];
-
-    try {
-      await save();
-      const hide = message.loading('正在提取目标...');
-      const result = await reqAssistFunction({
-        taskid: taskId,
-        taskItemId: getTaskItemId,
-        mapfile_path: getMapfilePath(),
-        task_type: taskType,
-        user_id: userId,
-        functionName: 'xgboost',
-        assistInput: '300',
-        modelName: 'extract_target_model',
-        parameters: fixedParameters,
-      });
-      hide();
-      if (result.code === 200) {
-        message.success(result.message);
-        setModelResults(result.data || {});
-        // 刷新标注数据而不是整个页面
-        await refreshMarkGeoJsonArr();
-      } else {
-        message.error(result.message || '提取目标失败');
-      }
-    } catch (error) {
-      message.error('提取目标失败：' + error.message);
-    }
-  };
-
-  const handleSamPreAnnotation = async () => {
+  const handleSamPreAnnotation = useCallback(async (options = {}) => {
+    const { silentNoPrompt = false } = options;
     let taskId = getTaskId;
     const taskType = taskInfo?.data[0].type;
     const userId = getUserId();
@@ -1663,7 +1659,9 @@ const navigateTask = useCallback(async (direction) => {
     // 1. 获取当前活跃图层的数据源
     const activeSource = toolbarState.markSource;
     if (!activeSource || activeSource.getFeatures().length === 0) {
-      message.warn('请先在地图上绘制一个提示要素（点、线或矩形框）');
+      if (!silentNoPrompt) {
+        message.warn('请先在地图上绘制一个提示要素（点、线或面）');
+      }
       return;
     }
 
@@ -1699,10 +1697,10 @@ const navigateTask = useCallback(async (direction) => {
 
     // 4. 组装参数
     const parameters = {
-      param1: fillOpacity.toString(), // 传入当前透明度
-      param2: '50', // min_object_size
-      param3: '10', // hole_size
-      param4: '1',  // smoothing
+      param1: samParam1 || '0.85',
+      param2: samParam2 || '50',
+      param3: samParam3 || '20',
+      param4: samParam4 || '1',
       categoryMapping: JSON.stringify({}),
       promptType: promptType,
       coordinates: coords, // 只传这一个要素的坐标
@@ -1758,136 +1756,27 @@ const navigateTask = useCallback(async (direction) => {
       console.error('SAM Error:', error);
       message.error('SAM 调用异常');
     }
-  };
+  }, [generateMarkLayer, getTaskId, getTaskItemId, refreshMarkGeoJsonArr, samParam1, samParam2, samParam3, samParam4, save, taskInfo, toolbarState.markSource, toolbarState.sourceKey]);
 
-  // 全图建筑自动预标注（YOLO-World 检测 + SAM 分割）
-  const handleAutoBuildingSegmentation = async () => {
-    const taskId = getTaskId;
-    const taskType = taskInfo?.data[0]?.type;
-    const userId = getUserId();
+  useEffect(() => {
+    triggerSamInteractiveRef.current = handleSamPreAnnotation;
+  }, [handleSamPreAnnotation]);
 
-    if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
+  const handleToggleSamInteractive = useCallback(() => {
+    if (currentTaskType !== '地物分类') {
+      message.info('SAM交互标注当前仅在地物分类任务中启用');
       return;
     }
-
-    if (!toolbarState.sourceKey) {
-      message.warning('请先选择一个标注图层，以便将建筑轮廓写入对应类别');
+    if (!toolbarState.currentLayer || !toolbarState.markSource) {
+      message.warning('请先选择一个类别图层，再开启 SAM 交互标注');
       return;
     }
-
-    try {
-      await save();
-      const hide = message.loading('正在全图检测建筑并分割，请稍候（可能需要数十秒）...');
-      const result = await reqAssistFunction({
-        taskid: taskId,
-        taskItemId: getTaskItemId,
-        mapfile_path: getMapfilePath(),
-        task_type: taskType,
-        user_id: userId,
-        functionName: 'auto_building_sam',
-        assistInput: '1',
-        modelName: 'YOLO+SAM',
-        parameters: {
-          param2: '50',   // min_object_size
-          param3: '10',   // hole_size
-          param4: '1',    // smoothing
-          currentTypeId: toolbarState.sourceKey,
-          categoryMapping: JSON.stringify({}),
-          modelScope: [],
-        },
-      });
-      hide();
-      if (result.code === 200) {
-        message.success('全图建筑预标注完成');
-        await refreshMarkGeoJsonArr();
-      } else {
-        message.error(result.message || '全图预标注失败');
-      }
-    } catch (error) {
-      message.error('全图预标注异常：' + error.message);
-    }
-  };
-
-// 模型推理
-  const handleInferenceClick = async () => {
-    if (!selectedModel) {
-      message.error('请先选择一个推理模型！');
-      return;
-    }
-
-    let taskId = getTaskId;
-    const taskType = taskInfo?.data[0].type;
-    const userId = getUserId();
-    if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
-      return;
-    }
-
-    let parameters = {};
-    if (taskType === '目标检测') {
-      parameters = {
-        param1: param1,
-        param2: param2,
-        param3: param3,
-        param4: param4,
-        categoryMapping: categoryMapping,
-      };
-    } else {
-      parameters = {
-        param1: param1,
-        param2: param2,
-        param3: param3,
-        param4: param4,
-        categoryMapping: categoryMapping,
-      };
-    }
-
-    // 获取"模型作用范围"图层的多边形坐标
-    const modelScopeLayer = generateMarkLayer.find(layer => layer.get('typeid') === 'modelScope');
-    const modelScopeFeatures = modelScopeLayer.getSource().getFeatures();
-    const modelScopeCoordinates = modelScopeFeatures.map(feature => feature.getGeometry().getCoordinates());
-    parameters.modelScope = modelScopeCoordinates.length > 0 ? modelScopeCoordinates : [];
-
-    try {
-      await save();
-      const hide = message.loading('正在进行模型推理...');
-      const result = await reqInferenceFunction({
-        taskid: taskId,
-        taskItemId: getTaskItemId,
-        user_id: userId,
-        model: selectedModel,
-        parameters,
-      });
-      hide();
-      if (result.code === 200) {
-        message.success(result.message);
-        // 刷新标注数据而不是整个页面
-        await refreshMarkGeoJsonArr();
-      } else {
-        message.error(result.message || '模型推理失败');
-      }
-    } catch (error) {
-      message.error('模型推理失败：' + error.message);
-    }
-  };
-
-
-  const isObjectDetection = taskInfo?.data?.[0]?.type === '目标检测'; // 判断是否为目标检测任务
-
-// 定义模型选项
-  const objectDetectionModels = [
-    { value: 'yolo', label: 'YOLO' },
-  ];
-  const classificationModels = [
-    { value: 'sam_box', label: 'SAM_BOX' },
-    { value: 'sam', label: 'SAM' },
-    { value: 'light_unet', label: 'Light UNet' },
-    { value: 'unet', label: 'UNet' },
-    { value: 'fast_scnn', label: 'Fast SCNN' },
-    { value: 'xgboost', label: 'XGBoost' },
-    { value: 'svm', label: 'SVM' },
-  ];
+    setSamInteractiveEnabled((prev) => {
+      const next = !prev;
+      message.success(next ? 'SAM交互标注已开启' : 'SAM交互标注已关闭');
+      return next;
+    });
+  }, [currentTaskType, toolbarState.currentLayer, toolbarState.markSource]);
 
   //更新新绘制样本功能
   const update_label = async () => {
@@ -2182,74 +2071,180 @@ const navigateTask = useCallback(async (direction) => {
 
         {/* 右侧：模型辅助工具面板 */}
         <div className="model-panel model-panel-main">
-          {/* 自训练模型 */}
           <div className="model-block">
-            <div className="model-block-title"><RobotOutlined /> 自训练模型</div>
+            <div className="model-block-title"><RobotOutlined /> 预标注模型</div>
+            <div className="model-filter-hint">
+              {`当前按任务类型“${currentTaskType || '-'}”筛选模型中心中的可用模型`}
+            </div>
             <Select
-              placeholder="选择模型"
+              placeholder="选择模型中心中的预标注模型"
               style={{ width: '100%', marginBottom: 8 }}
               onChange={setSelectedModelId}
               value={selectedModelId}
               allowClear
               size="small"
             >
-              {modelList.map(model => (
+              {filteredModelList.map(model => (
                 <Select.Option key={model.id} value={model.id}>
                   {model.name} ({model.type})
                 </Select.Option>
               ))}
             </Select>
-
-            {selectedModelId && (
-              <div className="param-grid">
-                <div className="param-item">
-                  <label>置信度</label>
-                  <Input size="small" placeholder="0.3" value={param1} onChange={e => setParam1(e.target.value)} />
-                </div>
-                <div className="param-item">
-                  <label>切片尺寸</label>
-                  <Input size="small" placeholder="640" value={param2} onChange={e => setParam2(e.target.value)} />
-                </div>
-                <div className="param-item">
-                  <label>边界平滑</label>
-                  <Input size="small" placeholder="10" value={param3} onChange={e => setParam3(e.target.value)} />
-                </div>
-                <div className="param-item">
-                  <label>其他</label>
-                  <Input size="small" placeholder="1" value={param4} onChange={e => setParam4(e.target.value)} />
-                </div>
-                <div className="param-item full">
-                  <label>类别映射</label>
-                  <Input.TextArea size="small" placeholder='{"0":3}' value={categoryMapping} onChange={e => setCategoryMapping(e.target.value)} rows={2} />
-                </div>
-              </div>
+            {filteredModelList.length === 0 && (
+              <div className="model-empty-hint">当前筛选条件下暂无可用模型</div>
             )}
 
-            <Tooltip title="使用选中模型生成标注">
-              <button className="model-action-btn" onClick={handleModelInference} disabled={!selectedModelId}>
-                <ThunderboltOutlined /> 生成标注
-              </button>
-            </Tooltip>
+            {selectedPreAnnotateModel && (
+              <>
+                <div className="model-meta-card">
+                  <div><span>模型类型：</span>{selectedPreAnnotateModel.type || '-'}</div>
+                  <div><span>适用类别：</span>{Array.isArray(selectedPreAnnotateModel.applicableTypeIds) && selectedPreAnnotateModel.applicableTypeIds.length > 0 ? selectedPreAnnotateModel.applicableTypeIds.join('，') : '不限'}</div>
+                  {selectedPreAnnotateModel.description && (
+                    <div><span>模型说明：</span>{selectedPreAnnotateModel.description}</div>
+                  )}
+                </div>
+                <div className="model-subtitle">参数设置</div>
+              <div className="param-grid">
+                {paramSchema.map((item) => (
+                  <div className="param-item" key={item.key}>
+                    <div className="param-label-row">
+                      <label>{item.label}</label>
+                      <Tooltip title={item.tip} placement="left">
+                        <span className="param-tip-icon">
+                          <QuestionCircleOutlined />
+                        </span>
+                      </Tooltip>
+                    </div>
+                    <Input
+                      size="small"
+                      placeholder={item.placeholder}
+                      value={
+                        item.key === 'param1' ? param1 :
+                        item.key === 'param2' ? param2 :
+                        item.key === 'param3' ? param3 :
+                        param4
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (item.key === 'param1') setParam1(value);
+                        if (item.key === 'param2') setParam2(value);
+                        if (item.key === 'param3') setParam3(value);
+                        if (item.key === 'param4') setParam4(value);
+                      }}
+                    />
+                  </div>
+                ))}
+                <div className="param-item full">
+                  <div className="param-label-row">
+                    <label>类别映射</label>
+                    <Tooltip title="为每个模型输出类别选择要写入的任务类别。未选择的类别索引不会参与写入。">
+                      <span className="param-tip-icon">
+                        <QuestionCircleOutlined />
+                      </span>
+                    </Tooltip>
+                  </div>
+                  <div className="mapping-grid">
+                    {modelClassIndexList.map((classIndex) => (
+                      <div className="mapping-row" key={classIndex}>
+                        <span className="mapping-index">模型类别 {classIndex}</span>
+                        <Select
+                          size="small"
+                          allowClear
+                          placeholder="选择任务类别"
+                          value={categoryMappingObj?.[String(classIndex)]}
+                          onChange={(value) => {
+                            setCategoryMappingObj((prev) => {
+                              const next = { ...(prev || {}) };
+                              if (value === undefined || value === null) {
+                                delete next[String(classIndex)];
+                              } else {
+                                next[String(classIndex)] = Number(value);
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          {availableTaskTypes.map((typeItem) => (
+                            <Select.Option key={typeItem.typeId} value={typeItem.typeId}>
+                              {typeItem.typeName}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+            )}
           </div>
 
-          {/* 辅助模型（地物分类任务） */}
-          {taskInfo?.data?.[0]?.type === '地物分类' && (
+          <div className="model-block">
+            <div className="model-block-title"><AppstoreOutlined /> 标注辅助</div>
+            <div className="model-subtitle">SAM参数设置</div>
+            <div className="param-grid">
+              {samParamSchema.map((item) => (
+                <div className="param-item" key={item.key}>
+                  <div className="param-label-row">
+                    <label>{item.label}</label>
+                    <Tooltip title={item.tip}>
+                      <span className="param-tip-icon">
+                        <QuestionCircleOutlined />
+                      </span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    size="small"
+                    placeholder={item.placeholder}
+                    value={
+                      item.key === 'param1' ? samParam1 :
+                      item.key === 'param2' ? samParam2 :
+                      item.key === 'param3' ? samParam3 :
+                      samParam4
+                    }
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (item.key === 'param1') setSamParam1(value);
+                      if (item.key === 'param2') setSamParam2(value);
+                      if (item.key === 'param3') setSamParam3(value);
+                      if (item.key === 'param4') setSamParam4(value);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="assist-btns dual">
+              <Tooltip title={currentTaskType === '地物分类' ? '开启后按钮常亮。之后在影像上绘制点、线、面提示要素，会自动调用 SAM 完成提取；再次点击可关闭。' : 'SAM交互标注当前仅用于地物分类任务。'}>
+                <button
+                  className={`assist-btn sam${samInteractiveEnabled ? ' active' : ''}`}
+                  onClick={handleToggleSamInteractive}
+                >
+                  <AppstoreOutlined /> SAM交互标注
+                </button>
+              </Tooltip>
+              <Tooltip title={selectedModelFamily === 'yolo' && isYoloSamTaskType ? '当前选择的是 YOLO，地物提取/地物分类任务下会自动走 YOLO+SAM 联合预标注。' : '使用当前选中的预标注模型和参数，对当前影像启动预标注。'}>
+                <button className="model-action-btn pre-annotate-btn" onClick={handleModelInference} disabled={!selectedPreAnnotateModel}>
+                  <ThunderboltOutlined /> 预标注启动
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+
+          {selectedModelId && (
             <div className="model-block">
-              <div className="model-block-title"><ExperimentOutlined /> 辅助模型</div>
-              <div className="assist-btns">
-                <button className="assist-btn" onClick={handleExtractTarget}><AimOutlined /> XGBoost</button>
-                <button className="assist-btn sam" onClick={handleSamPreAnnotation}><AppstoreOutlined /> SAM</button>
+              <div className="model-block-title"><BuildOutlined /> 运行结果</div>
+              <div className="param-grid">
+                <div className="param-item full">
+                  <Input.TextArea
+                    size="small"
+                    value={modelResults.selectedValue || JSON.stringify(modelResults, null, 2)}
+                    readOnly
+                    rows={4}
+                  />
+                </div>
               </div>
             </div>
           )}
-
-          {/* 模型预标注 */}
-          <div className="model-block">
-            <div className="model-block-title"><BuildOutlined /> 模型预标注</div>
-            <button className="pre-annotate-btn" onClick={handleAutoBuildingSegmentation}>
-              <ThunderboltOutlined /> 一键预标注
-            </button>
-          </div>
 
         </div>
 
