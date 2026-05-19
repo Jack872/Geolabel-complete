@@ -10,6 +10,7 @@ import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.domain.SysUser;
 import com.example.labelMark.domain.Task;
 import com.example.labelMark.domain.TaskItem;
+import com.example.labelMark.domain.TaskItemTypeAccepted;
 import com.example.labelMark.domain.TaskDatasetInfo;
 import com.example.labelMark.domain.Type;
 import com.example.labelMark.service.DatasetService;
@@ -22,6 +23,7 @@ import com.example.labelMark.service.TaskAcceptedService;
 import com.example.labelMark.service.TaskItemService;
 import com.example.labelMark.service.TaskService;
 import com.example.labelMark.service.TaskTypeAttributeService;
+import com.example.labelMark.service.TaskItemTypeAcceptedService;
 import com.example.labelMark.service.ProvenanceService;
 import com.example.labelMark.service.TypeService;
 import com.example.labelMark.service.TaskExecutorService;
@@ -64,6 +66,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import static com.example.labelMark.utils.CoordinateConverter.convertGeojson;
 
@@ -91,6 +94,8 @@ public class TaskController {
     private TaskService taskService;
     @Resource
     private TaskItemService taskItemService;
+    @Resource
+    private TaskItemTypeAcceptedService taskItemTypeAcceptedService;
     @Resource
     private TypeService typeService;
     @Resource
@@ -377,6 +382,7 @@ public class TaskController {
     @Transactional(rollbackFor = Exception.class)
     public Result deleteTask(@PathVariable int taskId) {
         taskAcceptedService.deleteTaskAcceptByTaskId(taskId);
+        taskItemTypeAcceptedService.deleteByTaskId(taskId);
         taskItemService.remove(new QueryWrapper<TaskItem>().eq("task_id", taskId));
         taskService.deleteTaskById(taskId);
         markService.deleteMarkByTaskId(taskId);
@@ -390,6 +396,17 @@ public class TaskController {
     @PostMapping("/submitTask")
     public Result submitTask(@RequestBody Map<String, Object> map) {
         Integer taskId = (Integer) map.get("taskid");
+        List<TaskItemTypeAccepted> assignments = taskItemTypeAcceptedService.listByTaskId(taskId);
+        if (assignments != null && !assignments.isEmpty()) {
+            Map<String, Object> unfinishedSummary = buildTaskUnfinishedSummary(taskId);
+            if (!(Boolean) unfinishedSummary.getOrDefault("allFinished", false)) {
+                return ResultGenerator.getSuccessResult(
+                        StatusEnum.FAIL,
+                        "任务仍有未完成的用户类别，不能提交。",
+                        unfinishedSummary
+                );
+            }
+        }
         if (markService.GetTaskIdNum(taskId) == 0) {
             return ResultGenerator.getFailResult("未开始标注");
         }
@@ -419,6 +436,206 @@ public class TaskController {
             }
         }
         return ResultGenerator.getSuccessResult("审核成功");
+    }
+
+    @PostMapping("/item/finish")
+    @ApiOperation("标注用户确认当前影像已完成")
+    public Map<String, Object> finishTaskItem(@RequestBody Map<String, Object> req) {
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        Integer taskId = Integer.valueOf(String.valueOf(req.get("taskId")));
+        Integer taskItemId = Integer.valueOf(String.valueOf(req.get("taskItemId")));
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            return failMap("TASK_ITEM_NOT_FOUND", "影像项不存在");
+        }
+        if (!(Objects.equals(taskItem.getStatus(), 3) || Objects.equals(taskItem.getStatus(), 2))) {
+            return failMap("TASK_ITEM_LOCKED", "当前影像不可标注完成");
+        }
+        if (taskItemTypeAcceptedService.listByTaskItemAndUser(taskId, taskItemId, currentUser.getUserid()).isEmpty()) {
+            return failMap("TASK_ITEM_NOT_ASSIGNED", "当前用户未分配该影像标注");
+        }
+        taskItemTypeAcceptedService.markFinished(taskId, taskItemId, currentUser.getUserid(), true);
+        Map<String, Object> summary = buildTaskItemFinishSummary(taskId, taskItemId);
+        Task task = taskService.selectTaskById(taskId);
+        String taskType = task != null ? task.getTaskType() : null;
+        Map<String, Object> conflictSummary = markService.calculateTaskItemConflictSummary(
+                taskId, taskItemId, currentUser.getUserid(), taskType
+        );
+        summary.put("success", true);
+        summary.put("code", "OK");
+        summary.put("conflictSummary", conflictSummary);
+        if ((Boolean) conflictSummary.getOrDefault("hasConflict", false)) {
+            summary.put("warning", true);
+            summary.put("message", "存在潜在覆盖冲突，仍可完成，但审核员将重点检查。");
+        } else {
+            summary.put("warning", false);
+            summary.put("message", "标注完成状态已更新");
+        }
+        return summary;
+    }
+
+    @PostMapping("/item/cancelFinish")
+    @ApiOperation("撤销标注完成状态")
+    public Map<String, Object> cancelFinishTaskItem(@RequestBody Map<String, Object> req) {
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        Integer taskId = Integer.valueOf(String.valueOf(req.get("taskId")));
+        Integer taskItemId = Integer.valueOf(String.valueOf(req.get("taskItemId")));
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            return failMap("TASK_ITEM_NOT_FOUND", "影像项不存在");
+        }
+        if (!(Objects.equals(taskItem.getStatus(), 3) || Objects.equals(taskItem.getStatus(), 2))) {
+            return failMap("TASK_ITEM_LOCKED", "当前影像不可撤销完成");
+        }
+        if (taskItemTypeAcceptedService.listByTaskItemAndUser(taskId, taskItemId, currentUser.getUserid()).isEmpty()) {
+            return failMap("TASK_ITEM_NOT_ASSIGNED", "当前用户未分配该影像标注");
+        }
+        taskItemTypeAcceptedService.markFinished(taskId, taskItemId, currentUser.getUserid(), false);
+        Map<String, Object> summary = buildTaskItemFinishSummary(taskId, taskItemId);
+        summary.put("success", true);
+        summary.put("code", "OK");
+        summary.put("message", "已撤销完成状态");
+        return summary;
+    }
+
+    @PostMapping("/item/submit")
+    @ApiOperation("提交单影像审核")
+    public Map<String, Object> submitTaskItem(@RequestBody Map<String, Object> req) {
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        Integer taskId = Integer.valueOf(String.valueOf(req.get("taskId")));
+        Integer taskItemId = Integer.valueOf(String.valueOf(req.get("taskItemId")));
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            return failMap("TASK_ITEM_NOT_FOUND", "影像项不存在");
+        }
+        boolean isAdmin = currentUser.getIsadmin() != null && currentUser.getIsadmin() == 1;
+        boolean isParticipant = !taskItemTypeAcceptedService
+                .listByTaskItemAndUser(taskId, taskItemId, currentUser.getUserid())
+                .isEmpty();
+        if (!isAdmin && !isParticipant) {
+            return failMap("TASK_ITEM_NOT_ASSIGNED", "当前用户未分配该影像标注");
+        }
+        if (!(Objects.equals(taskItem.getStatus(), 3) || Objects.equals(taskItem.getStatus(), 2))) {
+            return failMap("TASK_ITEM_LOCKED", "当前影像状态不允许提交");
+        }
+        Map<String, Object> summary = buildTaskItemFinishSummary(taskId, taskItemId);
+        if (!(Boolean) summary.getOrDefault("allFinished", false)) {
+            Map<String, Object> resp = failMap("TASK_ITEM_NOT_ALL_FINISHED", "该影像仍有标注用户未点击完成，不能提交审核。");
+            resp.put("unfinishedUsers", summary.get("unfinishedUsers"));
+            return resp;
+        }
+
+        UpdateWrapper<TaskItem> wrapper = new UpdateWrapper<TaskItem>()
+                .eq("task_id", taskId)
+                .eq("task_item_id", taskItemId)
+                .set("status", 0)
+                .set("submitter_id", currentUser.getUserid())
+                .set("submitted_at", new Date());
+        taskItemService.update(wrapper);
+        refreshTaskStatusByItems(taskId);
+        Task task = taskService.selectTaskById(taskId);
+        String taskType = task != null ? task.getTaskType() : null;
+        Map<String, Object> conflictSummary = markService.calculateTaskItemConflictSummary(
+                taskId, taskItemId, null, taskType
+        );
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("code", "OK");
+        resp.put("conflictSummary", conflictSummary);
+        if ((Boolean) conflictSummary.getOrDefault("hasConflict", false)) {
+            resp.put("warning", true);
+            resp.put("message", "影像提交审核成功，但存在潜在冲突，请审核员重点检查。");
+        } else {
+            resp.put("warning", false);
+            resp.put("message", "影像提交审核成功");
+        }
+        return resp;
+    }
+
+    @PostMapping("/item/cancelSubmit")
+    @ApiOperation("撤销单影像提交")
+    public Map<String, Object> cancelSubmitTaskItem(@RequestBody Map<String, Object> req) {
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        Integer taskId = Integer.valueOf(String.valueOf(req.get("taskId")));
+        Integer taskItemId = Integer.valueOf(String.valueOf(req.get("taskItemId")));
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            return failMap("TASK_ITEM_NOT_FOUND", "影像项不存在");
+        }
+        boolean isAdmin = currentUser.getIsadmin() != null && currentUser.getIsadmin() == 1;
+        boolean canCancel = isAdmin || (taskItem.getSubmitterId() != null && Objects.equals(taskItem.getSubmitterId(), currentUser.getUserid()));
+        if (!canCancel) {
+            return failMap("NO_PERMISSION", "当前用户无权撤销该影像提交");
+        }
+        if (!Objects.equals(taskItem.getStatus(), 0)) {
+            return failMap("INVALID_STATUS", "当前影像并非待审核状态，无法撤销");
+        }
+        if (taskItem.getReviewedAt() != null) {
+            return failMap("ALREADY_REVIEWED", "当前影像已被审核，无法撤销提交");
+        }
+
+        UpdateWrapper<TaskItem> wrapper = new UpdateWrapper<TaskItem>()
+                .eq("task_id", taskId)
+                .eq("task_item_id", taskItemId)
+                .set("status", 3)
+                .set("submitter_id", null)
+                .set("submitted_at", null);
+        taskItemService.update(wrapper);
+        refreshTaskStatusByItems(taskId);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("code", "OK");
+        resp.put("message", "影像撤销提交成功");
+        return resp;
+    }
+
+    @PostMapping("/item/review")
+    @ApiOperation("按影像审核")
+    public Map<String, Object> reviewTaskItem(@RequestBody Map<String, Object> req) {
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        if (currentUser.getIsadmin() == null || currentUser.getIsadmin() != 1) {
+            return failMap("NO_PERMISSION", "仅管理员可执行影像审核");
+        }
+
+        Integer taskId = Integer.valueOf(String.valueOf(req.get("taskId")));
+        Integer taskItemId = Integer.valueOf(String.valueOf(req.get("taskItemId")));
+        String result = String.valueOf(req.get("result"));
+        String feedback = req.get("feedback") == null ? "" : String.valueOf(req.get("feedback"));
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            return failMap("TASK_ITEM_NOT_FOUND", "影像项不存在");
+        }
+        if (!Objects.equals(taskItem.getStatus(), 0)) {
+            return failMap("INVALID_STATUS", "当前影像不是待审核状态");
+        }
+
+        Integer nextStatus = "pass".equalsIgnoreCase(result) ? 1 : 2;
+        UpdateWrapper<TaskItem> wrapper = new UpdateWrapper<TaskItem>()
+                .eq("task_id", taskId)
+                .eq("task_item_id", taskItemId)
+                .set("status", nextStatus)
+                .set("reviewer_id", currentUser.getUserid())
+                .set("reviewed_at", new Date())
+                .set("audit_feedback", feedback);
+        taskItemService.update(wrapper);
+        if (nextStatus == 2) {
+            taskItemTypeAcceptedService.listByTaskItem(taskId, taskItemId).forEach(item -> {
+                item.setIsFinished(false);
+                item.setFinishedAt(null);
+            });
+            taskItemTypeAcceptedService.updateBatchById(taskItemTypeAcceptedService.listByTaskItem(taskId, taskItemId));
+        }
+        refreshTaskStatusByItems(taskId);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("code", "OK");
+        resp.put("message", nextStatus == 1 ? "审核通过" : "审核退回");
+        return resp;
     }
 
     @GetMapping("/getPersonalTaskList")
@@ -539,6 +756,17 @@ public class TaskController {
                     .collect(Collectors.toList());
         }
 
+        for (TaskInfoDTO item : result) {
+            Map<String, Integer> summary = buildMyTaskItemStatusSummary(item.getTaskid(), userId);
+            item.setMyTotalItems(summary.get("myTotalItems"));
+            item.setMyEditableItems(summary.get("myEditableItems"));
+            item.setMyFinishedUnsubmittedItems(summary.get("myFinishedUnsubmittedItems"));
+            item.setMyPendingAuditItems(summary.get("myPendingAuditItems"));
+            item.setMyApprovedItems(summary.get("myApprovedItems"));
+            item.setMyRejectedItems(summary.get("myRejectedItems"));
+            item.setCanStartMark(summary.get("myEditableItems") > 0);
+        }
+
         // 计算过滤后的总数
         int filteredTotal = result.size();
 
@@ -617,19 +845,44 @@ public class TaskController {
 
         List<Map<String, Object>> userArrOrigin = new ArrayList<>();
         List<String> usernames = taskService.findUserListByTaskId(taskid);
+        Integer currentResolvedTaskItemId = currentTaskItem != null ? currentTaskItem.getTaskItemId() : null;
+        List<TaskItemTypeAccepted> currentItemAssignments = currentResolvedTaskItemId == null
+                ? Collections.emptyList()
+                : taskItemTypeAcceptedService.listByTaskItem(taskid, currentResolvedTaskItemId);
+        Map<String, Set<Integer>> typeIdsByUsername = new HashMap<>();
+        if (currentItemAssignments != null && !currentItemAssignments.isEmpty()) {
+            for (TaskItemTypeAccepted assignment : currentItemAssignments) {
+                if (assignment.getUsername() == null || assignment.getTypeId() == null) {
+                    continue;
+                }
+                typeIdsByUsername
+                        .computeIfAbsent(assignment.getUsername(), k -> new LinkedHashSet<>())
+                        .add(assignment.getTypeId());
+            }
+        }
 
         for (String user : usernames) {
             SysUser userObj = sysUserService.findByUsername(user);
             if (userObj != null) {
                 // 获取分配给该用户的类型
-                String typeString = taskAcceptedService.getTypeArrByTaskIdAndUsername(taskid, user);
+                Set<Integer> fineGrainedTypeIds = typeIdsByUsername.get(user);
+                String typeString = null;
+                if (fineGrainedTypeIds == null || fineGrainedTypeIds.isEmpty()) {
+                    typeString = taskAcceptedService.getTypeArrByTaskIdAndUsername(taskid, user);
+                }
                 List<Type> typeArr = new ArrayList<>();
 
-                if (typeString != null && !typeString.isEmpty()) {
+                if (fineGrainedTypeIds != null && !fineGrainedTypeIds.isEmpty()) {
+                    for (Integer typeId : fineGrainedTypeIds) {
+                        Type safeType = resolveTypeById(typeId);
+                        if (safeType != null) {
+                            typeArr.add(safeType);
+                        }
+                    }
+                } else if (typeString != null && !typeString.isEmpty()) {
                     List<Integer> typeIds = Arrays.stream(typeString.split(","))
                             .map(Integer::parseInt)
                             .collect(Collectors.toList());
-
                     for (Integer typeId : typeIds) {
                         Type safeType = resolveTypeById(typeId);
                         if (safeType != null) {
@@ -660,6 +913,17 @@ public class TaskController {
         response.put("taskTypeAttributes", taskTypeAttributeService.getTaskTypeAttributeDetails(taskid, null));
         response.put("taskItems", buildTaskItemPayload(taskItems));
         response.put("currentTaskItemId", currentTaskItem != null ? currentTaskItem.getTaskItemId() : null);
+        response.put("currentTaskItemStatus", currentTaskItem != null ? currentTaskItem.getStatus() : null);
+        response.put("currentTaskItemAuditFeedback", currentTaskItem != null ? currentTaskItem.getAuditFeedback() : null);
+        response.put("currentUserAssignedTypeIds", taskItemTypeAcceptedService.getAssignedTypeIds(taskid, currentResolvedTaskItemId, userId));
+        response.put("currentUserFinished", isUserFinishedForTaskItem(taskid, currentResolvedTaskItemId, userId));
+        response.put("taskItemFinishSummary", buildTaskItemFinishSummary(taskid, currentResolvedTaskItemId));
+        response.put("currentUserConflictSummary", markService.calculateTaskItemConflictSummary(
+                taskid, currentResolvedTaskItemId, userId, taskInfo.getType()
+        ));
+        response.put("currentTaskItemConflictSummary", markService.calculateTaskItemConflictSummary(
+                taskid, currentResolvedTaskItemId, null, taskInfo.getType()
+        ));
         response.put("taskSource", currentTaskItem != null ? currentTaskItem.getTaskSource() : (task.getTaskSource() != null ? task.getTaskSource() : "geoserver"));
         response.put("coordinateSystem", taskInfo.getCoordinateSystem());
         response.put("localImagePath", currentTaskItem != null ? currentTaskItem.getLocalImagePath() : task.getLocalImagePath());
@@ -1394,6 +1658,13 @@ public class TaskController {
             item.put("taskSource", taskItem.getTaskSource());
             item.put("mapserver", taskItem.getMapServer());
             item.put("localImagePath", taskItem.getLocalImagePath());
+            item.put("status", taskItem.getStatus());
+            item.put("submitterId", taskItem.getSubmitterId());
+            item.put("submittedAt", taskItem.getSubmittedAt());
+            item.put("reviewerId", taskItem.getReviewerId());
+            item.put("reviewedAt", taskItem.getReviewedAt());
+            item.put("auditFeedback", taskItem.getAuditFeedback());
+            item.put("finishSummary", buildTaskItemFinishSummary(taskItem.getTaskId(), taskItem.getTaskItemId()));
             payload.add(item);
         }
         return payload;
@@ -1485,17 +1756,20 @@ public class TaskController {
                                       String targetUserType, Integer teamId, Integer creatorUserId) {
         List<SysUser> targetUsers = new ArrayList<>();
         Set<String> assignedUsernames = new LinkedHashSet<>();
+        Map<String, Set<Integer>> assignedTypeMap = new LinkedHashMap<>();
         if (currentUser.getIsadmin() == 0) {
             targetUsers = sysUserService.getAllNonAdminUsers();
             targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            List<?> rawSelectedSampleTypes = (List<?>) map.get("selectedSampleTypes");
-            String commonTypeStr = toTypeString(rawSelectedSampleTypes);
+            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
+            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
             for (SysUser user : targetUsers) {
                 if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
                     return ResultGenerator.getFailResult("为用户 '" + user.getUsername() + "' 分配任务失败");
                 }
                 assignedUsernames.add(user.getUsername());
+                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
             }
+            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
             recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
             return ResultGenerator.getSuccessResult("OK");
         }
@@ -1504,13 +1778,16 @@ public class TaskController {
             if (teamId == null) return ResultGenerator.getFailResult("管理员无团队信息");
             targetUsers = sysUserService.getUsersByTeamIdAndNotAdmin(teamId);
             targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            String commonTypeStr = toTypeString((List<?>) map.get("selectedSampleTypes"));
+            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
+            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
             for (SysUser user : targetUsers) {
                 if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
                     return ResultGenerator.getFailResult("为团队成员 '" + user.getUsername() + "' 分配任务失败");
                 }
                 assignedUsernames.add(user.getUsername());
+                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
             }
+            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
             recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
             return ResultGenerator.getSuccessResult("OK");
         }
@@ -1518,13 +1795,16 @@ public class TaskController {
         if ("allNonTeamUsers".equals(targetUserType)) {
             targetUsers = sysUserService.getNonTeamUsersAndNotAdmin(teamId);
             targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            String commonTypeStr = toTypeString((List<?>) map.get("selectedSampleTypes"));
+            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
+            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
             for (SysUser user : targetUsers) {
                 if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
                     return ResultGenerator.getFailResult("为非团队用户 '" + user.getUsername() + "' 分配任务失败");
                 }
                 assignedUsernames.add(user.getUsername());
+                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
             }
+            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
             recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
             return ResultGenerator.getSuccessResult("OK");
         }
@@ -1537,12 +1817,15 @@ public class TaskController {
             for (Map<String, Object> assignment : specificUserAssignments) {
                 String username = String.valueOf(assignment.get("username"));
                 List<?> rawTypeArr = (List<?>) assignment.get("typeArr");
-                String typeStr = toTypeString(rawTypeArr);
+                Set<Integer> typeIds = normalizeTypeIds(rawTypeArr);
+                String typeStr = toTypeString(new ArrayList<>(typeIds));
                 if (!taskAcceptedService.createTaskAccept(taskId, username, typeStr)) {
                     return ResultGenerator.getFailResult("为特定用户 '" + username + "' 分配任务失败");
                 }
                 assignedUsernames.add(username);
+                assignedTypeMap.put(username, new LinkedHashSet<>(typeIds));
             }
+            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
             recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
             return ResultGenerator.getSuccessResult("OK");
         }
@@ -1553,6 +1836,227 @@ public class TaskController {
     private String toTypeString(List<?> rawTypes) {
         if (rawTypes == null || rawTypes.isEmpty()) return "";
         return rawTypes.stream().map(Object::toString).collect(Collectors.joining(","));
+    }
+
+    private Set<Integer> normalizeTypeIds(List<?> rawTypes) {
+        LinkedHashSet<Integer> typeIds = new LinkedHashSet<>();
+        if (rawTypes == null) {
+            return typeIds;
+        }
+        for (Object rawType : rawTypes) {
+            if (rawType == null) continue;
+            try {
+                typeIds.add(Integer.valueOf(String.valueOf(rawType)));
+            } catch (Exception ignore) {
+            }
+        }
+        return typeIds;
+    }
+
+    private void syncTaskItemTypeAcceptedForTask(Integer taskId, Map<String, Set<Integer>> assignedTypeMap) {
+        if (taskId == null) return;
+        taskItemTypeAcceptedService.deleteByTaskId(taskId);
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) return;
+        if (assignedTypeMap == null || assignedTypeMap.isEmpty()) return;
+
+        List<TaskItemTypeAccepted> batch = new ArrayList<>();
+        for (Map.Entry<String, Set<Integer>> entry : assignedTypeMap.entrySet()) {
+            String username = entry.getKey();
+            Set<Integer> typeIds = entry.getValue();
+            if (username == null || username.trim().isEmpty() || typeIds == null || typeIds.isEmpty()) {
+                continue;
+            }
+            SysUser user = sysUserService.findByUsername(username);
+            if (user == null) continue;
+            for (TaskItem taskItem : taskItems) {
+                if (taskItem.getTaskItemId() == null) continue;
+                for (Integer typeId : typeIds) {
+                    if (typeId == null) continue;
+                    TaskItemTypeAccepted row = new TaskItemTypeAccepted();
+                    row.setTaskId(taskId);
+                    row.setTaskItemId(taskItem.getTaskItemId());
+                    row.setUserId(user.getUserid());
+                    row.setUsername(username);
+                    row.setTypeId(typeId);
+                    row.setIsFinished(false);
+                    row.setFinishedAt(null);
+                    batch.add(row);
+                }
+            }
+        }
+        if (!batch.isEmpty()) {
+            taskItemTypeAcceptedService.saveBatch(batch);
+        }
+    }
+
+    private Map<String, Object> buildTaskItemFinishSummary(Integer taskId, Integer taskItemId) {
+        Map<String, Object> summary = new HashMap<>();
+        List<TaskItemTypeAccepted> assignments = taskItemTypeAcceptedService.listByTaskItem(taskId, taskItemId);
+        if (assignments == null || assignments.isEmpty()) {
+            summary.put("totalUsers", 0);
+            summary.put("finishedUsers", 0);
+            summary.put("allFinished", false);
+            summary.put("unfinishedUsers", new ArrayList<>());
+            return summary;
+        }
+
+        Map<Integer, List<TaskItemTypeAccepted>> byUser = assignments.stream()
+                .collect(Collectors.groupingBy(TaskItemTypeAccepted::getUserId, LinkedHashMap::new, Collectors.toList()));
+        int totalUsers = byUser.size();
+        int finishedUsers = 0;
+        List<Map<String, Object>> unfinishedUsers = new ArrayList<>();
+
+        for (Map.Entry<Integer, List<TaskItemTypeAccepted>> entry : byUser.entrySet()) {
+            Integer userId = entry.getKey();
+            List<TaskItemTypeAccepted> rows = entry.getValue();
+            boolean finished = rows.stream().allMatch(row -> Boolean.TRUE.equals(row.getIsFinished()));
+            if (finished) {
+                finishedUsers++;
+            } else {
+                List<Integer> unfinishedTypeIds = rows.stream()
+                        .filter(row -> !Boolean.TRUE.equals(row.getIsFinished()))
+                        .map(TaskItemTypeAccepted::getTypeId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList());
+                List<String> unfinishedTypeNames = unfinishedTypeIds.stream()
+                        .map(this::resolveTypeById)
+                        .filter(Objects::nonNull)
+                        .map(Type::getTypeName)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList());
+                Map<String, Object> user = new HashMap<>();
+                user.put("userId", userId);
+                user.put("username", rows.get(0).getUsername());
+                user.put("unfinishedTypeIds", unfinishedTypeIds);
+                user.put("unfinishedTypeNames", unfinishedTypeNames);
+                unfinishedUsers.add(user);
+            }
+        }
+
+        summary.put("totalUsers", totalUsers);
+        summary.put("finishedUsers", finishedUsers);
+        summary.put("allFinished", totalUsers > 0 && finishedUsers == totalUsers);
+        summary.put("unfinishedUsers", unfinishedUsers);
+        return summary;
+    }
+
+    private Map<String, Object> buildTaskUnfinishedSummary(Integer taskId) {
+        Map<String, Object> summary = new HashMap<>();
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        List<Map<String, Object>> unfinishedItems = new ArrayList<>();
+        if (taskItems == null || taskItems.isEmpty()) {
+            summary.put("allFinished", false);
+            summary.put("unfinishedItems", unfinishedItems);
+            return summary;
+        }
+
+        for (TaskItem taskItem : taskItems) {
+            if (taskItem == null || taskItem.getTaskItemId() == null) {
+                continue;
+            }
+            Map<String, Object> itemSummary = buildTaskItemFinishSummary(taskId, taskItem.getTaskItemId());
+            if ((Boolean) itemSummary.getOrDefault("allFinished", false)) {
+                continue;
+            }
+            List<Map<String, Object>> unfinishedUsers = (List<Map<String, Object>>) itemSummary.get("unfinishedUsers");
+            if (unfinishedUsers == null || unfinishedUsers.isEmpty()) {
+                continue;
+            }
+            Map<String, Object> item = new HashMap<>();
+            item.put("taskItemId", taskItem.getTaskItemId());
+            item.put("itemName", taskItem.getItemName());
+            item.put("unfinishedUsers", unfinishedUsers);
+            unfinishedItems.add(item);
+        }
+
+        summary.put("allFinished", unfinishedItems.isEmpty());
+        summary.put("unfinishedItems", unfinishedItems);
+        return summary;
+    }
+
+    private boolean isUserFinishedForTaskItem(Integer taskId, Integer taskItemId, Integer userId) {
+        List<TaskItemTypeAccepted> rows = taskItemTypeAcceptedService.listByTaskItemAndUser(taskId, taskItemId, userId);
+        if (rows == null || rows.isEmpty()) return false;
+        return rows.stream().allMatch(row -> Boolean.TRUE.equals(row.getIsFinished()));
+    }
+
+    private void refreshTaskStatusByItems(Integer taskId) {
+        List<TaskItem> items = taskItemService.listByTaskId(taskId);
+        if (items == null || items.isEmpty()) return;
+        boolean hasEditable = items.stream().anyMatch(item -> Objects.equals(item.getStatus(), 3) || Objects.equals(item.getStatus(), 2));
+        boolean allPending = items.stream().allMatch(item -> Objects.equals(item.getStatus(), 0));
+        boolean allApproved = items.stream().allMatch(item -> Objects.equals(item.getStatus(), 1));
+
+        Integer nextStatus;
+        if (allApproved) {
+            nextStatus = 1;
+        } else if (allPending) {
+            nextStatus = 0;
+        } else if (hasEditable) {
+            nextStatus = 3;
+        } else {
+            nextStatus = 3;
+        }
+        taskService.update(new UpdateWrapper<Task>()
+                .eq("task_id", taskId)
+                .set("status", nextStatus));
+    }
+
+    private Map<String, Object> failMap(String code, String message) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("success", false);
+        map.put("code", code);
+        map.put("message", message);
+        return map;
+    }
+
+    private Map<String, Integer> buildMyTaskItemStatusSummary(Integer taskId, Integer userId) {
+        Map<String, Integer> summary = new HashMap<>();
+        summary.put("myTotalItems", 0);
+        summary.put("myEditableItems", 0);
+        summary.put("myFinishedUnsubmittedItems", 0);
+        summary.put("myPendingAuditItems", 0);
+        summary.put("myApprovedItems", 0);
+        summary.put("myRejectedItems", 0);
+        if (taskId == null || userId == null) {
+            return summary;
+        }
+        List<TaskItemTypeAccepted> rows = taskItemTypeAcceptedService.listByTaskId(taskId).stream()
+                .filter(row -> Objects.equals(row.getUserId(), userId))
+                .collect(Collectors.toList());
+        if (rows.isEmpty()) {
+            return summary;
+        }
+        Map<Integer, List<TaskItemTypeAccepted>> byTaskItem = rows.stream()
+                .collect(Collectors.groupingBy(TaskItemTypeAccepted::getTaskItemId, LinkedHashMap::new, Collectors.toList()));
+        summary.put("myTotalItems", byTaskItem.size());
+
+        for (Map.Entry<Integer, List<TaskItemTypeAccepted>> entry : byTaskItem.entrySet()) {
+            Integer taskItemId = entry.getKey();
+            TaskItem taskItem = taskItemService.getById(taskItemId);
+            if (taskItem == null) continue;
+            Integer status = taskItem.getStatus() == null ? 3 : taskItem.getStatus();
+            if (status == 3 || status == 2) {
+                summary.put("myEditableItems", summary.get("myEditableItems") + 1);
+            }
+            if (status == 0) {
+                summary.put("myPendingAuditItems", summary.get("myPendingAuditItems") + 1);
+            }
+            if (status == 1) {
+                summary.put("myApprovedItems", summary.get("myApprovedItems") + 1);
+            }
+            if (status == 2) {
+                summary.put("myRejectedItems", summary.get("myRejectedItems") + 1);
+            }
+            boolean finished = entry.getValue().stream().allMatch(v -> Boolean.TRUE.equals(v.getIsFinished()));
+            if (finished && (status == 3 || status == 2)) {
+                summary.put("myFinishedUnsubmittedItems", summary.get("myFinishedUnsubmittedItems") + 1);
+            }
+        }
+        return summary;
     }
 
     private void recordTaskAssignProvenance(Integer taskId, Integer operatorUserId, String assignMode, Set<String> usernames) {

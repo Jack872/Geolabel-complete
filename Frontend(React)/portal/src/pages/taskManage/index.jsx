@@ -62,6 +62,24 @@ const TaskManage = () => {
   // 新增状态：存储选中的行
   const [selectedRowsState, setSelectedRows] = useState([]);
 
+  const getTaskStatusMeta = (record) => {
+    switch (record?.status) {
+      case 0:
+        return { text: '审核中', color: 'processing', icon: <ClockCircleOutlined /> };
+      case 1:
+        return { text: '审核通过', color: 'success', icon: <CheckCircleOutlined /> };
+      case 2:
+        return { text: '审核未通过', color: 'error', icon: <CloseCircleOutlined /> };
+      case 3:
+        if (record?.auditfeedback) {
+          return { text: '审核退回', color: 'orange', icon: <CloseCircleOutlined /> };
+        }
+        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+      default:
+        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+    }
+  };
+
   // 处理生成请求
   const handleGenerateDataset = async (values) => {
     const hide = message.loading('正在后台生成数据集，请稍候...', 0);
@@ -526,42 +544,19 @@ const TaskManage = () => {
         0: { text: '审核中' },
         1: { text: '审核通过' },
         2: { text: '审核未通过' },
-        3: { text: '未提交' },
+        3: { text: '审核退回/未提交' },
       },
       fieldProps: {
         placeholder: '请选择状态',
         allowClear: true,
       },
       render: (_, record) => {
-        let color, text, icon;
-        switch (record.status) {
-          case 0:
-            text = '审核中';
-            color = 'processing';
-            icon = <ClockCircleOutlined />;
-            break;
-          case 1:
-            text = '审核通过';
-            color = 'success';
-            icon = <CheckCircleOutlined />;
-            break;
-          case 2:
-            text = '审核未通过';
-            color = 'error';
-            icon = <CloseCircleOutlined />;
-            break;
-          case 3:
-            text = '未提交';
-            color = '#BDBDBD';
-            icon = <MinusCircleOutlined />;
-            break;
-          default:
-            break;
-        }
+        const { color, text, icon } = getTaskStatusMeta(record);
+        const content = record?.auditfeedback && text === '审核退回'
+          ? <Tag color={color} icon={icon}><span title={record.auditfeedback}>{text}</span></Tag>
+          : <Tag color={color} icon={icon}>{text}</Tag>;
         return (
-          <Tag color={color} icon={icon}>
-            {text}
-          </Tag>
+          content
         );
       },
     },

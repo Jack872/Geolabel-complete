@@ -89,6 +89,7 @@ public class CoordinateConverter {
             Map<String, Object> markGeoJson = MapUtil.builder(new HashMap<String, Object>())
                     .put("typeId", mark.getTypeId())
                     .put("markId", mark.getId())
+                    .put("userId", mark.getUserId())
                     .put("feedback", mark.getFeedback())
                     .put("markGeoJson", mark.getGeom())
                     .put("attrJson", mark.getAttrJson())

@@ -41,7 +41,7 @@ const TASK_STATUS_META = {
   0: { label: '审核中', color: 'processing' },
   1: { label: '审核通过', color: 'success' },
   2: { label: '审核驳回', color: 'error' },
-  3: { label: '未提交', color: 'default' },
+  3: { label: '审核退回/未提交', color: 'default' },
 };
 
 const QualityReportDetailPage = (props) => {

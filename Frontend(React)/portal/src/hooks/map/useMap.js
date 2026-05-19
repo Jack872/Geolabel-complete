@@ -81,6 +81,7 @@ function useMap() {
         taskItemId: storedTaskItemId ? Number(storedTaskItemId) : undefined,
       });
       if (taskResult && taskResult.markGeoJsonArr) {
+        setTaskInfo(taskResult);
         setMarkGeoJsonArr(taskResult.markGeoJsonArr);
         if (taskResult.taskItems) {
           setTaskItems(taskResult.taskItems);

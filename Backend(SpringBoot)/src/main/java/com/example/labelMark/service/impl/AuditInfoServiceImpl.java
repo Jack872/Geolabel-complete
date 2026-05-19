@@ -10,11 +10,14 @@ import com.example.labelMark.domain.AuditInfo;
 import com.example.labelMark.domain.Mark;
 import com.example.labelMark.domain.SysUser;
 import com.example.labelMark.domain.Task;
+import com.example.labelMark.domain.TaskItem;
 import com.example.labelMark.mapper.AuditInfoMapper;
 import com.example.labelMark.service.AuditInfoService;
 import com.example.labelMark.service.MarkService;
 import com.example.labelMark.service.ProvenanceService;
 import com.example.labelMark.service.TaskService;
+import com.example.labelMark.service.TaskItemService;
+import com.example.labelMark.service.TaskItemTypeAcceptedService;
 import com.example.labelMark.utils.ResultGenerator;
 import com.example.labelMark.vo.LoginUser;
 import com.example.labelMark.vo.constant.Result;
@@ -31,10 +34,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import javax.annotation.Resource;
 import java.time.LocalDate;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static com.example.labelMark.utils.SampleEvaluateUtils.boundaryError;
@@ -53,6 +58,12 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
     @Resource
     TaskService taskService;
 
+    @Resource
+    TaskItemService taskItemService;
+
+    @Resource
+    TaskItemTypeAcceptedService taskItemTypeAcceptedService;
+
     @Resource private ProvenanceService provenanceService;
 
     @Override
@@ -61,6 +72,9 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         Integer taskId = (Integer) req.get("taskId");
         Integer taskItemId = req.get("taskItemId") == null ? null : Integer.valueOf(req.get("taskItemId").toString());
         String overallFeedback = (String) req.get("overallFeedback");
+        LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        SysUser currentUser = loginUser.getSysUser();
+        Integer resolvedTaskItemId = resolveTaskItemId(taskId, taskItemId);
         // 转换反馈列表
         ObjectMapper mapper = new ObjectMapper();
         List<FeedbackDTO> feedbackList = mapper.convertValue(
@@ -85,11 +99,21 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         });
         // 4) 批量保存，提高效率（如果你用 MyBatis-Plus）
         markService.updateBatchById(markList);
-        taskService.update(new UpdateWrapper<Task>()
-                .set("audit_feedback", overallFeedback) // 只设置你需要更新的字段
-                .set("status", 3) //修改为正在标注
-                .eq("task_id", taskId)                      // 指定更新条件
-        );
+        if (resolvedTaskItemId != null) {
+            taskItemService.update(new UpdateWrapper<TaskItem>()
+                    .eq("task_id", taskId)
+                    .eq("task_item_id", resolvedTaskItemId)
+                    .set("status", 2)
+                    .set("reviewer_id", currentUser.getUserid())
+                    .set("reviewed_at", new Date())
+                    .set("audit_feedback", overallFeedback));
+            taskItemTypeAcceptedService.listByTaskItem(taskId, resolvedTaskItemId).forEach(item -> {
+                item.setIsFinished(false);
+                item.setFinishedAt(null);
+            });
+            taskItemTypeAcceptedService.updateBatchById(taskItemTypeAcceptedService.listByTaskItem(taskId, resolvedTaskItemId));
+        }
+        refreshTaskStatusByItems(taskId);
 
         // 先尝试获取现有记录
         AuditInfo auditInfo = getOne(new QueryWrapper<AuditInfo>().eq("task_id", taskId));
@@ -113,9 +137,6 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
 
         // ======= 新增：记录 PROV 溯源 =======
         try {
-            // 获取用户ID
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            LoginUser loginUser = (LoginUser) authentication.getPrincipal();
             String userId = loginUser.getSysUser().getUserid().toString();
 
             ProvEntityRef inputTask = ProvEntityRef.of(taskId.toString(), "TASK", "任务#" + taskId);
@@ -153,6 +174,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         // 从 request 对象中安全地获取 taskId 和 correctionsDTO
         Integer taskId = request.getTaskId();
         Integer taskItemId = request.getTaskItemId();
+        Integer resolvedTaskItemId = resolveTaskItemId(taskId, taskItemId);
         CorrectionsDTO correctionsDTO = request.getCorrections();
 
         Task task = taskService.getById(taskId);
@@ -298,9 +320,16 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
             auditInfo.setLabelCoverRation((float) (labeledArea/correctLabelArea[0]));
             saveOrUpdate(auditInfo);
 
-//            任务通过审核
-            task.setStatus(1);
-            taskService.updateById(task);
+            if (resolvedTaskItemId != null) {
+                taskItemService.update(new UpdateWrapper<TaskItem>()
+                        .eq("task_id", taskId)
+                        .eq("task_item_id", resolvedTaskItemId)
+                        .set("status", 1)
+                        .set("reviewer_id", currentUser.getUserid())
+                        .set("reviewed_at", new Date())
+                        .set("audit_feedback", null));
+            }
+            refreshTaskStatusByItems(taskId);
 
             // ======= 新增：记录 PROV 溯源 =======
             try {
@@ -354,5 +383,51 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
             return ResultGenerator.getSuccessResult(StatusEnum.SUCCESS,"查询审核信息成功",auditInfo);
         }
         return ResultGenerator.getFailResult("查询审核信息失败");
+    }
+
+    private Integer resolveTaskItemId(Integer taskId, Integer taskItemId) {
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        return taskItem == null ? null : taskItem.getTaskItemId();
+    }
+
+    private void refreshTaskStatusByItems(Integer taskId) {
+        if (taskId == null) {
+            return;
+        }
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) {
+            return;
+        }
+        Integer nextStatus = 3;
+        boolean allApproved = true;
+        boolean allPendingReview = true;
+        for (TaskItem taskItem : taskItems) {
+            Integer status = taskItem.getStatus();
+            if (Objects.equals(status, 2) || Objects.equals(status, 3)) {
+                nextStatus = 3;
+                allApproved = false;
+                allPendingReview = false;
+                break;
+            }
+            if (!Objects.equals(status, 1)) {
+                allApproved = false;
+            }
+            if (!Objects.equals(status, 0)) {
+                allPendingReview = false;
+            }
+        }
+        if (nextStatus != 3) {
+            if (allApproved) {
+                nextStatus = 1;
+            } else if (allPendingReview) {
+                nextStatus = 0;
+            }
+        }
+        Task task = taskService.getById(taskId);
+        if (task == null) {
+            return;
+        }
+        task.setStatus(nextStatus);
+        taskService.updateById(task);
     }
 }

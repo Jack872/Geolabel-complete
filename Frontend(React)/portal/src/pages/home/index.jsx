@@ -132,6 +132,22 @@ const Workplace = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('created');
 
+  const getTaskStatusLabel = (task) => {
+    const status = parseInt(task?.status, 10);
+    switch (status) {
+      case 0:
+        return '审核中';
+      case 1:
+        return '审核通过';
+      case 2:
+        return '审核未通过';
+      case 3:
+        return task?.auditfeedback ? '审核退回' : '未提交';
+      default:
+        return '未提交';
+    }
+  };
+
   // 确保获取到currentUser和isAdmin
   const currentUser = currentState?.currentUser || '';
   const isAdmin = currentState?.isAdmin || false;
@@ -159,36 +175,14 @@ const Workplace = () => {
       '审核中': 0,
       '审核通过': 0,
       '审核未通过': 0,
+      '审核退回': 0,
       '未提交': 0,
     };
 
     taskData.forEach(task => {
       console.log('Processing task:', task);
-      if (task.status !== undefined && task.status !== null) {
-        const status = parseInt(task.status);
-        console.log('Task status parsed:', status);
-
-        switch (status) {
-          case 0:
-            statusCounts['审核中']++;
-            break;
-          case 1:
-            statusCounts['审核通过']++;
-            break;
-          case 2:
-            statusCounts['审核未通过']++;
-            break;
-          case 3:
-            statusCounts['未提交']++;
-            break;
-          default:
-            statusCounts['未提交']++;
-            break;
-        }
-      } else {
-        console.log('Task status undefined for task:', task);
-        statusCounts['未提交']++;
-      }
+      const label = getTaskStatusLabel(task);
+      statusCounts[label] = (statusCounts[label] || 0) + 1;
     });
 
     console.log('Status counts:', statusCounts);

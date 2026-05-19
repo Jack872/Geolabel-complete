@@ -5,19 +5,27 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.labelMark.DTO.prov.ProvEntityRef;
 import com.example.labelMark.domain.Mark;
+import com.example.labelMark.domain.TaskItem;
+import com.example.labelMark.domain.TaskItemTypeAccepted;
 import com.example.labelMark.mapper.MarkMapper;
 import com.example.labelMark.service.MarkService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.labelMark.service.ProvenanceService;
 import com.example.labelMark.service.TaskAcceptedService;
+import com.example.labelMark.service.TaskItemService;
+import com.example.labelMark.service.TaskItemTypeAcceptedService;
 import com.example.labelMark.service.TaskService;
 import com.example.labelMark.utils.CoordinateConverter;
+import org.locationtech.jts.geom.Geometry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.sql.ResultSet;
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static com.example.labelMark.utils.SampleEvaluateUtils.parseGeoJson;
 
 /**
  * <p>
@@ -34,22 +42,57 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
     private MarkMapper markMapper;
 
     @Resource private TaskService taskService;
+    @Resource private TaskItemService taskItemService;
     @Resource private TaskAcceptedService taskAcceptedService;
+    @Resource private TaskItemTypeAcceptedService taskItemTypeAcceptedService;
     @Resource private ProvenanceService provenanceService;
+    private static final double COVERAGE_RATIO_THRESHOLD = 0.1d;
+    private static final double INTERSECTION_AREA_THRESHOLD = 0.1d;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public String saveMarkInfoIncremental(Map<String, Object> request) throws Exception {
+    public Map<String, Object> saveMarkInfoIncremental(Map<String, Object> request) throws Exception {
         // 1. 获取基础参数
         Integer userId = Integer.valueOf(request.get("userid").toString());
         Integer taskId = Integer.valueOf(request.get("id").toString());
         Integer taskItemId = request.get("taskItemId") == null ? null : Integer.valueOf(request.get("taskItemId").toString());
+        TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
+        if (taskItem == null) {
+            throw new IllegalStateException("TASK_ITEM_NOT_FOUND: 当前影像不存在");
+        }
+        if (!(Objects.equals(taskItem.getStatus(), 3) || Objects.equals(taskItem.getStatus(), 2))) {
+            throw new IllegalStateException("TASK_ITEM_LOCKED: 当前影像已提交审核或审核通过，不能继续编辑。");
+        }
 
         // 2. 检查唯一执行者标志
         boolean setAsSubmitter = false;
         if (request.containsKey("setAsSubmitter")) {
             Object val = request.get("setAsSubmitter");
             setAsSubmitter = val != null && Boolean.parseBoolean(val.toString());
+        }
+        Set<Integer> assignedTypeIds = taskItemTypeAcceptedService.getAssignedTypeIds(taskId, taskItem.getTaskItemId(), userId);
+        List<TaskItemTypeAccepted> assignmentRows = taskItemTypeAcceptedService
+                .listByTaskItemAndUser(taskId, taskItem.getTaskItemId(), userId);
+        if (!assignmentRows.isEmpty() && assignmentRows.stream().allMatch(row -> Boolean.TRUE.equals(row.getIsFinished()))) {
+            throw new IllegalStateException("USER_ALREADY_FINISHED: 当前用户已将负责类别标记为完成，请先撤销完成后再修改。");
+        }
+        if (assignedTypeIds.isEmpty()) {
+            // 兼容旧流程：若未配置细粒度分工，退回到前端透传的 typeArr 权限
+            Object rawTypeArr = request.get("typeArr");
+            if (rawTypeArr instanceof List) {
+                for (Object item : (List<?>) rawTypeArr) {
+                    if (!(item instanceof Map)) continue;
+                    Object typeId = ((Map<?, ?>) item).get("typeId");
+                    if (typeId == null) continue;
+                    try {
+                        assignedTypeIds.add(Integer.valueOf(String.valueOf(typeId)));
+                    } catch (Exception ignore) {
+                    }
+                }
+            }
+            if (assignedTypeIds.isEmpty()) {
+                throw new IllegalStateException("TYPE_NOT_ASSIGNED: 当前用户未分配该影像标注权限。");
+            }
         }
 
         // 3. 【删除逻辑】处理前端传来的删除列表
@@ -67,9 +110,14 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
                 }
             }
             if (!idsToDelete.isEmpty()) {
-                // 执行批量删除
-                boolean delSuccess = this.removeByIds(idsToDelete);
-                if (delSuccess) deleteCount = idsToDelete.size();
+                List<Mark> deleteCandidates = listByIds(idsToDelete).stream()
+                        .filter(mark -> Objects.equals(mark.getTaskId(), taskId))
+                        .filter(mark -> Objects.equals(mark.getUserId(), userId))
+                        .filter(mark -> Objects.equals(mark.getTaskItemId(), taskItem.getTaskItemId()))
+                        .collect(Collectors.toList());
+                List<Integer> safeDeleteIds = deleteCandidates.stream().map(Mark::getId).collect(Collectors.toList());
+                boolean delSuccess = safeDeleteIds.isEmpty() || this.removeByIds(safeDeleteIds);
+                if (delSuccess) deleteCount = safeDeleteIds.size();
             }
         }
 
@@ -94,6 +142,9 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
                 // 设置类型ID
                 if (markData.get("typeId") != null) {
                     mark.setTypeId(Integer.valueOf(markData.get("typeId").toString()));
+                }
+                if (!assignedTypeIds.contains(mark.getTypeId())) {
+                    throw new IllegalStateException("TYPE_NOT_ASSIGNED: 当前用户没有该影像下此类别的标注权限。");
                 }
 
                 // 设置几何信息 (根据你的实体类字段调整，如 setGeometry 或 setMarkInfo)
@@ -148,6 +199,13 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
 
                 if (existingMarkId != null && existingMarkId > 0) {
                     // --- 更新 ---
+                    Mark existed = getById(existingMarkId);
+                    if (existed == null
+                            || !Objects.equals(existed.getTaskId(), taskId)
+                            || !Objects.equals(existed.getUserId(), userId)
+                            || !Objects.equals(existed.getTaskItemId(), taskItem.getTaskItemId())) {
+                        throw new IllegalStateException("NO_PERMISSION: 不允许修改非本人标注。");
+                    }
                     mark.setId(existingMarkId);
                     // updateById 默认只更新非空字段
                     this.updateById(mark);
@@ -193,7 +251,116 @@ public class MarkServiceImpl extends ServiceImpl<MarkMapper, Mark> implements Ma
             log.warn("溯源记录失败"+e.getMessage()); // 使用 @Slf4j 或 LoggerFactory
         }
 
-        return String.format("保存成功 (新增:%d, 更新:%d, 删除:%d)", insertCount, updateCount, deleteCount);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", String.format("保存成功 (新增:%d, 更新:%d, 删除:%d)", insertCount, updateCount, deleteCount));
+        response.put("warning", false);
+        response.put("code", "OK");
+        return response;
+    }
+
+    @Override
+    public Map<String, Object> calculateTaskItemConflictSummary(Integer taskId, Integer taskItemId, Integer currentUserId, String taskType) {
+        Map<String, Object> summary = new HashMap<>();
+        List<Map<String, Object>> conflicts = new ArrayList<>();
+        summary.put("taskType", taskType);
+        summary.put("hasConflict", false);
+        summary.put("conflictCount", 0);
+        summary.put("conflicts", conflicts);
+
+        if (taskId == null || taskItemId == null) {
+            return summary;
+        }
+        if ("目标检测".equals(taskType)) {
+            summary.put("mode", "detection");
+            summary.put("message", "目标检测任务允许覆盖，不返回覆盖冲突。");
+            return summary;
+        }
+
+        List<Mark> marks = list(new QueryWrapper<Mark>()
+                .eq("task_id", taskId)
+                .eq("task_item_id", taskItemId));
+        if (marks == null || marks.size() < 2) {
+            return summary;
+        }
+
+        Map<Integer, Geometry> geometryByMarkId = new HashMap<>();
+        for (Mark mark : marks) {
+            if (mark == null || mark.getId() == null) continue;
+            try {
+                Geometry geom = parseGeoJson(mark.getGeom());
+                if (geom != null && !geom.isEmpty()) {
+                    geometryByMarkId.put(mark.getId(), geom);
+                }
+            } catch (Exception ignore) {
+            }
+        }
+
+        Set<String> conflictKeys = new HashSet<>();
+        for (int i = 0; i < marks.size(); i++) {
+            Mark left = marks.get(i);
+            if (left == null || left.getId() == null || left.getUserId() == null) continue;
+            Geometry leftGeom = geometryByMarkId.get(left.getId());
+            if (leftGeom == null || leftGeom.isEmpty()) continue;
+
+            for (int j = 0; j < marks.size(); j++) {
+                if (i == j) continue;
+                Mark right = marks.get(j);
+                if (right == null || right.getId() == null || right.getUserId() == null) continue;
+                if (Objects.equals(left.getUserId(), right.getUserId())) continue;
+                if (currentUserId != null && !Objects.equals(left.getUserId(), currentUserId)) continue;
+                if (currentUserId == null && left.getId() >= right.getId()) continue;
+
+                Geometry rightGeom = geometryByMarkId.get(right.getId());
+                if (rightGeom == null || rightGeom.isEmpty()) continue;
+                if (!leftGeom.intersects(rightGeom)) continue;
+
+                Geometry intersection;
+                try {
+                    intersection = leftGeom.intersection(rightGeom);
+                } catch (Exception ignore) {
+                    continue;
+                }
+                if (intersection == null || intersection.isEmpty()) continue;
+
+                double intersectionArea = intersection.getArea();
+                if (intersectionArea <= INTERSECTION_AREA_THRESHOLD) continue;
+
+                double leftArea = leftGeom.getArea();
+                double rightArea = rightGeom.getArea();
+                double minArea = Math.min(leftArea, rightArea);
+                if (minArea <= 0) continue;
+
+                double coverageRatio = intersectionArea / minArea;
+                if (coverageRatio <= COVERAGE_RATIO_THRESHOLD) continue;
+
+                String conflictKey = currentUserId == null
+                        ? Math.min(left.getId(), right.getId()) + "_" + Math.max(left.getId(), right.getId())
+                        : left.getId() + "_" + right.getId();
+                if (!conflictKeys.add(conflictKey)) {
+                    continue;
+                }
+
+                Map<String, Object> conflict = new HashMap<>();
+                conflict.put("selfMarkId", left.getId());
+                conflict.put("otherMarkId", right.getId());
+                conflict.put("selfUserId", left.getUserId());
+                conflict.put("otherUserId", right.getUserId());
+                conflict.put("selfTypeId", left.getTypeId());
+                conflict.put("otherTypeId", right.getTypeId());
+                conflict.put("intersectionArea", intersectionArea);
+                conflict.put("coverageRatio", coverageRatio);
+                conflicts.add(conflict);
+            }
+        }
+
+        summary.put("hasConflict", !conflicts.isEmpty());
+        summary.put("conflictCount", conflicts.size());
+        summary.put("conflicts", conflicts);
+        if (!conflicts.isEmpty()) {
+            summary.put("message", "存在潜在覆盖冲突，审核员将重点检查。");
+        }
+        return summary;
     }
 
     @Override

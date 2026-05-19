@@ -9,6 +9,7 @@ const FeatureAttributePanel = ({
   selectedFeatureAttrJson = {},
   onFocusFeature,
   onUpdateAttr,
+  readOnly = false,
 }) => {
   return (
     <div className="model-panel attribute-panel">
@@ -55,6 +56,7 @@ const FeatureAttributePanel = ({
                       size="small"
                       allowClear={!field.required}
                       value={value}
+                      disabled={readOnly}
                       onChange={(nextValue) => onUpdateAttr(field.key, nextValue, field.type)}
                       options={(field.options || []).map((item) => ({ label: item, value: item }))}
                       placeholder={field.placeholder || `请选择${field.label}`}
@@ -64,6 +66,7 @@ const FeatureAttributePanel = ({
                       size="small"
                       type={field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
                       value={value === undefined || value === null ? '' : value}
+                      disabled={readOnly}
                       placeholder={field.placeholder || `请输入${field.label}`}
                       onChange={(event) => onUpdateAttr(field.key, event.target.value, field.type)}
                     />
@@ -80,4 +83,3 @@ const FeatureAttributePanel = ({
 };
 
 export default FeatureAttributePanel;
-

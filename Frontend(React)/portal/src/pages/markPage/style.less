@@ -876,6 +876,42 @@
   }
 }
 
+.conflict-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflict-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #ffe58f;
+  background: #fffbe6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #ffc53d;
+    box-shadow: 0 2px 10px rgba(250, 173, 20, 0.15);
+  }
+
+  .conflict-item-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ad6800;
+    margin-bottom: 4px;
+  }
+
+  .conflict-item-text {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.5;
+  }
+}
+
 /* 辅助函数选择器样式优化 */
 .parameter-row .parameter-item {
   .ant-select {
@@ -1805,6 +1841,10 @@
     gap: 4px;
   }
 
+  .top-info-item-action {
+    gap: 0;
+  }
+
   .top-info-label {
     font-size: 14px;
     color: rgba(255, 255, 255, 0.85);
@@ -1817,6 +1857,14 @@
     font-weight: 700;
     color: #fff;
     text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+  }
+
+  .top-info-status-finished {
+    color: #b7eb8f;
+  }
+
+  .top-info-status-pending {
+    color: #ffd666;
   }
 
   .top-info-type {
@@ -1843,6 +1891,41 @@
     background: rgba(255,255,255,0.4);
     margin: 0 14px;
     flex-shrink: 0;
+  }
+
+  .top-finish-btn {
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.55);
+    background: rgba(24, 144, 255, 0.18);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background: rgba(24, 144, 255, 0.32);
+      border-color: rgba(255,255,255,0.85);
+    }
+
+    &.is-finished {
+      background: rgba(82, 196, 26, 0.22);
+      border-color: rgba(183, 235, 143, 0.85);
+    }
+
+    &.is-finished:hover:not(:disabled) {
+      background: rgba(82, 196, 26, 0.34);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      box-shadow: none;
+    }
   }
 }
 

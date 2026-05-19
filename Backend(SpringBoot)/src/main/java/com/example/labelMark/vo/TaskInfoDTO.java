@@ -33,4 +33,11 @@ public class TaskInfoDTO {
     private Integer batchIndex; // 批次序号
     private Object annotationSchema; // 任务标注属性约束
     private Integer annotationSchemaVersion; // 约束版本
+    private Integer myTotalItems; // 我负责的影像数
+    private Integer myEditableItems; // 我可编辑影像数(status=3/2)
+    private Integer myFinishedUnsubmittedItems; // 我已完成但影像未提交
+    private Integer myPendingAuditItems; // 待审核影像数(status=0)
+    private Integer myApprovedItems; // 审核通过影像数(status=1)
+    private Integer myRejectedItems; // 审核退回影像数(status=2)
+    private Boolean canStartMark; // 是否可进入标注
 }

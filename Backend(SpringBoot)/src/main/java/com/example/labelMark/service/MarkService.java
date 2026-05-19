@@ -38,5 +38,15 @@ public interface MarkService extends IService<Mark> {
      * @param request 前端传来的 Map 参数
      * @return 操作结果描述
      */
-    String saveMarkInfoIncremental(Map<String, Object> request) throws Exception;
+    Map<String, Object> saveMarkInfoIncremental(Map<String, Object> request) throws Exception;
+
+    /**
+     * 计算任务影像项冲突摘要。
+     * @param taskId 任务ID
+     * @param taskItemId 影像项ID
+     * @param currentUserId 当前用户ID；为 null 时统计整张影像的跨用户冲突
+     * @param taskType 任务类型
+     * @return 冲突摘要
+     */
+    Map<String, Object> calculateTaskItemConflictSummary(Integer taskId, Integer taskItemId, Integer currentUserId, String taskType);
 }

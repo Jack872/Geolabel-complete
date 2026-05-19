@@ -101,7 +101,10 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             taskInfoDTO.setTaskid(Integer.valueOf(ObjectUtil.toString(map.get("task_id"))));
             taskInfoDTO.setTaskname(ObjectUtil.toString(map.get("task_name")));
             taskInfoDTO.setType(ObjectUtil.toString(map.get("task_type")));
-            taskInfoDTO.setMapserver(ObjectUtil.toString(map.get("map_server")));
+            taskInfoDTO.setMapserver(resolveTaskMapserverDisplay(
+                    Integer.valueOf(ObjectUtil.toString(map.get("task_id"))),
+                    ObjectUtil.toString(map.get("map_server"))
+            ));
             taskInfoDTO.setTaskSource(ObjectUtil.toString(map.get("task_source")));
             taskInfoDTO.setBatchId(ObjectUtil.toString(map.get("batch_id")));
             if (map.get("batch_index") != null && !"null".equals(ObjectUtil.toString(map.get("batch_index")))) {
@@ -225,7 +228,10 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             taskInfoDTO.setTaskid(Integer.valueOf(ObjectUtil.toString(map.get("task_id"))));
             taskInfoDTO.setTaskname(ObjectUtil.toString(map.get("task_name")));
             taskInfoDTO.setType(ObjectUtil.toString(map.get("task_type")));
-            taskInfoDTO.setMapserver(ObjectUtil.toString(map.get("map_server")));
+            taskInfoDTO.setMapserver(resolveTaskMapserverDisplay(
+                    Integer.valueOf(ObjectUtil.toString(map.get("task_id"))),
+                    ObjectUtil.toString(map.get("map_server"))
+            ));
             taskInfoDTO.setTaskSource(ObjectUtil.toString(map.get("task_source")));
             taskInfoDTO.setBatchId(ObjectUtil.toString(map.get("batch_id")));
             if (map.get("batch_index") != null && !"null".equals(ObjectUtil.toString(map.get("batch_index")))) {
@@ -315,6 +321,24 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
                 .set("map_server", firstItem.getMapServer())
                 .set("local_image_path", firstItem.getLocalImagePath());
         update(wrapper);
+    }
+
+    private String resolveTaskMapserverDisplay(Integer taskId, String fallbackMapserver) {
+        if (taskId == null) {
+            return fallbackMapserver;
+        }
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) {
+            return fallbackMapserver;
+        }
+        if (taskItems.size() <= 1) {
+            return fallbackMapserver;
+        }
+        String firstItemName = taskItems.get(0).getItemName();
+        if (firstItemName == null || firstItemName.trim().isEmpty()) {
+            return fallbackMapserver;
+        }
+        return firstItemName + "等";
     }
 
     private JSONObject parseAnnotationSchema(Object value) {

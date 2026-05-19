@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.io.Serializable;
+import java.util.Date;
 
 @Getter
 @Setter
@@ -53,4 +54,24 @@ public class TaskItem implements Serializable {
     @TableField("status")
     @ApiModelProperty("影像项状态")
     private Integer status;
+
+    @TableField("submitter_id")
+    @ApiModelProperty("提交人ID")
+    private Integer submitterId;
+
+    @TableField("submitted_at")
+    @ApiModelProperty("提交时间")
+    private Date submittedAt;
+
+    @TableField("reviewer_id")
+    @ApiModelProperty("审核人ID")
+    private Integer reviewerId;
+
+    @TableField("reviewed_at")
+    @ApiModelProperty("审核时间")
+    private Date reviewedAt;
+
+    @TableField("audit_feedback")
+    @ApiModelProperty("审核反馈")
+    private String auditFeedback;
 }
