@@ -56,6 +56,41 @@ export async function reqSubmitTask(data) {
   });
 }
 
+export async function reqFinishTaskItem(data) {
+  return request('/wegismarkapi/task/item/finish', {
+    method: 'post',
+    data,
+  });
+}
+
+export async function reqCancelFinishTaskItem(data) {
+  return request('/wegismarkapi/task/item/cancelFinish', {
+    method: 'post',
+    data,
+  });
+}
+
+export async function reqSubmitTaskItem(data) {
+  return request('/wegismarkapi/task/item/submit', {
+    method: 'post',
+    data,
+  });
+}
+
+export async function reqCancelSubmitTaskItem(data) {
+  return request('/wegismarkapi/task/item/cancelSubmit', {
+    method: 'post',
+    data,
+  });
+}
+
+export async function reqReviewTaskItem(data) {
+  return request('/wegismarkapi/task/item/review', {
+    method: 'post',
+    data,
+  });
+}
+
 // 批量训练任务
 export async function reqBatchTrainTasks(params) {
   return request('/wegismarkapi/task/batchTrain', {

@@ -4,7 +4,7 @@ import { useModel, history, useAccess } from 'umi';
 import { useState, useRef, useEffect } from 'react';
 import { reqGetTaskList, reqStartMark, reqSubmitTask, reqGetPersonalTaskList } from '@/services/taskManage/api.js';
 import { reqJoinTeam, reqGetCurrentUserInfo } from '@/services/teamManage/api.js';
-import { Button, message, Popconfirm, Tag, Tooltip, Space, Checkbox, Row, Col } from 'antd';
+import { Button, message, Popconfirm, Tag, Tooltip, Space, Checkbox, Row, Col, Modal } from 'antd';
 import { Encrypt, jumpRoutesInNewPage } from '@/utils/utils';
 import JoinTeamForm from './components/JoinTeamForm';
 import ModelToolPanel from './components/ModelToolPanel';
@@ -28,6 +28,56 @@ const Category = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [userTeamInfo, setUserTeamInfo] = useState(null); // 新增：用户团队信息
   const access = useAccess();
+
+  const showUnfinishedSubmitWarning = (result) => {
+    const unfinishedItems = Array.isArray(result?.data?.unfinishedItems) ? result.data.unfinishedItems : [];
+    if (unfinishedItems.length === 0) {
+      message.warning(result?.message || '任务仍有未完成内容，暂不能提交');
+      return;
+    }
+    const content = (
+      <div>
+        {unfinishedItems.map((item) => (
+          <div key={item.taskItemId} style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              {(item?.itemName || `影像${item?.taskItemId || ''}`)}
+            </div>
+            {(item?.unfinishedUsers || []).map((user) => (
+              <div key={`${item.taskItemId}-${user?.userId}`} style={{ color: '#595959', marginBottom: 2 }}>
+                {user?.username || `用户${user?.userId || ''}`}：
+                {(user?.unfinishedTypeNames || []).length > 0
+                  ? user.unfinishedTypeNames.join('、')
+                  : '仍有负责类别未完成'}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+    Modal.warning({
+      title: '还有用户类别未完成，不能提交任务',
+      content,
+      width: 560,
+    });
+  };
+
+  const getTaskStatusMeta = (record) => {
+    switch (record?.status) {
+      case 0:
+        return { text: '审核中', color: 'processing', icon: <ClockCircleOutlined /> };
+      case 1:
+        return { text: '审核通过', color: 'success', icon: <CheckCircleOutlined /> };
+      case 2:
+        return { text: '审核未通过', color: 'error', icon: <CloseCircleOutlined /> };
+      case 3:
+        if (record?.auditfeedback) {
+          return { text: '审核退回', color: 'orange', icon: <CloseCircleOutlined /> };
+        }
+        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+      default:
+        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+    }
+  };
 
   // 多重解构获取当前用户名称
   const {
@@ -248,35 +298,11 @@ const Category = () => {
       key: 'status',
       dataIndex: 'status',
       render: (_, record) => {
-        let color, text, icon;
-        switch (record.status) {
-          case 0:
-            text = '审核中';
-            color = 'processing';
-            icon = <ClockCircleOutlined />;
-            break;
-          case 1:
-            text = '审核通过';
-            color = 'success';
-            icon = <CheckCircleOutlined />;
-            break;
-          case 2:
-            text = '审核未通过';
-            color = 'error';
-            icon = <CloseCircleOutlined />;
-            break;
-          case 3:
-            text = '未提交';
-            color = '#BDBDBD';
-            icon = <MinusCircleOutlined />;
-            break;
-          default:
-            break;
-        }
+        const { color, text, icon } = getTaskStatusMeta(record);
         return (
           <div>
             <Tag color={color} icon={icon} key={'status'} style={{ display: 'inline-block' }}>
-              {text == '审核未通过' ? <Tooltip title={record.auditfeedback}>{text}</Tooltip> : text}
+              {(text === '审核未通过' || text === '审核退回') ? <Tooltip title={record.auditfeedback}>{text}</Tooltip> : text}
             </Tag>
           </div>
         );
@@ -317,8 +343,12 @@ const Category = () => {
               try {
                 const { taskid } = record;
                 const result = await reqSubmitTask({ taskid });
-                if ((result.code === 200)) {
+                if (result.code === 200) {
                   message.success('提交成功！');
+                } else if (result?.data?.unfinishedItems) {
+                  showUnfinishedSubmitWarning(result);
+                } else {
+                  message.warning(result?.message || '提交失败，请联系管理员！');
                 }
                 actionRef.current.reload();
               } catch (error) {

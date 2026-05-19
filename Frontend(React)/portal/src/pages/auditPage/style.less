@@ -53,6 +53,18 @@ html, body, #root {
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   }
 
+  .top-info-status-pass {
+    color: #b7eb8f;
+  }
+
+  .top-info-status-reject {
+    color: #ff9c6e;
+  }
+
+  .top-info-status-pending {
+    color: #ffe58f;
+  }
+
   .top-info-sep {
     width: 1px;
     height: 16px;
@@ -96,4 +108,39 @@ html, body, #root {
 .audit-sidebar::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 3px;
+}
+
+.conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflict-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #ffe58f;
+  background: #fffbe6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #ffc53d;
+    box-shadow: 0 2px 10px rgba(250, 173, 20, 0.15);
+  }
+
+  .conflict-item-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ad6800;
+    margin-bottom: 4px;
+  }
+
+  .conflict-item-text {
+    font-size: 12px;
+    color: #6b7280;
+    line-height: 1.5;
+  }
 }

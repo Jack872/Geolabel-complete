@@ -206,8 +206,8 @@ public class MarkController {
         }
         return ResultGenerator.getSuccessResult("mark创建成功");*/
         try {
-            String msg = markService.saveMarkInfoIncremental(request);
-            return ResultGenerator.getSuccessResult(msg);
+            Map<String, Object> resultData = markService.saveMarkInfoIncremental(request);
+            return ResultGenerator.getSuccessResult(resultData);
         } catch (Exception e) {
             e.printStackTrace();
             return ResultGenerator.getFailResult("保存失败: " + e.getMessage());

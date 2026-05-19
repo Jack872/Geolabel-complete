@@ -146,12 +146,14 @@ const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId, dataset
     name: 'tiff',
     multiple: true,
     withCredentials: true,
-    accept: '.tif,.tiff',
+    accept: '.tif,.tiff,.jpg,.jpeg,.png',
     fileList: [],
     beforeUpload: (file) => {
-      const isTif = file.type === 'image/tiff' || /\.(tif|tiff)$/i.test(file.name);
-      if (!isTif) {
-        message.error('只能上传 TIF 文件！');
+      const isSupportedImage =
+        ['image/tiff', 'image/jpeg', 'image/png'].includes(file.type) ||
+        /\.(tif|tiff|jpg|jpeg|png)$/i.test(file.name);
+      if (!isSupportedImage) {
+        message.error('只能上传 TIF、JPG、JPEG、PNG 文件！');
         return false;
       }
       const isLt6G = file.size / 1024 / 1024 < 6000;
@@ -557,11 +559,11 @@ const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId, dataset
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <Upload {...uploadProps}>
             <Button type="primary" icon={<CloudUploadOutlined />}>
-              选择 TIF 文件
+              选择影像文件
             </Button>
           </Upload>
           <div style={{ marginTop: 8, color: '#888' }}>
-            支持多次选择文件，自动追加，且大小不超过6G
+            支持上传 TIF、TIFF、JPG、JPEG、PNG 格式影像，支持多次选择自动追加，且单文件大小不超过 6G
           </div>
         </div>
 

@@ -36,6 +36,9 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
 // 创建一个稳定的、用于修改的要素集合
   const modifyCollection = useRef(new Collection());
+  const lastConflictFeatureRef = useRef(null);
+  const FEATURE_BASE_STYLE_KEY = '__auditFeatureBaseStyle';
+  const FEATURE_HIGHLIGHT_KEY = '__auditFeatureHighlightStyle';
   // 新增状态：交互控制
   const [modifyInteraction, setModifyInteraction] = useState(null);
   const [drawInteraction, setDrawInteraction] = useState(null);
@@ -44,7 +47,7 @@ export default function AuditPage() {
   const [targetDrawLayerId, setTargetDrawLayerId] = useState(null); // 用于步骤2
   const [visibleLayerIds, setVisibleLayerIds] = useState([]);
 
-  const { taskInfo, markGeoJsonArr, setMap, mapExtent, taskItems, currentTaskItemId, mapProjectionCode } = useMap();
+  const { taskInfo, markGeoJsonArr, setMap, mapExtent, taskItems, currentTaskItemId, mapProjectionCode, refreshMarkGeoJsonArr } = useMap();
   const {
     initialState: {
       currentState: { currentUser },
@@ -68,6 +71,28 @@ export default function AuditPage() {
     if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
     return taskItems.find((item) => Number(item?.taskItemId) === Number(getTaskItemId)) || taskItems[0];
   }, [getTaskItemId, taskItems]);
+  const auditProgress = useMemo(() => {
+    const total = Array.isArray(taskItems) ? taskItems.length : 0;
+    if (total === 0) {
+      return { reviewed: 0, total: 0 };
+    }
+    const reviewed = taskItems.filter((item) => {
+      const itemStatus = Number(item?.status);
+      return itemStatus === 1 || itemStatus === 2;
+    }).length;
+    return { reviewed, total };
+  }, [taskItems]);
+  const currentAuditStatus = useMemo(() => {
+    const rawStatus = taskInfo?.currentTaskItemStatus ?? currentTaskItem?.status;
+    const numericStatus = Number(rawStatus);
+    if (numericStatus === 1) {
+      return { text: '审核通过', className: 'top-info-status-pass' };
+    }
+    if (numericStatus === 2) {
+      return { text: '审核驳回', className: 'top-info-status-reject' };
+    }
+    return { text: '未审核', className: 'top-info-status-pending' };
+  }, [currentTaskItem?.status, taskInfo?.currentTaskItemStatus]);
 
   const switchTaskItem = useCallback((nextTaskItemId) => {
     if (!nextTaskItemId || Number(nextTaskItemId) === Number(getTaskItemId)) return;
@@ -114,6 +139,29 @@ export default function AuditPage() {
     () => normalizeCoordinateCode(mapProjectionCode || mapInstance?.getView?.()?.getProjection?.()?.getCode?.() || taskCoordinateSystem),
     [mapInstance, taskCoordinateSystem, mapProjectionCode],
   );
+  const auditConflictSummary = taskInfo?.currentTaskItemConflictSummary || {};
+  const auditConflicts = Array.isArray(auditConflictSummary?.conflicts) ? auditConflictSummary.conflicts : [];
+  const auditConflictCount = Number(auditConflictSummary?.conflictCount || 0);
+  const typeNameById = useMemo(() => {
+    const map = {};
+    (taskInfo?.data?.[0]?.userArr || []).forEach((user) => {
+      (user?.typeArr || []).forEach((item) => {
+        if (item?.typeId !== undefined && item?.typeId !== null) {
+          map[String(item.typeId)] = item?.typeName || `类别${item.typeId}`;
+        }
+      });
+    });
+    return map;
+  }, [taskInfo]);
+  const userNameById = useMemo(() => {
+    const map = {};
+    (taskInfo?.data?.[0]?.userArr || []).forEach((item) => {
+      if (item?.userid !== undefined && item?.userid !== null) {
+        map[String(item.userid)] = item?.username || `用户${item.userid}`;
+      }
+    });
+    return map;
+  }, [taskInfo]);
 
   /** 获取透明颜色 */
   const getTransparentColor = useCallback((color, opacity = 0.2) => {
@@ -138,15 +186,10 @@ export default function AuditPage() {
     }
 
     const allUsers = taskInfo.data[0]?.userArr ?? [];
-    const typeMap = new Map();
+    const totalTypeIdArr = [];
     for (const { typeArr } of allUsers) {
-      for (const typeItem of typeArr || []) {
-        if (!typeMap.has(typeItem.typeId)) {
-          typeMap.set(typeItem.typeId, typeItem);
-        }
-      }
+      totalTypeIdArr.push(...typeArr);
     }
-    const totalTypeIdArr = Array.from(typeMap.values());
 
     const layers = totalTypeIdArr.map(({ typeColor, typeName, typeId }) => {
       const src = new VectorSource({ format: new GeoJSON(), projection: mapProjection });
@@ -163,6 +206,7 @@ export default function AuditPage() {
             features.forEach((f) => {
               // 这是最关键的修正！为每个 feature 设置一个稳定的 ID ️
               f.setId(item.markId || f.ol_uid);
+              f.set('markId', item.markId);
               src.addFeature(f);
             });
           } catch (err) {
@@ -171,21 +215,22 @@ export default function AuditPage() {
         }
       }
 
-      const style = (feature) => {
-        const geomType = feature.getGeometry().getType();
-        return new Style({
-          fill: new Fill({ color: getTransparentColor(typeColor) }),
-          stroke: new Stroke({ color: typeColor, width: 2 }),
-          image:
-            geomType === 'Point'
+        const style = (feature) => {
+          const geomType = feature.getGeometry().getType();
+          const fillColor = getTransparentColor(typeColor);
+          return new Style({
+            fill: new Fill({ color: fillColor }),
+            stroke: new Stroke({ color: typeColor, width: 2 }),
+            image:
+              geomType === 'Point'
               ? new CircleStyle({
                 radius: 6,
-                fill: new Fill({ color: getTransparentColor(typeColor) }),
+                fill: new Fill({ color: fillColor }),
                 stroke: new Stroke({ color: typeColor, width: 2 }),
               })
               : null,
-        });
-      };
+          });
+        };
 
       const layer = new VectorLayer({
         title: typeName,
@@ -238,7 +283,7 @@ export default function AuditPage() {
       mapInstance.addInteraction(selectInteraction);
       selectInteraction.on('select', (e) => {
         if (isProgrammaticSelect.current) return;
-        setSelectedFeatures([...new Set(e.target.getFeatures().getArray())]);
+        setSelectedFeatures(e.target.getFeatures().getArray());
       });
     }
 
@@ -367,10 +412,10 @@ export default function AuditPage() {
 
     const olSelectedFeatures = selectInteraction.getFeatures();
 
-    const stateFeatures = new Set(selectedFeatures);
-    const olFeatures = new Set(olSelectedFeatures.getArray());
+    const stateIds = new Set(selectedFeatures.map(f => f.getId()));
+    const olIds = new Set(olSelectedFeatures.getArray().map(f => f.getId()));
 
-    if (stateFeatures.size === olFeatures.size && [...stateFeatures].every(feature => olFeatures.has(feature))) {
+    if (stateIds.size === olIds.size && [...stateIds].every(id => olIds.has(id))) {
       return;
     }
 
@@ -380,7 +425,7 @@ export default function AuditPage() {
 
       // 2. 执行同步操作
       olSelectedFeatures.clear();
-      [...stateFeatures].forEach(feature => olSelectedFeatures.push(feature));
+      selectedFeatures.forEach(feature => olSelectedFeatures.push(feature));
 
     } finally {
       // 关键修正：使用 setTimeout (宏任务) 来延迟解锁
@@ -418,8 +463,61 @@ export default function AuditPage() {
     });
   };
 
-  const sourceContainsFeature = (source, feature) => source?.getFeatures?.().some(sourceFeature => sourceFeature === feature);
-  const findParentLayer = (feature, map, layers) => layers.find(l => l.getSource && sourceContainsFeature(l.getSource(), feature));
+  const applyConflictHighlight = useCallback((feature) => {
+    if (!feature) return;
+    if (feature.get(FEATURE_BASE_STYLE_KEY) === undefined) {
+      feature.set(FEATURE_BASE_STYLE_KEY, feature.getStyle() || null);
+    }
+    const highlightStyle = feature.get(FEATURE_HIGHLIGHT_KEY) || createHighlightStyle();
+    feature.set(FEATURE_HIGHLIGHT_KEY, highlightStyle);
+    feature.setStyle(highlightStyle);
+  }, []);
+
+  const restoreConflictHighlight = useCallback((feature) => {
+    if (!feature) return;
+    const baseStyle = feature.get(FEATURE_BASE_STYLE_KEY);
+    feature.setStyle(baseStyle || undefined);
+    feature.unset(FEATURE_BASE_STYLE_KEY, true);
+    feature.unset(FEATURE_HIGHLIGHT_KEY, true);
+  }, []);
+
+  const focusConflictMark = useCallback((markId) => {
+    if (!markId || !mapInstance || !auditLayers.length) return;
+    let targetFeature = null;
+    for (const layer of auditLayers) {
+      const source = layer?.getSource?.();
+      const matched = source?.getFeatures?.()?.find?.((feature) => Number(feature?.get?.('markId')) === Number(markId));
+      if (matched) {
+        targetFeature = matched;
+        break;
+      }
+    }
+    if (!targetFeature) {
+      message.warning(`未找到冲突标注 ${markId}`);
+      return;
+    }
+
+    if (lastConflictFeatureRef.current && lastConflictFeatureRef.current !== targetFeature) {
+      restoreConflictHighlight(lastConflictFeatureRef.current);
+    }
+    applyConflictHighlight(targetFeature);
+    lastConflictFeatureRef.current = targetFeature;
+
+    const geometry = targetFeature?.getGeometry?.();
+    if (geometry) {
+      const extent = geometry.getExtent?.();
+      if (extent && extent[0] !== extent[2] && extent[1] !== extent[3]) {
+        mapInstance.getView().fit(extent, { padding: [80, 80, 80, 80], duration: 300, maxZoom: 21 });
+      } else {
+        const coordinate = geometry.getFirstCoordinate?.() || geometry.getCoordinates?.();
+        if (coordinate) {
+          mapInstance.getView().animate({ center: coordinate, duration: 300, zoom: Math.max(mapInstance.getView().getZoom() || 18, 18) });
+        }
+      }
+    }
+  }, [applyConflictHighlight, auditLayers, mapInstance, restoreConflictHighlight]);
+
+  const findParentLayer = (feature, map, layers) => layers.find(l => l.getSource && l.getSource().hasFeature(feature));
 
   // 在组件内（return 之前）添加以下函数
 
@@ -520,7 +618,7 @@ export default function AuditPage() {
         corrections: auditData
       });
       message.destroy('submit_pass');
-      handlePostSubmitStayInAudit('修正结果提交成功！');
+      await handlePostSubmitStayInAudit('修正结果提交成功！');
     } catch (error) {
       message.error({ content: '提交失败!', key: 'submit_pass' });
     }
@@ -569,7 +667,7 @@ export default function AuditPage() {
         featureFeedback: feedbackArray // 发送数组而不是对象
       });
       message.destroy('submit_fail');
-      handlePostSubmitStayInAudit('驳回及反馈提交成功！');
+      await handlePostSubmitStayInAudit('驳回及反馈提交成功！');
 
     } catch (error) {
       message.error({ content: '提交失败!', key: 'submit_fail' });
@@ -589,11 +687,12 @@ export default function AuditPage() {
     setOverallFeedback('');
   }, []);
 
-  const handlePostSubmitStayInAudit = useCallback((successText) => {
+  const handlePostSubmitStayInAudit = useCallback(async (successText) => {
+    await refreshMarkGeoJsonArr?.();
     message.success(successText);
     resetToDecision();
     message.info('已保留在当前任务，可继续审核当前任务内其他影像');
-  }, [resetToDecision]);
+  }, [refreshMarkGeoJsonArr, resetToDecision]);
 
   // 新增：用于切换图层可见性的回调函数
   const toggleLayerVisibility = useCallback((typeId, isVisible) => {
@@ -822,6 +921,11 @@ return (
         <span className="top-info-label">任务类型：</span>
         <span className="top-info-type">{taskInfo?.data?.[0]?.type || '-'}</span>
       </div>
+      <div className="top-info-sep" />
+      <div className="top-info-item">
+        <span className="top-info-label">审核状态：</span>
+        <span className={`top-info-name ${currentAuditStatus.className}`}>{currentAuditStatus.text}</span>
+      </div>
       {taskItems?.length > 0 && (
         <>
           <div className="top-info-sep" />
@@ -830,6 +934,11 @@ return (
             <span className="top-info-name">
               {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1}. {currentTaskItem?.itemName || currentTaskItem?.mapserver || '未命名影像'}
             </span>
+          </div>
+          <div className="top-info-sep" />
+          <div className="top-info-item">
+            <span className="top-info-label">审核进度：</span>
+            <span className="top-info-name">{auditProgress.reviewed}/{auditProgress.total}</span>
           </div>
         </>
       )}
@@ -882,6 +991,38 @@ return (
 
     {/* 右侧审核面板 */}
     <div className="audit-sidebar">
+      {taskInfo?.data?.[0]?.type !== '目标检测' && (
+        <Card className="audit-conflict-panel" title="冲突提示" style={{ marginBottom: 12 }}>
+          <Alert
+            type={auditConflictCount > 0 ? 'warning' : 'success'}
+            showIcon
+            message={auditConflictCount > 0 ? `当前影像发现 ${auditConflictCount} 个潜在覆盖冲突` : '当前影像未发现潜在覆盖冲突'}
+          />
+          {auditConflictCount > 0 && (
+            <div className="conflict-list" style={{ marginTop: 12 }}>
+              {auditConflicts.map((item) => {
+                const conflictKey = `${item?.selfMarkId || 's'}-${item?.otherMarkId || 'o'}-${item?.selfUserId || 'su'}-${item?.otherUserId || 'ou'}`;
+                const selfTypeName = typeNameById[String(item?.selfTypeId)] || `类别${item?.selfTypeId || '-'}`;
+                const otherTypeName = typeNameById[String(item?.otherTypeId)] || `类别${item?.otherTypeId || '-'}`;
+                const otherUserName = userNameById[String(item?.otherUserId)] || `用户${item?.otherUserId || '-'}`;
+                return (
+                  <button
+                    key={conflictKey}
+                    className="conflict-item"
+                    onClick={() => focusConflictMark(item?.selfMarkId || item?.otherMarkId)}
+                  >
+                    <div className="conflict-item-title">潜在覆盖冲突</div>
+                    <div className="conflict-item-text">{`当前类别：${selfTypeName}`}</div>
+                    <div className="conflict-item-text">{`参考用户：${otherUserName}`}</div>
+                    <div className="conflict-item-text">{`参考类别：${otherTypeName}`}</div>
+                    <div className="conflict-item-text">{`覆盖率：${Number(item?.coverageRatio || 0).toFixed(3)}`}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      )}
       {/* 把你原来 return 中的审核 UI 统统放进来 */}
       {/** —— 审核 UI 开始 —— */}
       <Card

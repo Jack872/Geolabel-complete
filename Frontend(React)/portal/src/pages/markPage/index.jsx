@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Button, Form, Input, message, Popconfirm, Tag, Slider, Select, Tooltip } from 'antd';
+import { Button, Form, Input, message, Popconfirm, Tag, Slider, Select, Tooltip, Alert } from 'antd';
 import { reqSaveService, reqExportService, reqAuditTask, reqAssistFunction, reqUqdateLabel,
   reqGetModelList,reqInferenceFunction, reqSplitPolygon, reqUnionPolygons} from '@/services/map/api';
+import { reqFinishTaskItem, reqCancelFinishTaskItem } from '@/services/taskManage/api';
 import { Vector as VectorLayer } from 'ol/layer';
 import { Vector as VectorSource } from 'ol/source';
 import { Fill, Stroke, Style } from 'ol/style';
@@ -138,10 +139,14 @@ export default function () {
   const refreshMarkGeoJsonArrRef = useRef(refreshMarkGeoJsonArr);
   const deletedMarkIdsRef = useRef([]);
   const interactionRunRef = useRef(0);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const pendingHistorySnapshotRef = useRef(null);
   const [toolMode, setToolMode] = useState('none'); // none | split | union | boxDelete
   const [deletedMarkIds, setDeletedMarkIds] = useState([]);
   const [selectedFeature, setSelectedFeature] = useState(null);
   const [featurePanelVersion, setFeaturePanelVersion] = useState(0);
+  const lastConflictFeatureRef = useRef(null);
   const FEATURE_BASE_STYLE_KEY = '__featureBaseStyle';
   const FEATURE_HIGHLIGHT_KEY = '__featureHighlightStyle';
   useEffect(() => {
@@ -150,6 +155,16 @@ export default function () {
   useEffect(() => {
     deletedMarkIdsRef.current = deletedMarkIds;
   }, [deletedMarkIds]);
+
+  useEffect(() => {
+    if (!isCurrentUserReadOnly) return;
+    setToolMode('none');
+    if (shapeSelect.current && shapeSelect.current.value !== 'None') {
+      shapeSelect.current.value = 'None';
+      setActiveShape('None');
+      shapeSelect.current.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }, [isCurrentUserReadOnly]);
 
   // 辅助函数：将颜色转换为指定透明度版本
   const getTransparentColor = useCallback((color, opacity = fillOpacity) => {
@@ -288,7 +303,11 @@ export default function () {
         });
         typeSource?.set('typeid', typeId);
         for (const item of markGeoJsonArr) {
-          if (typeId == item.typeId) {
+          const itemUserId = item?.userId == null ? null : Number(item.userId);
+          const isCurrentUserMark = currentUserId == null
+            ? true
+            : (itemUserId == null || itemUserId === currentUserId);
+          if (typeId == item.typeId && isCurrentUserMark) {
             // taskSource==='local' 时坐标是像素坐标，dataProjection 和 featureProjection 都设为 'pixel'
             // 防止 OpenLayers 把像素坐标当经纬度做投影转换
             const isLocal = taskSource === 'local';
@@ -311,6 +330,8 @@ export default function () {
             features.forEach(feature => {
               feature.set('markId', item.markId);
               feature.set('typeId', typeId);
+              feature.set('userId', item.userId);
+              feature.set('readonlyReference', false);
               const rawAttrJson = item.attrJson ?? feature.get('attrJson') ?? feature.get('attr_json') ?? null;
               if (rawAttrJson && typeof rawAttrJson === 'string') {
                 try {
@@ -388,6 +409,7 @@ export default function () {
           style: styleFunction,
         });
         vectorLayer.set('typeid', typeId);
+        vectorLayer.set('editableLayer', true);
         vectorLayer.setZIndex(99);
         return vectorLayer;
       });
@@ -409,12 +431,13 @@ export default function () {
       }),
     });
     modelScopeLayer.set('typeid', 'modelScope');
+    modelScopeLayer.set('editableLayer', false);
     modelScopeLayer.set('displayInLayerSwitcher', false); // 设置不在图层切换器中显示
     modelScopeLayer.setZIndex(99);
     vectorLayerArr.push(modelScopeLayer);
 
     return vectorLayerArr;
-  }, [markGeoJsonArr, taskInfo, taskSource, currentUser, mapRef, getTransparentColor, mapProjectionCode, taskCoordinateSystem]); // 依赖项包含任务状态和用户信息
+  }, [currentUserData, currentUserId, markGeoJsonArr, taskInfo, taskSource, currentUser, mapRef, getTransparentColor, mapProjectionCode, taskCoordinateSystem]); // 依赖项包含任务状态和用户信息
 
   // 管理图层的添加和移除
   useEffect(() => {
@@ -432,7 +455,11 @@ export default function () {
     generateMarkLayer.forEach(layer => {
       layer.setZIndex(99);
       mapRef.current.addLayer(layer);
-      layer.setVisible(true);
+      const typeId = layer.get('typeid');
+      const isModelScopeLayer = typeId === 'modelScope';
+      const isSelectedLayer = toolbarState.sourceKey !== null && toolbarState.sourceKey !== undefined
+        && String(typeId) === String(toolbarState.sourceKey);
+      layer.setVisible(isModelScopeLayer ? false : isSelectedLayer);
       console.log('添加图层:', layer.get('title'), '类型ID:', layer.get('typeid'), '要素数量:', layer.getSource().getFeatures().length);
     });
 
@@ -597,8 +624,11 @@ export default function () {
             triggerSamInteractiveRef.current?.({ silentNoPrompt: true });
           }, 0);
         }
+        recordHistoryChange(pendingHistorySnapshotRef.current, captureHistorySnapshot());
+        pendingHistorySnapshotRef.current = null;
       });
       shapeDraw.on('drawstart', () => {
+        pendingHistorySnapshotRef.current = captureHistorySnapshot();
         console.log('[draw] start', shapeSelect.current?.value);
       });
       shapeDraw.on('drawend', () => {
@@ -637,6 +667,7 @@ export default function () {
         }
 
         if (toolMode === 'union') {
+          const beforeSnapshot = captureHistorySnapshot();
           const firstFeature = unionFirstFeatureRef.current;
           if (!firstFeature) {
             unionFirstFeatureRef.current = clickedFeature;
@@ -698,6 +729,7 @@ export default function () {
                 });
               }
 
+              recordHistoryChange(beforeSnapshot, captureHistorySnapshot(removeIds.length > 0 ? [...deletedMarkIdsRef.current, ...removeIds] : deletedMarkIdsRef.current));
               message.success(result?.message || '并集成功');
               setSelectedFeature(null);
               setFeaturePanelVersion((prev) => prev + 1);
@@ -753,10 +785,13 @@ export default function () {
       mapRef.current?.addInteraction(select);
     }
 
-    if (select) {
+    if (select && !isCurrentUserReadOnly) {
       // 仅修改“已选中要素”，避免边缘点击被 Modify 抢占导致 Select 失效
       modify = new Modify({ features: select.getFeatures() });
       modifyRef.current = modify;
+      modify.on('modifystart', () => {
+        pendingHistorySnapshotRef.current = captureHistorySnapshot();
+      });
       //查看修改后的feature信息
       modify.on('modifyend', (event) => {
         // 获取绘制的矩形
@@ -765,6 +800,9 @@ export default function () {
         console.log(feature)
         console.log(event)
         console.log(toolbarState.currentLayer)
+        recordHistoryChange(pendingHistorySnapshotRef.current, captureHistorySnapshot());
+        pendingHistorySnapshotRef.current = null;
+        setFeaturePanelVersion((prev) => prev + 1);
       });
       //对绘制图形进行修改
       mapRef.current?.addInteraction(modify);
@@ -779,7 +817,7 @@ export default function () {
         mapRef.current.removeInteraction(modify);
       }
 
-      if (shapeSelect.current.value != 'None') {
+      if (shapeSelect.current.value != 'None' && !isCurrentUserReadOnly) {
         if (toolMode !== 'none') {
           setToolMode('none');
           unionFirstFeatureRef.current = null;
@@ -791,7 +829,7 @@ export default function () {
         }
       } else {
         // 非绘制状态下也允许选中后修改边界
-        if (modify && mapRef.current && toolMode === 'none') {
+        if (modify && mapRef.current && toolMode === 'none' && !isCurrentUserReadOnly) {
           mapRef.current.addInteraction(modify);
         }
         // 恢复默认光标并清理CSS类
@@ -870,9 +908,10 @@ export default function () {
       layerSelect.current.onchange = onLayerSelect;
     }
 
-    if (toolMode === 'boxDelete' && toolbarState.currentLayer) {
+    if (toolMode === 'boxDelete' && toolbarState.currentLayer && !isCurrentUserReadOnly) {
       dragBoxRef.current = new DragBox();
       dragBoxRef.current.on('boxend', () => {
+        const beforeSnapshot = captureHistorySnapshot();
         const extent = dragBoxRef.current.getGeometry().getExtent();
         const features = toolbarState.currentLayer.getSource().getFeaturesInExtent(extent) || [];
         if (!features.length) {
@@ -887,6 +926,7 @@ export default function () {
             toolbarState.currentLayer.getSource().removeFeature(item);
           });
           setDeletedMarkIds(newDeletedIds);
+          recordHistoryChange(beforeSnapshot, captureHistorySnapshot(newDeletedIds));
           setSelectedFeature(null);
           setFeaturePanelVersion((prev) => prev + 1);
           message.success(`已删除 ${features.length} 个要素`);
@@ -916,6 +956,7 @@ export default function () {
     getTransparentColor,
     fillOpacity,
     toolMode,
+    isCurrentUserReadOnly,
     toolbarState.sourceKey,
     typeList,
     applyFeatureHighlight,
@@ -924,10 +965,6 @@ export default function () {
     getOuterRingCoordinates,
     featureToGeoJsonObject,
   ]);
-
-
-
-  let featuresList = []; //绘制的要素集合
 
   // 获取当前标注的数据源
   const currentSource = useCallback(
@@ -940,6 +977,82 @@ export default function () {
     },
     [generateMarkLayer],
   );
+  const captureHistorySnapshot = useCallback((overrideDeletedMarkIds) => {
+    const format = new GeoJSON();
+    const viewProj = mapRef.current?.getView?.()?.getProjection?.()?.getCode?.() || 'EPSG:3857';
+    const projectionOptions = viewProj === 'pixel'
+      ? { dataProjection: 'pixel', featureProjection: 'pixel' }
+      : { dataProjection: viewProj, featureProjection: viewProj };
+    return {
+      layers: generateMarkLayer
+        .filter((layer) => layer.get('editableLayer'))
+        .map((layer) => ({
+          typeId: layer.get('typeid'),
+          features: (layer.getSource()?.getFeatures?.() || []).map((feature) => ({
+            id: feature.getId?.() ?? null,
+            geoJson: format.writeFeatureObject(feature, projectionOptions),
+          })),
+        })),
+      deletedMarkIds: [...(overrideDeletedMarkIds ?? deletedMarkIdsRef.current ?? [])],
+    };
+  }, [generateMarkLayer, mapRef]);
+
+  const restoreHistorySnapshot = useCallback((snapshot) => {
+    if (!snapshot) return;
+    const format = new GeoJSON();
+    const viewProj = mapRef.current?.getView?.()?.getProjection?.()?.getCode?.() || 'EPSG:3857';
+    const projectionOptions = viewProj === 'pixel'
+      ? { dataProjection: 'pixel', featureProjection: 'pixel' }
+      : { dataProjection: viewProj, featureProjection: viewProj };
+
+    generateMarkLayer
+      .filter((layer) => layer.get('editableLayer'))
+      .forEach((layer) => {
+        layer.getSource()?.clear?.();
+      });
+
+    (snapshot.layers || []).forEach((layerSnapshot) => {
+      const layer = generateMarkLayer.find((item) => item.get('typeid') == layerSnapshot.typeId);
+      const source = layer?.getSource?.();
+      if (!source) return;
+      (layerSnapshot.features || []).forEach((featureSnapshot) => {
+        const [feature] = format.readFeatures(featureSnapshot.geoJson, projectionOptions);
+        if (!feature) return;
+        if (featureSnapshot.id !== null && featureSnapshot.id !== undefined) {
+          feature.setId(featureSnapshot.id);
+        }
+        source.addFeature(feature);
+      });
+    });
+
+    deletedMarkIdsRef.current = [...(snapshot.deletedMarkIds || [])];
+    setDeletedMarkIds([...(snapshot.deletedMarkIds || [])]);
+    selectRef.current?.getFeatures?.()?.clear?.();
+    setSelectedFeature(null);
+    setFeaturePanelVersion((prev) => prev + 1);
+  }, [generateMarkLayer, mapRef]);
+
+  const snapshotsEqual = useCallback((left, right) => {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }, []);
+
+  const recordHistoryChange = useCallback((beforeSnapshot, afterSnapshot) => {
+    if (!beforeSnapshot || !afterSnapshot || snapshotsEqual(beforeSnapshot, afterSnapshot)) {
+      return;
+    }
+    const nextUndoStack = [...undoStackRef.current, { before: beforeSnapshot, after: afterSnapshot }];
+    undoStackRef.current = nextUndoStack.slice(-3);
+    redoStackRef.current = [];
+  }, [snapshotsEqual]);
+
+  useEffect(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    pendingHistorySnapshotRef.current = null;
+    deletedMarkIdsRef.current = [];
+    setDeletedMarkIds([]);
+  }, [currentTaskItemId, markGeoJsonArr]);
+
   // 获取当前标注的图层
   const currentLayer = useCallback(
     (typeid) => {
@@ -954,25 +1067,24 @@ export default function () {
   );
   // 回滚
   const undo = useCallback(() => {
-    try {
-      let features = toolbarState.currentLayer.getSource().getFeatures();
-      let feature = features.pop();
-      if (feature) {
-        toolbarState.currentLayer.getSource().removeFeature(feature);
-        featuresList.push(feature);
-      }
-    } catch (error) {
-      message.warn('请选择图层');
+    const entry = undoStackRef.current.pop();
+    if (!entry) {
+      message.info('没有可撤销的操作');
+      return;
     }
-  }, [toolbarState.currentLayer]);
+    restoreHistorySnapshot(entry.before);
+    redoStackRef.current = [...redoStackRef.current, entry].slice(-3);
+  }, [restoreHistorySnapshot]);
   // 恢复
   const recover = useCallback(() => {
-    let feature;
-    feature = featuresList.pop();
-    if (feature) {
-      toolbarState.currentLayer.getSource().addFeature(feature);
+    const entry = redoStackRef.current.pop();
+    if (!entry) {
+      message.info('没有可重做的操作');
+      return;
     }
-  }, [toolbarState.currentLayer]);
+    restoreHistorySnapshot(entry.after);
+    undoStackRef.current = [...undoStackRef.current, entry].slice(-3);
+  }, [restoreHistorySnapshot]);
   const getTaskId = useMemo(() => {
     let TASKID = window.sessionStorage.getItem('taskId');
     // let TASKID=taskInfo.data[0].taskname
@@ -991,6 +1103,58 @@ export default function () {
     if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
     return taskItems.find((item) => Number(item?.taskItemId) === Number(getTaskItemId)) || taskItems[0];
   }, [getTaskItemId, taskItems]);
+  const markProgress = useMemo(() => {
+    const total = Array.isArray(taskItems) ? taskItems.length : 0;
+    if (total === 0) {
+      return { finished: 0, total: 0 };
+    }
+    const finished = taskItems.filter((item) => {
+      const itemStatus = Number(item?.status);
+      if (itemStatus === 0 || itemStatus === 1) {
+        return true;
+      }
+      return !!item?.finishSummary?.allFinished;
+    }).length;
+    return { finished, total };
+  }, [taskItems]);
+
+  const currentUserData = useMemo(() => {
+    const taskUsers = taskInfo?.data?.[0]?.userArr || [];
+    return taskUsers.find((item) => item?.username === currentUser) || null;
+  }, [currentUser, taskInfo]);
+
+  const currentUserTaskTypes = useMemo(() => {
+    return currentUserData?.typeArr || [];
+  }, [currentUserData]);
+  const currentUserId = currentUserData?.userid == null ? null : Number(currentUserData.userid);
+
+  const currentTaskItemStatus = Number(
+    taskInfo?.currentTaskItemStatus ?? currentTaskItem?.status ?? 3
+  );
+  const currentUserAssignedTypeIds = Array.isArray(taskInfo?.currentUserAssignedTypeIds)
+    ? taskInfo.currentUserAssignedTypeIds
+    : [];
+  const currentUserFinished = !!taskInfo?.currentUserFinished;
+  const currentUserAssignedTypeNames = currentUserTaskTypes
+    .filter((item) => currentUserAssignedTypeIds.includes(Number(item?.typeId)))
+    .map((item) => item?.typeName)
+    .filter(Boolean);
+  const assignedTypeText = currentUserAssignedTypeNames.length > 0
+    ? currentUserAssignedTypeNames.join('、')
+    : '未分配类别';
+  const currentUserFinishStatusText = currentUserFinished ? '标注完成' : '未完成';
+  const canToggleFinish = currentUserAssignedTypeIds.length > 0;
+  const isTaskItemEditable = currentTaskItemStatus === 3 || currentTaskItemStatus === 2;
+  const finishButtonDisabled = !canToggleFinish || !isTaskItemEditable;
+  const isCurrentUserReadOnly = currentUserFinished || currentTaskItemStatus === 0 || currentTaskItemStatus === 1;
+  const currentTaskItemAuditFeedback = taskInfo?.currentTaskItemAuditFeedback
+    ?? currentTaskItem?.auditFeedback
+    ?? '';
+  const currentUserConflictSummary = taskInfo?.currentUserConflictSummary || {};
+  const currentTaskItemConflictSummary = taskInfo?.currentTaskItemConflictSummary || {};
+  const markPageConflictSummary = currentUserConflictSummary?.conflicts ? currentUserConflictSummary : currentTaskItemConflictSummary;
+  const markPageConflicts = Array.isArray(markPageConflictSummary?.conflicts) ? markPageConflictSummary.conflicts : [];
+  const markPageConflictCount = Number(markPageConflictSummary?.conflictCount || 0);
 
   const resolveFeatureTypeName = useCallback((feature) => {
     if (!feature) return '';
@@ -1089,6 +1253,33 @@ export default function () {
     return raw && typeof raw === 'object' ? raw : {};
   }, [selectedFeature, featurePanelVersion]);
 
+  const userNameById = useMemo(() => {
+    const map = {};
+    (taskInfo?.data?.[0]?.userArr || []).forEach((item) => {
+      if (item?.userid !== undefined && item?.userid !== null) {
+        map[String(item.userid)] = item?.username || `用户${item.userid}`;
+      }
+    });
+    return map;
+  }, [taskInfo]);
+
+  const typeNameById = useMemo(() => {
+    const map = {};
+    (taskInfo?.data?.[0]?.userArr || []).forEach((user) => {
+      (user?.typeArr || []).forEach((item) => {
+        if (item?.typeId !== undefined && item?.typeId !== null) {
+          map[String(item.typeId)] = item?.typeName || `类别${item.typeId}`;
+        }
+      });
+    });
+    (typeList?.data || []).forEach((item) => {
+      if (item?.typeId !== undefined && item?.typeId !== null && !map[String(item.typeId)]) {
+        map[String(item.typeId)] = item?.typeName || `类别${item.typeId}`;
+      }
+    });
+    return map;
+  }, [taskInfo, typeList]);
+
   const isEmptyAttrValue = useCallback((value) => {
     if (value === undefined || value === null) return true;
     if (typeof value === 'string') return value.trim() === '';
@@ -1124,7 +1315,12 @@ export default function () {
   }, [getFeatureAttrObject, isEmptyAttrValue, taskTypeAttrConfigByType, toolbarState?.sourceKey]);
 
   const updateSelectedFeatureAttr = useCallback((fieldKey, rawValue, fieldType) => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再修改' : '当前影像为只读状态');
+      return;
+    }
     if (!selectedFeature) return;
+    const beforeSnapshot = captureHistorySnapshot();
     const prevAttrs = selectedFeature.get('attrJson') || {};
     const nextAttrs = { ...prevAttrs };
 
@@ -1141,8 +1337,9 @@ export default function () {
     }
 
     selectedFeature.set('attrJson', nextAttrs);
+    recordHistoryChange(beforeSnapshot, captureHistorySnapshot());
     setFeaturePanelVersion((prev) => prev + 1);
-  }, [selectedFeature]);
+  }, [captureHistorySnapshot, currentUserFinished, isCurrentUserReadOnly, recordHistoryChange, selectedFeature]);
 
   const layerFeatureRows = useMemo(() => {
     const source = toolbarState?.currentLayer?.getSource?.();
@@ -1166,7 +1363,9 @@ export default function () {
   const focusFeatureFromPanel = useCallback((feature) => {
     if (!feature) return;
     const selectedCollection = selectRef.current?.getFeatures?.();
-    if (selectedCollection) {
+    const currentSource = toolbarState?.currentLayer?.getSource?.();
+    const featureExistsInCurrentLayer = currentSource?.getFeatures?.()?.includes?.(feature);
+    if (selectedCollection && featureExistsInCurrentLayer) {
       selectedCollection.clear();
       selectedCollection.push(feature);
     }
@@ -1176,7 +1375,55 @@ export default function () {
     applyFeatureHighlight(feature);
     setSelectedFeature(feature);
     setFeaturePanelVersion((prev) => prev + 1);
-  }, [applyFeatureHighlight, restoreFeatureStyle, selectedFeature]);
+  }, [applyFeatureHighlight, restoreFeatureStyle, selectedFeature, toolbarState?.currentLayer]);
+
+  const focusConflictMark = useCallback((markId) => {
+    if (!markId) return;
+    let targetFeature = null;
+    let targetLayer = null;
+    generateMarkLayer.some((layer) => {
+      const source = layer?.getSource?.();
+      const feature = source?.getFeatures?.()?.find?.((item) => Number(item?.get?.('markId')) === Number(markId));
+      if (feature) {
+        targetFeature = feature;
+        targetLayer = layer;
+        return true;
+      }
+      return false;
+    });
+    if (!targetFeature) {
+      message.warning(`未找到冲突标注 ${markId}`);
+      return;
+    }
+
+    if (lastConflictFeatureRef.current && lastConflictFeatureRef.current !== targetFeature && lastConflictFeatureRef.current !== selectedFeature) {
+      restoreFeatureStyle(lastConflictFeatureRef.current);
+    }
+
+    if (targetLayer && !targetLayer.getVisible()) {
+      targetLayer.setVisible(true);
+    }
+    if (selectedFeature && selectedFeature !== targetFeature) {
+      restoreFeatureStyle(selectedFeature);
+    }
+    applyFeatureHighlight(targetFeature);
+    lastConflictFeatureRef.current = targetFeature;
+    setSelectedFeature(targetFeature);
+    setFeaturePanelVersion((prev) => prev + 1);
+
+    const geometry = targetFeature?.getGeometry?.();
+    if (geometry && mapRef.current) {
+      const extent = geometry.getExtent?.();
+      if (extent && extent[0] !== extent[2] && extent[1] !== extent[3]) {
+        mapRef.current.getView().fit(extent, { padding: [80, 80, 80, 80], duration: 300, maxZoom: 21 });
+      } else {
+        const coordinate = geometry.getFirstCoordinate?.() || geometry.getCoordinates?.();
+        if (coordinate) {
+          mapRef.current.getView().animate({ center: coordinate, duration: 300, zoom: Math.max(mapRef.current.getView().getZoom() || 18, 18) });
+        }
+      }
+    }
+  }, [applyFeatureHighlight, generateMarkLayer, mapRef, restoreFeatureStyle, selectedFeature]);
 
   useEffect(() => {
     if (!selectedFeature) return;
@@ -1188,10 +1435,14 @@ export default function () {
   }, [selectedFeature, toolbarState?.currentLayer, featurePanelVersion]);
 
   const save = async () => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再保存修改' : '当前影像为只读状态，不能保存');
+      return false;
+    }
     let taskId = getTaskId;
     const jsondataArr = [];
 
-    for (const layer of generateMarkLayer) {
+    for (const layer of generateMarkLayer.filter((item) => item.get('editableLayer'))) {
       const features = layer.getSource().getFeatures();
       const typeId = layer.getSource().get('typeid');
       console.log('Layer features:', features);
@@ -1274,16 +1525,23 @@ export default function () {
           // 保存成功后刷新标注数据以确保显示最新状态
           await refreshMarkGeoJsonArr();
           setFeaturePanelVersion((prev) => prev + 1);
+          return true;
         } else {
-          message.error('保存失败！');
+          message.error(result?.message || '保存失败！');
+          return false;
         }
       } catch (error) {
         console.error('Save error:', error);
         message.error('后台异常，请稍后重试！');
+        return false;
       }
   };
   // 删除要素
   const deleteFeature = useCallback(() => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再删除' : '当前影像为只读状态');
+      return;
+    }
     const selectInteraction = selectRef.current;
     if (!selectInteraction) {
       message.warn('请先选择图层');
@@ -1292,6 +1550,7 @@ export default function () {
     let selectFeasuresList = selectInteraction.getFeatures().getArray();
     if (selectFeasuresList.length > 0) {
       try {
+        const beforeSnapshot = captureHistorySnapshot();
         const newDeletedIds = [...deletedMarkIds];
         selectFeasuresList.forEach((item) => {
           const markId = item.get('markId') || item.getId(); // 根据你存 ID 的位置调整
@@ -1304,6 +1563,7 @@ export default function () {
         });
         // 更新删除列表
         setDeletedMarkIds(newDeletedIds);
+        recordHistoryChange(beforeSnapshot, captureHistorySnapshot(newDeletedIds));
         setSelectedFeature(null);
         setFeaturePanelVersion((prev) => prev + 1);
         message.success('已删除选中的标注');
@@ -1314,7 +1574,7 @@ export default function () {
       message.warn('未标注或未选中图形！');
     }
     selectInteraction.getFeatures().clear();
-  }, [toolbarState.currentLayer, deletedMarkIds]);
+  }, [captureHistorySnapshot, currentUserFinished, deletedMarkIds, isCurrentUserReadOnly, recordHistoryChange, toolbarState.currentLayer]);
 
   const handleGetShp = (shp) => {
     //直接转化成对象，加入地图，如下
@@ -1323,6 +1583,10 @@ export default function () {
   };
 
   const toggleToolMode = useCallback((mode) => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再操作' : '当前影像为只读状态');
+      return;
+    }
     setToolMode((prev) => (prev === mode ? 'none' : mode));
     unionFirstFeatureRef.current = null;
     splitFirstFeatureRef.current = null;
@@ -1334,7 +1598,7 @@ export default function () {
     if (selectRef.current && mode !== 'union' && mode !== 'split') {
       selectRef.current.getFeatures().clear();
     }
-  }, []);
+  }, [currentUserFinished, isCurrentUserReadOnly]);
 
 
   const onCreate = useCallback(async ({ auditFeedback }) => {
@@ -1358,6 +1622,52 @@ export default function () {
   const onCancel = useCallback(() => {
     setShowAuditLoader(false);
   }, []);
+
+  const toggleFinishTaskItem = useCallback(async () => {
+    if (!getTaskId || !getTaskItemId) {
+      message.warning('当前影像信息不完整，无法更新完成状态');
+      return;
+    }
+    if (finishButtonDisabled) {
+      message.info(currentTaskItemStatus === 0 || currentTaskItemStatus === 1
+        ? '当前影像已提交或已审核，不能再修改完成状态'
+        : '当前用户未分配该影像标注');
+      return;
+    }
+
+    const api = currentUserFinished ? reqCancelFinishTaskItem : reqFinishTaskItem;
+    const loadingKey = currentUserFinished ? 'cancel_finish_task_item' : 'finish_task_item';
+    const loadingText = currentUserFinished ? '正在撤销完成状态...' : '正在更新完成状态...';
+
+    message.loading({ content: loadingText, key: loadingKey });
+    try {
+      const result = await api({
+        taskId: Number(getTaskId),
+        taskItemId: Number(getTaskItemId),
+      });
+      if (result?.success === false) {
+        message.error({ content: result?.message || '更新完成状态失败', key: loadingKey });
+        return;
+      }
+      await refreshMarkGeoJsonArr();
+      message.success({
+        content: result?.message || (currentUserFinished ? '已撤销完成' : '已标注完成'),
+        key: loadingKey,
+      });
+      if (result?.warning && result?.conflictSummary?.conflictCount > 0) {
+        message.warning(`当前影像存在 ${result.conflictSummary.conflictCount} 个潜在覆盖冲突，审核员将重点检查`);
+      }
+    } catch (error) {
+      message.error({ content: '更新完成状态失败，请稍后重试', key: loadingKey });
+    }
+  }, [
+    currentTaskItemStatus,
+    currentUserFinished,
+    finishButtonDisabled,
+    getTaskId,
+    getTaskItemId,
+    refreshMarkGeoJsonArr,
+  ]);
 
   const [param1, setParam1] = useState('');
   const [param2, setParam2] = useState('');
@@ -1387,11 +1697,7 @@ export default function () {
   const currentTaskType = taskInfo?.data?.[0]?.type || '';
   const currentLayerTypeId = toolbarState?.sourceKey == null ? null : Number(toolbarState.sourceKey);
   const isYoloSamTaskType = currentTaskType === '地物提取' || currentTaskType === '地物分类';
-  const availableTaskTypes = useMemo(() => {
-    const taskUsers = taskInfo?.data?.[0]?.userArr || [];
-    const currentTaskUser = taskUsers.find((item) => item?.username === currentUser);
-    return currentTaskUser?.typeArr || [];
-  }, [currentUser, taskInfo]);
+  const availableTaskTypes = currentUserTaskTypes;
 
   const getModelFamily = useCallback((model) => {
     const raw = `${model?.type || ''} ${model?.name || ''}`.toLowerCase();
@@ -1561,7 +1867,12 @@ const navigateTask = useCallback(async (direction) => {
     return;
   }
   try {
-    await save();
+    if (!isCurrentUserReadOnly) {
+      const saved = await save();
+      if (saved === false) {
+        throw new Error('save_failed');
+      }
+    }
     const nextTaskItemId = taskItems[nextIdx]?.taskItemId;
     if (!nextTaskItemId) return;
     window.sessionStorage.setItem('taskItemId', String(nextTaskItemId));
@@ -1569,10 +1880,14 @@ const navigateTask = useCallback(async (direction) => {
   } catch (e) {
     message.error('保存失败，无法跳转');
   }
-}, [getTaskItemId, save, taskItems]);
+}, [getTaskItemId, isCurrentUserReadOnly, save, taskItems]);
 
   // 模型推理功能
   const handleModelInference = async () => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再预标注' : '当前影像为只读状态');
+      return;
+    }
     if (!selectedPreAnnotateModel) {
       message.warning('请先选择预标注模型');
       return;
@@ -1587,7 +1902,10 @@ const navigateTask = useCallback(async (direction) => {
     }
 
     try {
-      await save();
+      const saved = await save();
+      if (saved === false) {
+        return;
+      }
       const hide = message.loading('正在启动预标注...');
       const modelScopeLayer = generateMarkLayer.find((layer) => layer.get('typeid') === 'modelScope');
       const modelScopeFeatures = modelScopeLayer?.getSource?.().getFeatures?.() || [];
@@ -1646,6 +1964,10 @@ const navigateTask = useCallback(async (direction) => {
   };
 
   const handleSamPreAnnotation = useCallback(async (options = {}) => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再使用SAM交互标注' : '当前影像为只读状态');
+      return;
+    }
     const { silentNoPrompt = false } = options;
     let taskId = getTaskId;
     const taskType = taskInfo?.data[0].type;
@@ -1716,7 +2038,10 @@ const navigateTask = useCallback(async (direction) => {
 
     try {
       // 5. 先保存一次（确保当前最新画的这个点/线/框已经进入数据库，方便后端备用或记录）
-      await save();
+      const saved = await save();
+      if (saved === false) {
+        return;
+      }
 
       const hide = message.loading(`SAM 正在基于最新的${
         promptType === 'point' ? '点' : promptType === 'line' ? '线' : '框'
@@ -1756,13 +2081,17 @@ const navigateTask = useCallback(async (direction) => {
       console.error('SAM Error:', error);
       message.error('SAM 调用异常');
     }
-  }, [generateMarkLayer, getTaskId, getTaskItemId, refreshMarkGeoJsonArr, samParam1, samParam2, samParam3, samParam4, save, taskInfo, toolbarState.markSource, toolbarState.sourceKey]);
+  }, [currentUserFinished, generateMarkLayer, getTaskId, getTaskItemId, isCurrentUserReadOnly, refreshMarkGeoJsonArr, samParam1, samParam2, samParam3, samParam4, save, taskInfo, toolbarState.markSource, toolbarState.sourceKey]);
 
   useEffect(() => {
     triggerSamInteractiveRef.current = handleSamPreAnnotation;
   }, [handleSamPreAnnotation]);
 
   const handleToggleSamInteractive = useCallback(() => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再开启SAM交互标注' : '当前影像为只读状态');
+      return;
+    }
     if (currentTaskType !== '地物分类') {
       message.info('SAM交互标注当前仅在地物分类任务中启用');
       return;
@@ -1776,15 +2105,22 @@ const navigateTask = useCallback(async (direction) => {
       message.success(next ? 'SAM交互标注已开启' : 'SAM交互标注已关闭');
       return next;
     });
-  }, [currentTaskType, toolbarState.currentLayer, toolbarState.markSource]);
+  }, [currentTaskType, currentUserFinished, isCurrentUserReadOnly, toolbarState.currentLayer, toolbarState.markSource]);
 
   //更新新绘制样本功能
   const update_label = async () => {
+    if (isCurrentUserReadOnly) {
+      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再更新样本' : '当前影像为只读状态');
+      return;
+    }
     let taskId = getTaskId;
     try {
 
       //先执行保存操作
-      await save();
+      const saved = await save();
+      if (saved === false) {
+        return;
+      }
 
       const hide = message.loading('正在更新样本...');
       const result = await reqUqdateLabel({ taskid: taskId, taskItemId: getTaskItemId });
@@ -1877,7 +2213,6 @@ const navigateTask = useCallback(async (direction) => {
 
   // 取出当前用户的标注类别数组
   const userArr = taskInfo.data?.[0]?.userArr || [];
-  const currentUserData = userArr.find(u => u.username === currentUser);
   const typeArr = currentUserData?.typeArr || [];
 
   return (
@@ -1920,14 +2255,45 @@ const navigateTask = useCallback(async (direction) => {
                 {(taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId)) + 1) || 1}. {currentTaskItem?.itemName || currentTaskItem?.mapserver || '未命名影像'}
               </span>
             </div>
+            <div className="top-info-sep" />
+            <div className="top-info-item">
+              <span className="top-info-label">标注进度：</span>
+              <span className="top-info-name">{markProgress.finished}/{markProgress.total}</span>
+            </div>
           </>
         )}
-        {taskInfo?.data?.[0]?.auditfeedback && (
+        {canToggleFinish && (
+          <>
+            <div className="top-info-sep" />
+            <div className="top-info-item">
+              <span className="top-info-label">负责类别：</span>
+              <span className="top-info-name">{assignedTypeText}</span>
+            </div>
+            <div className="top-info-sep" />
+            <div className="top-info-item">
+              <span className="top-info-label">我的状态：</span>
+              <span className={`top-info-name${currentUserFinished ? ' top-info-status-finished' : ' top-info-status-pending'}`}>
+                {currentUserFinishStatusText}
+              </span>
+            </div>
+            <div className="top-info-sep" />
+            <div className="top-info-item top-info-item-action">
+              <button
+                className={`top-finish-btn${currentUserFinished ? ' is-finished' : ''}`}
+                onClick={toggleFinishTaskItem}
+                disabled={finishButtonDisabled}
+              >
+                {currentUserFinished ? '撤销完成' : '标注完成'}
+              </button>
+            </div>
+          </>
+        )}
+        {currentTaskItemAuditFeedback && (
           <>
             <div className="top-info-sep" />
             <div className="top-info-item">
               <span className="top-info-label">审核反馈：</span>
-              <span className="top-info-feedback">{taskInfo?.data?.[0]?.auditfeedback}</span>
+              <span className="top-info-feedback">{currentTaskItemAuditFeedback}</span>
             </div>
           </>
         )}
@@ -1992,9 +2358,13 @@ const navigateTask = useCallback(async (direction) => {
           ].map(({ value, icon, title }) => (
             <Tooltip key={value} title={title}>
               <button
-                className={`shape-icon-btn${activeShape === value ? ' active' : ''}${toolbarState.drawState && value !== 'None' ? ' disabled' : ''}`}
-                disabled={toolbarState.drawState && value !== 'None'}
+                className={`shape-icon-btn${activeShape === value ? ' active' : ''}${(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None' ? ' disabled' : ''}`}
+                disabled={(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None'}
                 onClick={() => {
+                  if (isCurrentUserReadOnly) {
+                    message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再绘制' : '当前影像为只读状态');
+                    return;
+                  }
                   if (!toolbarState.currentLayer && value !== 'None') {
                     message.warn('请先选择图层再绘制');
                     return;
@@ -2026,16 +2396,17 @@ const navigateTask = useCallback(async (direction) => {
         {/* 操作工具栏（垂直，位于图层/形状栏下方） */}
         <div className="operation-toolbar-vertical">
           <div className="op-title">操作</div>
-          <Tooltip title="删除选中标注"><button className="action-btn danger" onClick={deleteFeature}><ScissorOutlined /></button></Tooltip>
+          <Tooltip title="删除选中标注"><button className="action-btn danger" onClick={deleteFeature} disabled={isCurrentUserReadOnly}><ScissorOutlined /></button></Tooltip>
           <Tooltip title="撤销"><button className="action-btn" onClick={undo}><UndoOutlined /></button></Tooltip>
           <Tooltip title="重做"><button className="action-btn" onClick={recover}><RedoOutlined /></button></Tooltip>
-          <Tooltip title="保存标注"><button className="action-btn primary" onClick={save}><SaveOutlined /></button></Tooltip>
-          <Tooltip title="更新样本"><button className="action-btn primary" onClick={update_label}><SyncOutlined /></button></Tooltip>
+          <Tooltip title="保存标注"><button className="action-btn primary" onClick={save} disabled={isCurrentUserReadOnly}><SaveOutlined /></button></Tooltip>
+          <Tooltip title="更新样本"><button className="action-btn primary" onClick={update_label} disabled={isCurrentUserReadOnly}><SyncOutlined /></button></Tooltip>
           <div className="op-divider" />
           <Tooltip title="切分工具：依次选择两个多边形，删除第一个与第二个的交集">
             <button
               className={`action-btn ${toolMode === 'split' ? 'active-tool' : ''}`}
               onClick={() => toggleToolMode('split')}
+              disabled={isCurrentUserReadOnly}
             >
               <SplitCellsOutlined />
             </button>
@@ -2044,6 +2415,7 @@ const navigateTask = useCallback(async (direction) => {
             <button
               className={`action-btn ${toolMode === 'union' ? 'active-tool' : ''}`}
               onClick={() => toggleToolMode('union')}
+              disabled={isCurrentUserReadOnly}
             >
               <MergeCellsOutlined />
             </button>
@@ -2052,6 +2424,7 @@ const navigateTask = useCallback(async (direction) => {
             <button
               className={`action-btn ${toolMode === 'boxDelete' ? 'active-tool' : ''}`}
               onClick={() => toggleToolMode('boxDelete')}
+              disabled={isCurrentUserReadOnly}
             >
               <BorderOutlined />
             </button>
@@ -2067,10 +2440,43 @@ const navigateTask = useCallback(async (direction) => {
           selectedFeatureAttrJson={selectedFeatureAttrJson}
           onFocusFeature={focusFeatureFromPanel}
           onUpdateAttr={updateSelectedFeatureAttr}
+          readOnly={isCurrentUserReadOnly}
         />
 
         {/* 右侧：模型辅助工具面板 */}
         <div className="model-panel model-panel-main">
+          <div className="model-block">
+            <div className="model-block-title"><BorderOutlined /> 冲突提示</div>
+            <Alert
+              type={markPageConflictCount > 0 ? 'warning' : 'success'}
+              showIcon
+              message={markPageConflictCount > 0 ? `当前影像发现 ${markPageConflictCount} 个潜在覆盖冲突` : '当前影像未发现潜在覆盖冲突'}
+            />
+            {markPageConflictCount > 0 && (
+              <div className="conflict-list">
+                {markPageConflicts.map((item, index) => {
+                  const otherUserName = userNameById[String(item?.otherUserId)] || `用户${item?.otherUserId || '-'}`;
+                  const selfTypeName = typeNameById[String(item?.selfTypeId)] || `类别${item?.selfTypeId || '-'}`;
+                  const otherTypeName = typeNameById[String(item?.otherTypeId)] || `类别${item?.otherTypeId || '-'}`;
+                  const conflictKey = `${item?.selfMarkId || 's'}-${item?.otherMarkId || 'o'}-${item?.selfUserId || 'su'}-${item?.otherUserId || 'ou'}`;
+                  return (
+                    <button
+                      key={conflictKey}
+                      className="conflict-item"
+                      onClick={() => focusConflictMark(item?.selfMarkId || item?.otherMarkId)}
+                    >
+                      <div className="conflict-item-title">{`冲突 ${index + 1}`}</div>
+                      <div className="conflict-item-text">{`当前类别：${selfTypeName}`}</div>
+                      <div className="conflict-item-text">{`参考用户：${otherUserName}`}</div>
+                      <div className="conflict-item-text">{`参考类别：${otherTypeName}`}</div>
+                      <div className="conflict-item-text">{`覆盖率：${Number(item?.coverageRatio || 0).toFixed(3)}`}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="model-block">
             <div className="model-block-title"><RobotOutlined /> 预标注模型</div>
             <div className="model-filter-hint">
@@ -2218,12 +2624,13 @@ const navigateTask = useCallback(async (direction) => {
                 <button
                   className={`assist-btn sam${samInteractiveEnabled ? ' active' : ''}`}
                   onClick={handleToggleSamInteractive}
+                  disabled={isCurrentUserReadOnly}
                 >
                   <AppstoreOutlined /> SAM交互标注
                 </button>
               </Tooltip>
               <Tooltip title={selectedModelFamily === 'yolo' && isYoloSamTaskType ? '当前选择的是 YOLO，地物提取/地物分类任务下会自动走 YOLO+SAM 联合预标注。' : '使用当前选中的预标注模型和参数，对当前影像启动预标注。'}>
-                <button className="model-action-btn pre-annotate-btn" onClick={handleModelInference} disabled={!selectedPreAnnotateModel}>
+                <button className="model-action-btn pre-annotate-btn" onClick={handleModelInference} disabled={!selectedPreAnnotateModel || isCurrentUserReadOnly}>
                   <ThunderboltOutlined /> 预标注启动
                 </button>
               </Tooltip>
