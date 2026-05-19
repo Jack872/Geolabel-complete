@@ -1,5 +1,6 @@
 package com.example.labelMark.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.example.labelMark.DTO.prov.ProvEntityRef;
 import com.example.labelMark.config.MinioConfig;
 import com.example.labelMark.domain.Dataset;
@@ -191,8 +192,21 @@ public class ServerController {
     @GetMapping("/thumbnail/{serverName}")
     public ResponseEntity<byte[]> getServerThumbnail(@PathVariable String serverName) {
         try {
+            // 从 publish_url 提取 GeoServer 中实际的 coverage 名称
+            String coverageName = serverName;
+            QueryWrapper<Server> wrapper = new QueryWrapper<>();
+            wrapper.eq("ser_name", serverName);
+            Server server = serverService.getOne(wrapper);
+            if (server != null && server.getPublishUrl() != null) {
+                String url = server.getPublishUrl().trim();
+                int idx = url.lastIndexOf('/');
+                if (idx >= 0 && idx < url.length() - 1) {
+                    coverageName = url.substring(idx + 1);
+                }
+            }
+
             // 获取图层信息
-            String layerInfo = geoServerRESTClient.getLayerInfo(serverName);
+            String layerInfo = geoServerRESTClient.getLayerInfo(coverageName);
             if (layerInfo.startsWith("ERROR") || layerInfo.startsWith("GET request not worked")) {
                 return ResponseEntity.notFound().build();
             }
@@ -233,7 +247,7 @@ public class ServerController {
 
             // 调用GeoServer服务获取影像
             ResponseEntity<byte[]> result = geoServerService.getGeoserverImg(
-                    serverName,
+                    coverageName,
                     (int) Math.round(width),
                     (int) Math.round(height),
                     bbox,
