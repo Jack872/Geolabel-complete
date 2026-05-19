@@ -432,6 +432,7 @@ const DatasetCardPage = () => {
       {/* 上传影像 Modal */}
       <StepUploadModal
         title={`上传到数据集: ${currentDataset?.name || ''}`}
+        datasetType={currentDataset?.setType}
         open={stepUploadVisible}
         onCancel={() => setStepUploadVisible(false)}
         onUploadComplete={async () => {

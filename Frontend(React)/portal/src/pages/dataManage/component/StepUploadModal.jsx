@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Upload,
@@ -36,12 +36,20 @@ const COMMON_CRS_OPTIONS = [
   { value: 'EPSG:25833', label: 'ETRS89 / UTM zone 33N (EPSG:25833)', description: 'ETRS89 UTM 33N' },
 ];
 
-const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId,title}) => {
+const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId, datasetType, title}) => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentUploadFile, setCurrentUploadFile] = useState('');
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (open) {
+      form.setFieldsValue({
+        coordinateSystem: datasetType === 'local' ? 'NONE' : 'EPSG:3857',
+      });
+    }
+  }, [open, datasetType, form]);
 
   const hasValue = (value) => value !== null && value !== undefined && `${value}`.trim() !== '';
 
@@ -309,7 +317,7 @@ const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId,title}) 
         form={form}
         layout="vertical"
         initialValues={{
-          coordinateSystem: 'EPSG:3857', // 默认值
+          coordinateSystem: datasetType === 'local' ? 'NONE' : 'EPSG:3857',
           description: '',
           timePrecision: 'day',
           timeZone: 'Asia/Shanghai',
@@ -332,18 +340,22 @@ const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId,title}) 
             >
               <Select
                 placeholder="选择坐标系"
+                disabled={datasetType === 'local'}
                 showSearch
                 optionFilterProp="children"
                 filterOption={(input, option) =>
                   option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
                 }
               >
-                {COMMON_CRS_OPTIONS.map(crs => (
+                {(datasetType === 'local'
+                  ? COMMON_CRS_OPTIONS.filter(crs => crs.value === 'NONE')
+                  : COMMON_CRS_OPTIONS.filter(crs => crs.value !== 'NONE')
+                ).map(crs => (
                   <Option key={crs.value} value={crs.value} title={crs.description}>
                     {crs.label}
                   </Option>
                 ))}
-                <Option value="custom">自定义坐标系...</Option>
+                {datasetType !== 'local' && <Option value="custom">自定义坐标系...</Option>}
               </Select>
             </Form.Item>
           </Col>
