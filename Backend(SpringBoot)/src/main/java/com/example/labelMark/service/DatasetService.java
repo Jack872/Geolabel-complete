@@ -71,7 +71,8 @@ public interface DatasetService extends IService<Dataset> {
     /**
      * 删除影像集
      * @param id 影像集ID
+     * @param userId 当前操作用户ID
      * @return 是否成功
      */
-    void deleteDataset(Integer id);
+    void deleteDataset(Integer id, Integer userId);
 }

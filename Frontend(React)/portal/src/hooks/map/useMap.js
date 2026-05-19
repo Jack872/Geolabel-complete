@@ -202,7 +202,8 @@ function useMap() {
 
         // ===== GeoServer 任务：原有逻辑 =====
         mapserver = taskResult?.data?.[0]?.mapserver;
-        let geoResult = await reqGetGeoServerInfo(mapserver);
+        const mapServerId = taskResult?.data?.[0]?.serverId;
+        let geoResult = await reqGetGeoServerInfo(mapServerId);
         if (geoResult) {
           setMapExtent(geoResult.coverage.nativeBoundingBox);
           mapExtent = geoResult.coverage.nativeBoundingBox;

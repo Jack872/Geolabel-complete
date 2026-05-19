@@ -277,7 +277,10 @@ public class DatasetController {
     @DeleteMapping("/deleteDataSet/{id}")
     public Result deleteDataSet(@PathVariable Integer id) {
         try {
-            datasetService.deleteDataset(id);
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            LoginUser loginUser = (LoginUser) authentication.getPrincipal();
+            Integer userId = loginUser.getSysUser().getUserid();
+            datasetService.deleteDataset(id, userId);
             return ResultGenerator.getSuccessResult("删除成功");
         } catch (Exception e) {
             e.printStackTrace();

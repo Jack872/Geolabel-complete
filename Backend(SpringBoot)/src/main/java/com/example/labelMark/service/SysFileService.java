@@ -35,5 +35,5 @@ public interface SysFileService extends IService<SysFile> {
     SysFile getFileById(Integer fileId);
 
     @Transactional(rollbackFor = Exception.class)
-    void saveFileAndProvenance(MergeMultipartRequest data, Integer userId, String updatetime);
+    Integer saveFileAndProvenance(MergeMultipartRequest data, Integer userId, String updatetime);
 }

@@ -237,7 +237,7 @@ public class DatasetServiceImpl extends ServiceImpl<DatasetMapper, Dataset> impl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteDataset(Integer id) {
+    public void deleteDataset(Integer id, Integer userId) {
         Dataset dataset = getById(id);
         if (dataset == null) {
             throw new RuntimeException("褰卞儚闆嗕笉瀛樺湪");
@@ -247,8 +247,8 @@ public class DatasetServiceImpl extends ServiceImpl<DatasetMapper, Dataset> impl
         String setName = dataset.getName();
 
         if ("service".equals(setType)) {
-            // 1. 鏌ヨ璇ュ奖鍍忛泦涓嬬殑鎵€鏈夋湇鍔?
-            List<Server> servers = serverService.getServersBySetName(setName);
+            // 1. 鏌ヨ璇ュ奖鍍忛泦涓嬪綋鍓嶇敤鎴风殑鎵€鏈夋湇鍔?
+            List<Server> servers = serverService.getServersBySetName(setName, userId);
 
             // 2. 鍒犻櫎 GeoServer 涓殑瀛樺偍锛坈overagestore锛岃繛甯?coverage锛?
             for (Server server : servers) {
@@ -259,8 +259,8 @@ public class DatasetServiceImpl extends ServiceImpl<DatasetMapper, Dataset> impl
                 }
             }
 
-            // 3. 鍒犻櫎鏈嶅姟璁板綍
-            serverService.deleteServersBySetName(setName);
+            // 3. 鍒犻櫎鏈嶅姟璁板綍锛堜粎褰撳墠鐢ㄦ埛鐨勶級
+            serverService.deleteServersBySetName(setName, userId);
 
         } else if ("local".equals(setType)) {
             // TODO: 鏈湴褰卞儚闆嗗垹闄ら€昏緫 - 鍒犻櫎鏈湴鏂囦欢绯荤粺涓殑鏂囦欢

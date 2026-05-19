@@ -28,6 +28,7 @@ public class TaskInfoDTO {
     private Integer taskClass; // 0为团队任务；1为非团队任务
     private Integer score; // 任务积分
     private String taskSource; // geoserver/local
+    private Integer serverId; // GeoServer服务ID
     private String coordinateSystem; // 当前任务影像坐标系
     private String batchId; // 批次ID
     private Integer batchIndex; // 批次序号
