@@ -110,7 +110,7 @@ function useMap() {
       const storedTaskItemId = window.sessionStorage.getItem('taskItemId');
       const hide = message.loading('正在获取数据', 0);
       try {
-        let typeResult = await reqGetCategoryList();
+        let typeResult = await reqGetCategoryList({ current: 1, pageSize: 9999 });
         setTypeList(typeResult);
         let taskResult = await reqStartMark({
           taskid: taskId,

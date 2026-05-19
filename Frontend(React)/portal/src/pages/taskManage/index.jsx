@@ -343,10 +343,8 @@ const TaskManage = () => {
   // 控制机构列表数据展示
   const newOrEditTask = async () => {
     setVisible(true);
-    // 获取用户的名称，仅在必要时获取数据
-    if (typeList.length === 0) {
-      getTypeInfo();
-    }
+    // 每次打开窗口都获取最新类别数据
+    getTypeInfo();
 
     if (userList.length === 0) {
       getUserList({ isAdmin: 0 });

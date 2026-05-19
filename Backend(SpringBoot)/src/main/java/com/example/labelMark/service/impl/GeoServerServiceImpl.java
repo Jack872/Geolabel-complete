@@ -300,6 +300,12 @@ public class GeoServerServiceImpl implements GeoServerService {
         headers.setBasicAuth(username, password);
 
         try {
+            // 0. 检查 coverage 是否已发布，避免重复发布导致 GeoServer 500 错误
+            if (checkCoverageExists("LUU", coverageName)) {
+                logger.info("Coverage 已存在，跳过发布: {}", coverageName);
+                return coverageName;
+            }
+
             // 1. POST 创建 coverage
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(payload, headers), String.class);
             logger.info("publish success -> {}", resp.getStatusCode());
@@ -375,9 +381,14 @@ public class GeoServerServiceImpl implements GeoServerService {
             }
 
             return coverageName;
-        } catch (HttpClientErrorException e) {
-            logger.warn("publish fail: {}", e.getMessage());
-            throw new IllegalStateException("图层发布失败: " + e.getMessage());
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            String errMsg = e.getMessage();
+            if (errMsg != null && errMsg.contains("already exists")) {
+                logger.info("Coverage 已存在（服务端返回），跳过发布: {}", coverageName);
+                return coverageName;
+            }
+            logger.warn("publish fail: {}", errMsg);
+            throw new IllegalStateException("图层发布失败: " + errMsg);
         }
     }
 

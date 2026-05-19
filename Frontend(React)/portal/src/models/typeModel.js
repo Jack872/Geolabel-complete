@@ -9,7 +9,7 @@ export default function typeModel() {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const getTypeInfo = useCallback(async () => {
     try {
-      let result = await reqGetCategoryList();
+      let result = await reqGetCategoryList({ current: 1, pageSize: 9999 });
       //标注类别列表
       if (result.success) {
         setTypeList(result.data);

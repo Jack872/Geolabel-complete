@@ -1,5 +1,6 @@
 package com.example.labelMark.domain;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -17,7 +18,7 @@ public class Type implements Serializable {
     /**
      * 
      */
-    @TableId(value = "type_id")
+    @TableId(value = "type_id", type = IdType.AUTO)
     private Integer typeId;
 
     /**
