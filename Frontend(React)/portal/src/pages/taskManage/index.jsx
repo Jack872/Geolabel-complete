@@ -21,7 +21,6 @@ import {
   reqDeleteTask,
   reqEditTask,
   reqGetSelectableImagesByName,
-  reqPublishLocalTask,
   reqPublishTaskBySet,
 } from '@/services/taskManage/api.js';
 // 引入封装的跳转方法
@@ -197,46 +196,6 @@ const TaskManage = () => {
     let { daterange, taskid, taskname, type, mapserver, targetUserType, score, mapSelectMode } = values;
     const isNonTeamTaskLogic =
       targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
-
-    // 本地图片任务（无坐标系）走独立流程
-    if (mapSelectMode === 'local') {
-      const localImagePaths = (values.localImagePaths || []).filter(p => p && p.trim());
-      if (localImagePaths.length === 0) {
-        message.error('请至少输入一个本地图片路径');
-        return;
-      }
-      const hide = message.loading(`正在创建多影像本地任务...`);
-      try {
-        const result = await reqPublishLocalTask({
-          ...buildTaskRequestValues({
-            values,
-            currentTaskName: taskname,
-            daterange,
-            type,
-            targetUserType,
-            score: typeof score === 'number' ? score : Number(score) || 0,
-          }),
-          taskItems: localImagePaths.map((localImagePath) => ({
-            source: 'local',
-            localImagePath: localImagePath.trim(),
-            itemName: localImagePath.trim().split(/[\\/]/).pop(),
-          })),
-        });
-        hide();
-        if (result.code === 200) {
-          message.success(`成功创建 1 个多影像任务（${localImagePaths.length} 张）`);
-          setVisible(false);
-          setDefaultValue({});
-          actionRef.current.reload();
-        } else {
-          message.error(result.message || '创建本地任务失败');
-        }
-      } catch (error) {
-        hide();
-        message.error('创建本地任务失败！');
-      }
-      return;
-    }
 
     // 按影像集批量创建（自动识别 service/local）
     if (mapSelectMode === 'bySetName') {

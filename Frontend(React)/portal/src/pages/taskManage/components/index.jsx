@@ -294,7 +294,7 @@ export default ({
   return (
     <Modal
       open={open}
-      title="任务管理"
+      title="新建任务"
       okText="提交"
       cancelText="取消"
       onCancel={onCancel}
@@ -412,37 +412,10 @@ export default ({
           <Radio.Group onChange={handleMapSelectModeChange}>
             <Radio value="byName">按影像名称选择</Radio>
             <Radio value="bySetName">按影像集名称选择</Radio>
-            <Radio value="local">本地图片（无坐标系）</Radio>
           </Radio.Group>
         </Form.Item>
 
-        {mapSelectMode === 'local' ? (
-          <Form.Item label="本地图片路径" tooltip="可添加多张本地TIF图片，每张图片将创建独立任务">
-            <Form.List name="localImagePaths" initialValue={['']}>
-              {(fields, { add, remove }) => (
-                <>
-                  {fields.map((field, index) => (
-                    <div key={field.key} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      <Form.Item
-                        {...field}
-                        style={{ flex: 1, margin: 0 }}
-                        rules={[{ required: true, message: '请输入本地图片路径' }]}
-                      >
-                        <Input placeholder={`例如: F:/PG-project/localImages/sample${index + 1}.tif`} />
-                      </Form.Item>
-                      {fields.length > 1 && (
-                        <Button danger size="small" onClick={() => remove(field.name)}>删除</Button>
-                      )}
-                    </div>
-                  ))}
-                  <Button type="dashed" onClick={() => add('')} style={{ width: '100%' }}>
-                    + 添加图片路径
-                  </Button>
-                </>
-              )}
-            </Form.List>
-          </Form.Item>
-        ) : mapSelectMode === 'byName' ? (
+        {mapSelectMode === 'byName' ? (
           <Form.Item
             label="影像名称"
             name="mapserver"
