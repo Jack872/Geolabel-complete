@@ -6,10 +6,13 @@ import com.example.labelMark.DTO.MergeMultipartRequest;
 import com.example.labelMark.DTO.prov.ProvEntityRef;
 import com.example.labelMark.domain.Dataset;
 import com.example.labelMark.domain.FileMetadata;
+import com.example.labelMark.domain.Server;
 import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.mapper.FileMetadataMapper;
+import com.example.labelMark.mapper.ServerMapper;
 import com.example.labelMark.mapper.SysFileMapper;
 import com.example.labelMark.service.DatasetService;
+import com.example.labelMark.service.GeoServerService;
 import com.example.labelMark.service.ProvenanceService;
 import com.example.labelMark.service.SysFileService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -47,6 +50,10 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
     private DatasetService datasetService;
     @Resource
     private ProvenanceService provenanceService;
+    @Resource
+    private ServerMapper serverMapper;
+    @Resource
+    private GeoServerService geoServerService;
 
     @Override
     public List<SysFile> getFilesData(Integer current, Integer pageSize, Integer datasetId, Integer userId) {
@@ -114,6 +121,22 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
         if (file == null) {
             return;
         }
+
+        // 如果影像已发布，先清理 server 和 GeoServer
+        if (file.getStatus() != null && file.getStatus() == 1) {
+            QueryWrapper<Server> serverQuery = new QueryWrapper<>();
+            serverQuery.eq("ser_desc", file.getFileName());
+            Server server = serverMapper.selectOne(serverQuery);
+            if (server != null) {
+                try {
+                    geoServerService.deleteStore(server.getSerName());
+                } catch (Exception e) {
+                    System.err.println("删除 GeoServer store 失败: " + server.getSerName() + ", err=" + e.getMessage());
+                }
+                serverMapper.delete(serverQuery);
+            }
+        }
+
         sysfileMapper.deleteById(fileId);
 
         if (file.getDatasetId() != null) {

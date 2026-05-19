@@ -95,6 +95,7 @@ public class ServerController {
     @DeleteMapping("/deleteServer/{serName}")
     public Result deleteServerByName(@PathVariable String serName) {
         try {
+            geoServerService.deleteStore(serName);
             int isDelete = serverService.deleteServerByName(serName);
             if (isDelete < 0) {
                 return ResultGenerator.getFailResult("删除失败");

@@ -100,8 +100,11 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
     public int deleteServerByName(String serName) {
         QueryWrapper<Server> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("ser_name", serName);
-        int delete = serverMapper.delete(queryWrapper);
-        return delete;
+        Server server = serverMapper.selectOne(queryWrapper);
+        if (server != null && server.getSerDesc() != null) {
+            sysFileService.updateFileStatus(server.getSerDesc(), 0);
+        }
+        return serverMapper.delete(queryWrapper);
     }
 
     @Override
