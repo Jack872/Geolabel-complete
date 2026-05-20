@@ -195,7 +195,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             }
             taskInfoDTO.setDaterange(ObjectUtil.toString(map.get("date_range")));
             taskInfoDTO.setStatus(Integer.valueOf(ObjectUtil.toString(map.get("status"))));
-            taskInfoDTO.setAuditfeedback(ObjectUtil.toString(map.get("audit_feedback")));
+            taskInfoDTO.setAuditfeedback(map.get("audit_feedback") != null ? ObjectUtil.toString(map.get("audit_feedback")) : null);
             taskInfoDTO.setUserid(Integer.valueOf(ObjectUtil.toString(map.get("userid"))));
             taskInfoDTO.setUsername(ObjectUtil.toString(map.get("username")));
             taskInfoDTO.setId(Integer.valueOf(ObjectUtil.toString(map.get("id"))));
@@ -322,7 +322,7 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             }
             taskInfoDTO.setDaterange(ObjectUtil.toString(map.get("date_range")));
             taskInfoDTO.setStatus(Integer.valueOf(ObjectUtil.toString(map.get("status"))));
-            taskInfoDTO.setAuditfeedback(ObjectUtil.toString(map.get("audit_feedback")));
+            taskInfoDTO.setAuditfeedback(map.get("audit_feedback") != null ? ObjectUtil.toString(map.get("audit_feedback")) : null);
             taskInfoDTO.setTaskClass(map.get("task_class") != null ? Integer.valueOf(ObjectUtil.toString(map.get("task_class"))) : 0);
             taskInfoDTO.setScore(map.get("score") != null ? Integer.valueOf(ObjectUtil.toString(map.get("score"))) : 0);
             taskInfoDTO.setAnnotationSchema(parseAnnotationSchema(map.get("annotation_schema")));
