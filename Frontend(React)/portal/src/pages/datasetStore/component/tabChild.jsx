@@ -1,6 +1,6 @@
 import { Button, Card, Col, Popconfirm, Row, Tag, message, Checkbox, Input, Modal, Form, InputNumber, Image } from 'antd';
 import '../style.less';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   reqDelDatasetStore,
   reqDownload,
@@ -40,6 +40,7 @@ export default function tabChild({
   const [selectedSamples, setSelectedSamples] = useState([]);
   // 添加样本名称搜索状态
   const [searchSampleName, setSearchSampleName] = useState('');
+  const searchTimerRef = useRef();
   const [isSearching, setIsSearching] = useState(false);
   // 添加发布共享数据集弹窗状态
   const [publishModalVisible, setPublishModalVisible] = useState(false);
@@ -411,15 +412,20 @@ export default function tabChild({
               <Input
                 placeholder="搜索任务名称"
                 value={searchSampleName}
-                onChange={(e) => setSearchSampleName(e.target.value)}
-                onKeyPress={handleInputKeyPress}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchSampleName(value);
+                  clearTimeout(searchTimerRef.current);
+                  searchTimerRef.current = setTimeout(() => {
+                    loadDatasets(value.trim());
+                  }, 300);
+                }}
                 style={{ width: 200, marginRight: '8px' }}
                 prefix={<SearchOutlined />}
                 allowClear
-                onPressEnter={handleSearch}
                 disabled={isSearching}
               />
-              <Button
+              {false && <Button
                 type="primary"
                 onClick={handleSearch}
                 loading={isSearching}
@@ -428,7 +434,7 @@ export default function tabChild({
               >
                 搜索
               </Button>
-              {searchSampleName && (
+              {false && searchSampleName && (
                 <Button
                   onClick={handleClearSearch}
                   style={{ marginRight: '8px' }}

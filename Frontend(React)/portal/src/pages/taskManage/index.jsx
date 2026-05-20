@@ -36,6 +36,8 @@ import {reqGenerateMergedDataset } from '@/services/sampleSet/api'
 
 const TaskManage = () => {
   const actionRef = useRef();
+  const searchFormRef = useRef();
+  const searchTimerRef = useRef();
   // 控制模态框显示影藏
   const [visible, setVisible] = useState(false);
   const [defaultValue, setDefaultValue] = useState({});
@@ -49,6 +51,13 @@ const TaskManage = () => {
   // 为了更好的用户体验，我们记录当前正在加载报告的任务ID
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [selectableImageOptions, setSelectableImageOptions] = useState([]);
+
+  const triggerSearch = () => {
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      searchFormRef.current?.submit?.();
+    }, 300);
+  };
 
   // 获取当前用户信息
   const { initialState } = useModel('@@initialState');
@@ -666,6 +675,7 @@ const TaskManage = () => {
         rowKey={(record) => record._rowKey || String(record.taskid)} // 支持批次折叠行
         columns={columns}
         actionRef={actionRef}
+        formRef={searchFormRef}
         // 1. 添加多选配置
         rowSelection={{
           onChange: (_, selectedRows) => {
@@ -747,6 +757,10 @@ const TaskManage = () => {
         editable={editable}
         search={{
           labelWidth: 'auto',
+          optionRender: false,
+        }}
+        form={{
+          onValuesChange: triggerSearch,
         }}
         pagination={{
           pageSizeOptions: ['10', '20', '30', '50'],

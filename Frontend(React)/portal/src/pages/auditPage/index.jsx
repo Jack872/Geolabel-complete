@@ -4,7 +4,7 @@ import { Vector as VectorLayer } from 'ol/layer';
 import { Vector as VectorSource } from 'ol/source';
 import { Style, Fill, Stroke, Circle as CircleStyle } from 'ol/style';
 import { GeoJSON } from 'ol/format';
-import { useModel } from 'umi';
+import { history, useModel } from 'umi';
 import useMap from '@/hooks/map/useMap';
 import BasicMap from '@/pages/markPage/components/basicMap';
 import './style.less';
@@ -113,6 +113,13 @@ export default function AuditPage() {
     if (!nextTaskItemId) return;
     switchTaskItem(nextTaskItemId);
   }, [getTaskItemId, switchTaskItem, taskItems]);
+
+  const resolveNextTaskItemId = useCallback(() => {
+    if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
+    const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
+    if (idx === -1 || idx + 1 >= taskItems.length) return null;
+    return taskItems[idx + 1]?.taskItemId || null;
+  }, [getTaskItemId, taskItems]);
 
   // 核心流程变更：审核决策状态
   const [auditDecision, setAuditDecision] = useState(null); // 'pass', 'fail', or null
@@ -711,11 +718,19 @@ export default function AuditPage() {
   }, []);
 
   const handlePostSubmitStayInAudit = useCallback(async (successText) => {
+    const nextTaskItemId = resolveNextTaskItemId();
     await refreshMarkGeoJsonArr?.();
     message.success(successText);
     resetToDecision();
-    message.info('已保留在当前任务，可继续审核当前任务内其他影像');
-  }, [refreshMarkGeoJsonArr, resetToDecision]);
+    if (nextTaskItemId) {
+      message.info('当前影像已审核，正在进入下一张影像');
+      switchTaskItem(nextTaskItemId);
+      return;
+    }
+    window.sessionStorage.removeItem('taskItemId');
+    message.info('最后一张影像已审核完成，返回任务管理页面');
+    history.push('/taskmanage');
+  }, [refreshMarkGeoJsonArr, resetToDecision, resolveNextTaskItemId, switchTaskItem]);
 
   // 新增：用于切换图层可见性的回调函数
   const toggleLayerVisibility = useCallback((typeId, isVisible) => {
