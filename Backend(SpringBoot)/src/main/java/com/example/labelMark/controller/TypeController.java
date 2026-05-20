@@ -37,7 +37,7 @@ public class TypeController {
                 current = 1;
             }
             if (ObjectUtil.isEmpty(pageSize)) {
-                pageSize = 5;
+                pageSize = 10;
             }
             List<Type> types = typeService.getTypes(current, pageSize, typeId, typeName);
             Integer total = typeService.countTypes(typeId, typeName);
@@ -58,19 +58,10 @@ public class TypeController {
 
     @PostMapping("/createType")
     public Result createType(@RequestBody Map<String, Object> map) {
-        String typeId = map.get("typeId").toString();
         String typeName = map.get("typeName").toString();
         String typeColor = map.get("typeColor").toString();
-        // 获取数据库TypeId种类
-        List<Integer> IDs = typeService.getId();
-
-        if (IDs.contains(Integer.valueOf(typeId))) {
-            return ResultGenerator.getFailResult("该id已存在，请重新输入");
-        } else {
-            // 创建type
-            typeService.createType(Integer.valueOf(typeId), typeName, typeColor);
-            return ResultGenerator.getSuccessResult();
-        }
+        typeService.createType(typeName, typeColor);
+        return ResultGenerator.getSuccessResult();
     }
 
     @PutMapping("/updateType")

@@ -3,6 +3,7 @@ package com.example.labelMark.mapper;
 import com.example.labelMark.domain.Type;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
+import org.apache.ibatis.annotations.Options;
 
 import java.util.List;
 
@@ -52,8 +53,9 @@ public interface TypeMapper extends BaseMapper<Type> {
      @Select("select type_id from type")
      List<Integer> getId();
 
-     @Insert("insert into type(type_id, type_name, type_color) values (#{typeId}, #{typeName}, #{typeColor})")
-     void createType(Integer typeId, String typeName, String typeColor);
+     @Insert("insert into type(type_name, type_color) values (#{typeName}, #{typeColor})")
+     @Options(useGeneratedKeys = true, keyProperty = "typeId")
+     void createType(Type type);
 
      @Update("update type set type_name=#{typeName}, type_color=#{typeColor} where type_id=#{typeId}")
      void updateType(Type type);

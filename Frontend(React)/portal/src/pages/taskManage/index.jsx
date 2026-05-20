@@ -216,57 +216,6 @@ const TaskManage = () => {
     const isNonTeamTaskLogic =
       targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
 
-    // 本地图片任务（无坐标系）走独立流程
-    if (mapSelectMode === 'local') {
-      const localFileIds = (values.localFileIds || []).filter(Boolean);
-      const localImagePaths = (values.localImagePaths || []).filter(p => p && p.trim());
-      if (localFileIds.length === 0 && localImagePaths.length === 0) {
-        message.error('请至少选择一个已上传影像，或输入开发模式路径');
-        return;
-      }
-      const selectableImageMap = new Map(
-        selectableImageOptions.map((item) => [String(item.fileId), item]),
-      );
-      const hide = message.loading(`正在创建多影像本地任务...`);
-      try {
-        const result = await reqPublishLocalTask({
-          ...buildTaskRequestValues({
-            values,
-            currentTaskName: taskname,
-            daterange,
-            type,
-            targetUserType,
-            score: typeof score === 'number' ? score : Number(score) || 0,
-          }),
-          taskItems: localImagePaths.map((localImagePath) => ({
-            source: 'local',
-            localImagePath: localImagePath.trim(),
-            itemName: localImagePath.trim().split(/[\\/]/).pop(),
-          })).concat(localFileIds.map((fileId) => {
-            const option = selectableImageMap.get(String(fileId));
-            return {
-              source: 'local',
-              fileId,
-              itemName: option?.name || option?.fileName || `file-${fileId}`,
-            };
-          })),
-        });
-        hide();
-        if (result.code === 200) {
-          message.success(`成功创建 1 个多影像任务（${localImagePaths.length} 张）`);
-          setVisible(false);
-          setDefaultValue({});
-          actionRef.current.reload();
-        } else {
-          message.error(result.message || '创建本地任务失败');
-        }
-      } catch (error) {
-        hide();
-        message.error('创建本地任务失败！');
-      }
-      return;
-    }
-
     // 按影像集批量创建（自动识别 service/local）
     if (mapSelectMode === 'bySetName') {
       const setNames = values.setNames || [];
@@ -414,10 +363,8 @@ const TaskManage = () => {
   // 控制机构列表数据展示
   const newOrEditTask = async () => {
     setVisible(true);
-    // 获取用户的名称，仅在必要时获取数据
-    if (typeList.length === 0) {
-      getTypeInfo();
-    }
+    // 每次打开窗口都获取最新类别数据
+    getTypeInfo();
 
     if (userList.length === 0) {
       getUserList({ isAdmin: 0 });

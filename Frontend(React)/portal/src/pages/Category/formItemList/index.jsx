@@ -21,8 +21,5 @@ export default (
     <Form.Item label="颜色" name="typeColor" rules={[{ required: true, message: '请选择颜色！' }]}>
       <Input placeholder="" type={'color'} />
     </Form.Item>
-    <Form.Item label="类别编号" name="typeId" rules={[{ required: true, message: '必须输入类别编号！！' }]}>
-      <Input placeholder="请输入类别编号"  />
-    </Form.Item>
   </>
 );

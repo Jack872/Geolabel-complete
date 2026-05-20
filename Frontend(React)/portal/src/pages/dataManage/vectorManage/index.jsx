@@ -216,8 +216,23 @@ const DatasetCardPage = () => {
       message.error('请选择要发布的影像！');
       return;
     }
+    // 过滤已发布的影像
+    const alreadyPublished = fileList.filter(
+      (f) => selectedFileKeys.includes(f.fileId) && f.status === 1
+    );
+    if (alreadyPublished.length > 0) {
+      const names = alreadyPublished.map((f) => f.fileName).join('、');
+      message.warning(`以下影像已发布，将跳过: ${names}`);
+    }
+    const toPublish = selectedFileKeys.filter(
+      (id) => !alreadyPublished.some((f) => f.fileId === id)
+    );
+    if (toPublish.length === 0) {
+      message.info('所选影像均已发布');
+      return;
+    }
     try {
-      const res = await reqPublishSet({ fileIds: selectedFileKeys });
+      const res = await reqPublishSet({ fileIds: toPublish });
       if (res.code==200) {
         message.success('批量发布成功');
         // 重新加载文件列表
@@ -409,12 +424,6 @@ const DatasetCardPage = () => {
         <Form.Item name="name" label="名称">
           <Input placeholder="输入数据集名称" allowClear />
         </Form.Item>
-        <Form.Item name="taskType" label="类型">
-          <Select placeholder="选择类型" allowClear style={{ width: 160 }}>
-            <Option value="目标检测">目标检测</Option>
-            <Option value="地物提取">地物提取</Option>
-          </Select>
-        </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit">查询</Button>
         </Form.Item>
@@ -449,7 +458,7 @@ const DatasetCardPage = () => {
 
       {/* 查看影像 Modal */}
       <Modal
-        title={`影像文件 - ${currentDataset?.name}`}
+        title={`影像集 - ${currentDataset?.name}`}
         open={fileModalVisible}
         width={1600}
         footer={null}
@@ -464,12 +473,18 @@ const DatasetCardPage = () => {
         )}
 
         <ProTable
-          columns={columns}
+          columns={currentDataset?.setType === 'local'
+            ? columns.filter(col => col.dataIndex !== 'status')
+            : columns}
           actionRef={actionRef}
-          rowSelection={{
-            selectedRowKeys: selectedFileKeys,
-            onChange: (keys) => setSelectedFileKeys(keys),
-          }}
+          rowSelection={
+            currentDataset?.setType !== 'local'
+              ? {
+                  selectedRowKeys: selectedFileKeys,
+                  onChange: (keys) => setSelectedFileKeys(keys),
+                }
+              : undefined
+          }
           dataSource={fileList} // 直接用 handleViewFiles 拉取的文件列表
           rowKey="fileId"
           search={false}
@@ -487,16 +502,6 @@ const DatasetCardPage = () => {
                      }
           >
             <Input />
-          </Form.Item>,
-          <Form.Item label="类型" name="taskType"
-                     rules={
-                       isEdit ? [] : [{ required: true, message: '请选择任务类型！' }]
-                     }
-          >
-            <Select>
-              <Option value="目标检测">目标检测</Option>
-              <Option value="地物提取">地物提取</Option>
-            </Select>
           </Form.Item>,
           <Form.Item label="描述" name="description">
             <Input.TextArea rows={2} />

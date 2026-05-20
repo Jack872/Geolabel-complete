@@ -143,7 +143,7 @@ const Category = () => {
         }}
         pagination={{
           pageSizeOptions: ['5', '10', '15', '20'],
-          defaultPageSize: 5,
+          defaultPageSize: 10,
           showSizeChanger: true,
         }}
         headerTitle="类别配置"
@@ -156,7 +156,7 @@ const Category = () => {
               setVisible(true);
             }}
           >
-            类别新增
+            新增类别
           </Button>,
           <CollectionCreateForm
             title={'新建标注类别'}

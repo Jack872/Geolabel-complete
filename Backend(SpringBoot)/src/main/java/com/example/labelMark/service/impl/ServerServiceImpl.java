@@ -255,6 +255,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                     logger.info("无坐标系图片已处理，覆盖名称: {}", coverageName);
                 } else if ("UNKNOWN".equals(coordinateSystem)) {
                     // CRS检测失败，让GeoServer自动检测（传null触发auto-detect模式）
+                    // publish 内部已检查 coverage 是否存在，已存在则跳过发布直接返回
                     coverageName = geoServerService.publish(sername, seryear, setName, null);
                     boolean coverageExists = geoServerService.checkCoverageExists("LUU", coverageName);
                     if (!coverageExists) {
@@ -263,13 +264,11 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                     logger.info("CRS自动检测发布成功，覆盖名称: {}", coverageName);
                 } else {
                     // 有明确CRS，正常发布
-                    boolean coverageExists = geoServerService.checkCoverageExists("LUU", sername);
+                    // publish 内部已检查 coverage 是否存在，已存在则跳过发布直接返回
+                    coverageName = geoServerService.publish(sername, seryear, setName, coordinateSystem);
+                    boolean coverageExists = geoServerService.checkCoverageExists("LUU", coverageName);
                     if (!coverageExists) {
-                        coverageName = geoServerService.publish(sername, seryear, setName, coordinateSystem);
-                        coverageExists = geoServerService.checkCoverageExists("LUU", coverageName);
-                        if (!coverageExists) {
-                            throw new IllegalStateException("Coverage 发布失败");
-                        }
+                        throw new IllegalStateException("Coverage 发布失败");
                     }
                 }
 

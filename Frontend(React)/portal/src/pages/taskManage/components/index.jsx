@@ -299,7 +299,7 @@ export default ({
   return (
     <Modal
       open={open}
-      title="任务管理"
+      title="新建任务"
       okText="提交"
       cancelText="取消"
       onCancel={onCancel}
@@ -417,55 +417,10 @@ export default ({
           <Radio.Group onChange={handleMapSelectModeChange}>
             <Radio value="byName">按影像名称选择</Radio>
             <Radio value="bySetName">按影像集名称选择</Radio>
-            <Radio value="local">本地图片（无坐标系）</Radio>
           </Radio.Group>
         </Form.Item>
 
-        {mapSelectMode === 'local' ? (
-          <>
-            <Form.Item
-              label="已上传影像"
-              name="localFileIds"
-              tooltip="优先选择已上传到系统的影像，任务只提交 file_id"
-            >
-              <Select
-                mode="multiple"
-                allowClear
-                showSearch
-                placeholder="请选择已上传影像"
-                optionFilterProp="label"
-                options={localSelectableOptions.map((item) => ({
-                  value: item.fileId,
-                  label: item.label,
-                }))}
-              />
-            </Form.Item>
-            <Form.Item label="开发模式路径" tooltip="仅开发模式使用。生产环境不要再直接填写服务器绝对路径。">
-              <Form.List name="localImagePaths" initialValue={['']}>
-              {(fields, { add, remove }) => (
-                <>
-                  {fields.map((field, index) => (
-                    <div key={field.key} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                      <Form.Item
-                        {...field}
-                        style={{ flex: 1, margin: 0 }}
-                      >
-                        <Input placeholder={`仅开发模式使用，例如: F:/PG-project/localImages/sample${index + 1}.tif`} />
-                      </Form.Item>
-                      {fields.length > 1 && (
-                        <Button danger size="small" onClick={() => remove(field.name)}>删除</Button>
-                      )}
-                    </div>
-                  ))}
-                  <Button type="dashed" onClick={() => add('')} style={{ width: '100%' }}>
-                    + 添加图片路径
-                  </Button>
-                </>
-              )}
-              </Form.List>
-            </Form.Item>
-          </>
-        ) : mapSelectMode === 'byName' ? (
+        {mapSelectMode === 'byName' ? (
           <Form.Item
             label="影像名称"
             name="mapserver"
