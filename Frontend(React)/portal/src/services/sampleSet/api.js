@@ -25,6 +25,13 @@ export async function reqDownloadSampleSet(params) {
   });
 }
 
+export async function reqExportSampleSet(params) {
+  return request('/wegismarkapi/sampleSet/export', {
+    method: 'POST',
+    data: params,
+  });
+}
+
 // 获取详情 (可选，如果列表页数据不全)
 export async function reqGetSampleSetDetail(id) {
   return request('/wegismarkapi/sampleSet/info/${id}', {

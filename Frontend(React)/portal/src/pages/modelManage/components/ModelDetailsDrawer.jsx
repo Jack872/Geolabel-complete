@@ -267,6 +267,17 @@ const ModelDetailsDrawer = ({ visible, onClose, modelInfo }) => {
               <Descriptions.Item label="模型类型">
                 <Tag color="purple">{modelInfo?.modelType || '-'}</Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="存储类型">
+                <Tag color={modelInfo?.storageType === 'minio' ? 'blue' : 'default'}>
+                  {modelInfo?.storageType || '-'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="模型文件名">
+                {modelInfo?.originalFilename || modelInfo?.fileName || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="对象键">
+                {modelInfo?.objectKey || '-'}
+              </Descriptions.Item>
               <Descriptions.Item label="输入通道数">
                 <Tag color="cyan">{modelInfo?.inputNum || '-'}</Tag>
               </Descriptions.Item>

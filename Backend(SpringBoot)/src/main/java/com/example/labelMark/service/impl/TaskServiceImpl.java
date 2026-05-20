@@ -6,10 +6,12 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.example.labelMark.domain.Server;
+import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.domain.Task;
 import com.example.labelMark.domain.TaskItem;
 import com.example.labelMark.mapper.ServerMapper;
 import com.example.labelMark.mapper.TaskMapper;
+import com.example.labelMark.service.SysFileService;
 import com.example.labelMark.service.TaskItemService;
 import com.example.labelMark.service.TaskService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -17,7 +19,10 @@ import com.example.labelMark.vo.TaskInfoDTO;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +43,8 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
     private ServerMapper serverMapper;
     @Resource
     private TaskItemService taskItemService;
+    @Resource
+    private SysFileService sysFileService;
 
     @Override
     public int createTask(String dataRange, String taskName, String taskType
@@ -77,7 +84,16 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             taskItem.setTaskSource(rawItem.getTaskSource() == null ? "geoserver" : rawItem.getTaskSource());
             taskItem.setMapServer(rawItem.getMapServer());
             taskItem.setLocalImagePath(rawItem.getLocalImagePath());
+            Integer resolvedFileId = resolveTaskItemFileId(rawItem, userId);
+            taskItem.setFileId(resolvedFileId);
             taskItem.setStatus(task.getStatus());
+
+            if (resolvedFileId != null && (taskItem.getLocalImagePath() == null || taskItem.getLocalImagePath().trim().isEmpty())) {
+                SysFile file = sysFileService.getFileById(resolvedFileId);
+                if (file != null) {
+                    taskItem.setLocalImagePath(file.getFileName());
+                }
+            }
 
             Integer serverId = rawItem.getServerId();
             if (serverId == null && "geoserver".equals(taskItem.getTaskSource()) && rawItem.getMapServer() != null) {
@@ -90,6 +106,73 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
 
         syncTaskPrimaryItem(task.getTaskId());
         return task.getTaskId();
+    }
+
+    private Integer resolveTaskItemFileId(TaskItem rawItem, Integer userId) {
+        if (rawItem == null) {
+            return null;
+        }
+        if (rawItem.getFileId() != null) {
+            return rawItem.getFileId();
+        }
+        if (!"local".equalsIgnoreCase(rawItem.getTaskSource()) || userId == null) {
+            return null;
+        }
+
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        addFileNameCandidate(candidates, rawItem.getLocalImagePath());
+        addFileNameCandidate(candidates, rawItem.getItemName());
+        addFileNameCandidate(candidates, rawItem.getMapServer());
+
+        for (String candidate : candidates) {
+            Integer byFileName = findLatestFileId(userId, "file_name", candidate);
+            if (byFileName != null) {
+                return byFileName;
+            }
+            Integer byOriginalName = findLatestFileId(userId, "original_filename", candidate);
+            if (byOriginalName != null) {
+                return byOriginalName;
+            }
+        }
+        return null;
+    }
+
+    private Integer findLatestFileId(Integer userId, String column, String value) {
+        if (userId == null || value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        List<SysFile> files = sysFileService.list(new QueryWrapper<SysFile>()
+                .eq("user_id", userId)
+                .eq(column, value.trim())
+                .orderByDesc("file_id")
+                .last("LIMIT 1"));
+        if (files == null || files.isEmpty()) {
+            return null;
+        }
+        return files.get(0).getFileId();
+    }
+
+    private void addFileNameCandidate(LinkedHashSet<String> candidates, String rawValue) {
+        if (rawValue == null) {
+            return;
+        }
+        String normalized = rawValue.trim();
+        if (normalized.isEmpty()) {
+            return;
+        }
+        if (normalized.startsWith("local:")) {
+            normalized = normalized.substring("local:".length()).trim();
+        }
+        if (normalized.isEmpty()) {
+            return;
+        }
+        normalized = normalized.replace("\\", "/");
+        candidates.add(normalized);
+        Path path = Paths.get(normalized);
+        Path fileName = path.getFileName();
+        if (fileName != null) {
+            candidates.add(fileName.toString());
+        }
     }
 
     @Override

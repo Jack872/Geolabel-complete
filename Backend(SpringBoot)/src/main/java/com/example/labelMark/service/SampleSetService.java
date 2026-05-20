@@ -23,5 +23,7 @@ public interface SampleSetService extends IService<SampleSet> {
 
     void downloadSampleSet(Integer id, String format, Map<String, Object> exportOptions, HttpServletResponse response) throws Exception;
 
+    Map<String, Object> exportSampleSet(Integer id, String format, Map<String, Object> exportOptions) throws Exception;
+
     Map<String, Object> getDatasetProvenance(Integer id);
 }

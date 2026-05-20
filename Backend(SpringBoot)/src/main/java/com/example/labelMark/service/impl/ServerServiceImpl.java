@@ -53,7 +53,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
 
     @Resource
     private SysFileService sysFileService;
-    @Value("${geoserver.local-coverage-dir}") // 假设你有这个配置
+    @Value("${geoserver.localCoverageDir}")
     private String localCoverageDir;
     @Resource
     private ProvenanceService provenanceService;
@@ -73,6 +73,8 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
     private CoordinateSystemUtils coordinateSystemUtils;
     @Resource
     private FileMetadataMapper fileMetadataMapper;
+    @Resource
+    private MinioFileResolveService minioFileResolveService;
 
     private static final Logger logger = LoggerFactory.getLogger(ServerService.class);
     @Override
@@ -208,45 +210,20 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                 String seryear = dataset.getYear();
                 String serdesc = file.getFileName();
 
-                // === 📥 从 MinIO 下载到 GeoServer 本地目录 ===
-                String localTifPathInContainer = localCoverageDirInContainer + "/" + filename;
-                File localFile = new File(localTifPathInContainer);
-
-                if (!localFile.exists()) {
-                    // ✅ 关键：自动创建多级父目录
-                    Path path = Paths.get(localTifPathInContainer);
-                    Files.createDirectories(path.getParent()); // 自动创建 coverages 目录
-                    logger.info("开始从 MinIO 下载文件: {} -> {}", filename, localTifPathInContainer);
-                    try (InputStream inputStream = minioClient.getObject(
-                            GetObjectArgs.builder()
-                                    .bucket(minioConfig.getBucketName())
-                                    .object(filename)
-                                    .build()
-                    ); // 新版 MinIO SDK 返回 CompletableFuture<InputStream>
-                         OutputStream out = Files.newOutputStream(path)) {
-                        logger.info("MinIO 文件开始下载: {}", inputStream);
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = inputStream.read(buffer)) != -1) {
-                            out.write(buffer, 0, len);
-                        }
-                        logger.info("文件下载完成: {}", filename);
-                    } catch (Exception e) {
-                        logger.error("MinIO 文件下载失败: {}", filename, e);
-                        throw new IllegalStateException("MinIO 文件下载失败: " + filename, e);
-                    }
-                } else {
-                    logger.info("文件已存在，跳过下载: {}", localTifPathInContainer);
-                }
-
-                // === 🗂️ 构造 file:// URL ===
-                String fileUrl = "file:///" + localTifPathInContainer;
-                logger.info("使用本地文件路径发布: {}", fileUrl);
+                File resolvedSourceFile = minioFileResolveService.resolveToLocalFile(
+                        file,
+                        Paths.get(System.getProperty("java.io.tmpdir"), "geolabel_publish_cache")
+                );
+                Path coverageDir = Paths.get(localCoverageDirInContainer);
+                Files.createDirectories(coverageDir);
+                Path localTifPathInContainer = coverageDir.resolve(filename);
+                Files.copy(resolvedSourceFile.toPath(), localTifPathInContainer, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                logger.info("使用本地文件路径发布: {}", localTifPathInContainer);
 
                 // === 1️⃣ 检查并创建 Store ===
                 boolean storeExists = geoServerService.checkStoreExists("LUU", sername);
                 if (!storeExists) {
-                    ResponseEntity<String> createResp = geoServerService.createRemoteGeoServerStore(sername, fileUrl);
+                    ResponseEntity<String> createResp = geoServerService.createGeoServerStore(sername, localTifPathInContainer.toString());
                     if (!createResp.getStatusCode().is2xxSuccessful()) {
                         throw new IllegalStateException("创建 GeoServer Store 失败: " + createResp.getBody());
                     }
@@ -260,7 +237,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
 
                 // === 2️⃣ 检查并发布 Coverage ===
                 // 动态获取坐标系 - 从本地文件路径检测
-                String coordinateSystem = coordinateSystemUtils.getCoordinateSystemFromFile(localTifPathInContainer);
+                String coordinateSystem = coordinateSystemUtils.getCoordinateSystemFromFile(localTifPathInContainer.toString());
                 if ("UNKNOWN".equalsIgnoreCase(coordinateSystem) || "NONE".equalsIgnoreCase(coordinateSystem)) {
                     FileMetadata metadata = fileMetadataMapper.selectById(fileId);
                     if (metadata != null && metadata.getCrsCode() != null && !metadata.getCrsCode().trim().isEmpty()) {

@@ -24,7 +24,7 @@ public interface ModelMapper extends BaseMapper<Model> {
      * @param userId 用户ID
      * @return 模型列表
      */
-    @Select("SELECT model_id, user_id, model_name, model_des, model_type, task_type, path, input_num, output_num, status FROM model WHERE user_id = #{userId} and task_type = #{taskType}")
+    @Select("SELECT model_id, user_id, model_name, model_des, model_type, task_type, path, storage_type, bucket_name, object_key, file_name, original_filename, input_num, output_num, status FROM model WHERE user_id = #{userId} and task_type = #{taskType}")
     List<Model> selectByUserId(@Param("userId") Integer userId,@Param("taskType") String taskType);
 
 }

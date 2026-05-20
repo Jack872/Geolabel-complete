@@ -41,6 +41,21 @@ public class Model implements Serializable {
     @TableField("path")
     private String path;
 
+    @TableField("storage_type")
+    private String storageType;
+
+    @TableField("bucket_name")
+    private String bucketName;
+
+    @TableField("object_key")
+    private String objectKey;
+
+    @TableField("file_name")
+    private String fileName;
+
+    @TableField("original_filename")
+    private String originalFilename;
+
     @TableField("input_num")
     private Integer inputNum;
 

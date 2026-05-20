@@ -9,6 +9,7 @@ from shapely.geometry import GeometryCollection
 from shapely.ops import transform as shapely_transform
 from utils import crop_image_by_scope, identify_holes_and_split, post_process_mask, prepare_data_for_sklearn
 from utils_db import connect_db, delete_existing_results_db, fetch_labels_from_db, fetch_map_server_from_db, fetch_model_from_db, insert_segmentation_results_db
+from utils_storage import ensure_model_local, ensure_task_image_local
 from utils_yolo import process_yolo_results, filter_original_labels_with_type
 # from utils_yolo import filter_original_labels_with_type
 import torch
@@ -609,7 +610,7 @@ def inference(argv=None):
         conn.close()
         return
 
-    IMAGE_PATH = resolve_image_path(MAPFILE_PATH)
+    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=resolve_image_path(MAPFILE_PATH))
     # 获取标签数据
     labels_data = fetch_labels_from_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
     if not labels_data:
@@ -623,7 +624,7 @@ def inference(argv=None):
     # type_arr = fetch_typeid_from_db(conn, TASK_ID)
 
     # 定义模型保存路径
-    model_save_path = model_inf['path']
+    model_save_path = ensure_model_local(model_inf)
 
     # 设置设备
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

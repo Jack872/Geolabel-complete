@@ -1,7 +1,9 @@
 package com.example.labelMark.controller;
 import com.example.labelMark.config.MinioConfig;
 import com.example.labelMark.domain.Server;
+import com.example.labelMark.domain.SysFile;
 import com.example.labelMark.service.GeoServerService;
+import com.example.labelMark.service.MinioFileResolveService;
 import com.example.labelMark.service.ServerService;
 import com.example.labelMark.service.SysFileService;
 import com.example.labelMark.utils.CoordinateSystemUtils;
@@ -17,7 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -37,6 +42,8 @@ public class GeoServerController {
     private SysFileService sysFileService;
     @Resource
     private CoordinateSystemUtils coordinateSystemUtils;
+    @Resource
+    private MinioFileResolveService minioFileResolveService;
     @Value("${geoserver.url}")
     private String geoserverUrl;
     @Value("${minio.uploaddir}")
@@ -71,23 +78,33 @@ public class GeoServerController {
     @PostMapping("/publish")
     public ResponseEntity<?> publish(@RequestBody Map<String, Object> data) {
         try {
-            String filename = (String) data.get("filename");
+            Integer fileId = data.get("fileId") == null ? null : Integer.valueOf(String.valueOf(data.get("fileId")));
+            SysFile file = fileId == null ? null : sysFileService.getFileById(fileId);
+            if (file == null) {
+                String filenameParam = (String) data.get("filename");
+                if (filenameParam != null && !filenameParam.trim().isEmpty()) {
+                    file = sysFileService.getFileByFileName(filenameParam.trim());
+                }
+            }
+            if (file == null) {
+                throw new IllegalArgumentException("未找到待发布影像");
+            }
+            String filename = file.getFileName();
             String sername = filename.split("\\.")[0];
             String serdesc = (String) data.get("serdesc");
             Object yearObj = data.get("seryear");
             String seryear = yearObj != null ? yearObj.toString() : null;
             String setName = (String) data.get("setname");
-
-
-            String minioHttpUrl = String.format("%s/%s/%s",
-                    minioConfig.getEndpoint(),minioConfig.getBucketName(), filename);
+            Path localPublishDir = Path.of(System.getProperty("java.io.tmpdir"), "geolabel_geoserver_publish");
+            Files.createDirectories(localPublishDir);
+            File resolvedFile = minioFileResolveService.resolveToLocalFile(file, localPublishDir);
 
             // 2. 检查 store 是否存在
             boolean storeExists = geoServerService.checkStoreExists("LUU", sername);
 
             if (!storeExists) {
                 // 3. 如果 store 不存在，则创建 GeoServer store
-                ResponseEntity<String> createResp = geoServerService.createRemoteGeoServerStore(sername, minioHttpUrl);
+                ResponseEntity<String> createResp = geoServerService.createGeoServerStore(sername, resolvedFile.getAbsolutePath());
                 if (!createResp.getStatusCode().is2xxSuccessful()) {
                     throw new IllegalStateException("创建 GeoServer Store 失败: " + createResp.getBody());
                 }

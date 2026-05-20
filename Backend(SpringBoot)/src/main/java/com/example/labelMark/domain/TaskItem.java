@@ -51,6 +51,10 @@ public class TaskItem implements Serializable {
     @ApiModelProperty("本地影像绝对路径")
     private String localImagePath;
 
+    @TableField("file_id")
+    @ApiModelProperty("源影像文件ID")
+    private Integer fileId;
+
     @TableField("status")
     @ApiModelProperty("影像项状态")
     private Integer status;

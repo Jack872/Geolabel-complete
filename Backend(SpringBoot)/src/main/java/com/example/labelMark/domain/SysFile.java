@@ -30,6 +30,27 @@ public class SysFile implements Serializable {
     @TableField("file_name")
     private String fileName;
 
+    @TableField("original_filename")
+    private String originalFilename;
+
+    @TableField("storage_type")
+    private String storageType;
+
+    @TableField("bucket_name")
+    private String bucketName;
+
+    @TableField("object_key")
+    private String objectKey;
+
+    @TableField("file_size")
+    private Long fileSize;
+
+    @TableField("crs")
+    private String crs;
+
+    @TableField("bbox")
+    private String bbox;
+
     @TableField("update_time")
     private String updateTime;
 

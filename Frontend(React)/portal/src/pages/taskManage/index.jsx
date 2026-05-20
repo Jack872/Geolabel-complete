@@ -218,11 +218,15 @@ const TaskManage = () => {
 
     // 本地图片任务（无坐标系）走独立流程
     if (mapSelectMode === 'local') {
+      const localFileIds = (values.localFileIds || []).filter(Boolean);
       const localImagePaths = (values.localImagePaths || []).filter(p => p && p.trim());
-      if (localImagePaths.length === 0) {
-        message.error('请至少输入一个本地图片路径');
+      if (localFileIds.length === 0 && localImagePaths.length === 0) {
+        message.error('请至少选择一个已上传影像，或输入开发模式路径');
         return;
       }
+      const selectableImageMap = new Map(
+        selectableImageOptions.map((item) => [String(item.fileId), item]),
+      );
       const hide = message.loading(`正在创建多影像本地任务...`);
       try {
         const result = await reqPublishLocalTask({
@@ -238,6 +242,13 @@ const TaskManage = () => {
             source: 'local',
             localImagePath: localImagePath.trim(),
             itemName: localImagePath.trim().split(/[\\/]/).pop(),
+          })).concat(localFileIds.map((fileId) => {
+            const option = selectableImageMap.get(String(fileId));
+            return {
+              source: 'local',
+              fileId,
+              itemName: option?.name || option?.fileName || `file-${fileId}`,
+            };
           })),
         });
         hide();
@@ -360,6 +371,7 @@ const TaskManage = () => {
         })),
         ...localImages.map((item) => ({
           source: 'local',
+          fileId: item.fileId,
           localImagePath: item.localImagePath,
           itemName: item.name || item.fileName,
         })),
@@ -830,6 +842,7 @@ const TaskManage = () => {
           }}
           renderUserList={renderUserList}
           renderServiceList={renderServiceList}
+          selectableImageOptions={selectableImageOptions}
           renderTypeList={typeList}
         />
       )}

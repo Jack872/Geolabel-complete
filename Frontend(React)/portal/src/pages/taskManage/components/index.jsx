@@ -14,6 +14,7 @@ export default ({
   onCancel,
   renderUserList,
   renderServiceList,
+  selectableImageOptions,
   defaultValue,
   renderTypeList,
 }) => {
@@ -39,6 +40,10 @@ export default ({
   const [userArrId, setUserArrId] = useState([]);
   const [datasetSetTypeMap, setDatasetSetTypeMap] = useState({});
   const [attributeDefs, setAttributeDefs] = useState([]);
+  const localSelectableOptions = useMemo(
+    () => (selectableImageOptions || []).filter((item) => item?.source === 'local' && item?.fileId),
+    [selectableImageOptions],
+  );
   let { taskid, taskname, type, mapserver, daterange, userArr } = defaultValue;
   const defaultTaskTypeAttributeValues = useMemo(() => {
     const rows = Array.isArray(defaultValue?.taskTypeAttributes) ? defaultValue.taskTypeAttributes : [];
@@ -417,8 +422,26 @@ export default ({
         </Form.Item>
 
         {mapSelectMode === 'local' ? (
-          <Form.Item label="本地图片路径" tooltip="可添加多张本地TIF图片，每张图片将创建独立任务">
-            <Form.List name="localImagePaths" initialValue={['']}>
+          <>
+            <Form.Item
+              label="已上传影像"
+              name="localFileIds"
+              tooltip="优先选择已上传到系统的影像，任务只提交 file_id"
+            >
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                placeholder="请选择已上传影像"
+                optionFilterProp="label"
+                options={localSelectableOptions.map((item) => ({
+                  value: item.fileId,
+                  label: item.label,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item label="开发模式路径" tooltip="仅开发模式使用。生产环境不要再直接填写服务器绝对路径。">
+              <Form.List name="localImagePaths" initialValue={['']}>
               {(fields, { add, remove }) => (
                 <>
                   {fields.map((field, index) => (
@@ -426,9 +449,8 @@ export default ({
                       <Form.Item
                         {...field}
                         style={{ flex: 1, margin: 0 }}
-                        rules={[{ required: true, message: '请输入本地图片路径' }]}
                       >
-                        <Input placeholder={`例如: F:/PG-project/localImages/sample${index + 1}.tif`} />
+                        <Input placeholder={`仅开发模式使用，例如: F:/PG-project/localImages/sample${index + 1}.tif`} />
                       </Form.Item>
                       {fields.length > 1 && (
                         <Button danger size="small" onClick={() => remove(field.name)}>删除</Button>
@@ -440,8 +462,9 @@ export default ({
                   </Button>
                 </>
               )}
-            </Form.List>
-          </Form.Item>
+              </Form.List>
+            </Form.Item>
+          </>
         ) : mapSelectMode === 'byName' ? (
           <Form.Item
             label="影像名称"
