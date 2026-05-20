@@ -79,8 +79,16 @@ const columns = [
 ];
 const Category = () => {
   const actionRef = useRef();
+  const searchFormRef = useRef();
+  const searchTimerRef = useRef();
   // 控制模态框显示影藏
   const [visible, setVisible] = useState(false);
+  const triggerSearch = () => {
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      searchFormRef.current?.submit?.();
+    }, 300);
+  };
   // 新建类别参数收集
   const onCreate = async (values) => {
     console.log('得到新建类别参数: ', values);
@@ -106,6 +114,7 @@ const Category = () => {
       <ProTable
         columns={columns}
         actionRef={actionRef}
+        formRef={searchFormRef}
         request={reqGetCategoryList}
         editable={{
           type: 'multiple',
@@ -140,6 +149,10 @@ const Category = () => {
         rowKey="typeId"
         search={{
           labelWidth: 'auto',
+          optionRender: false,
+        }}
+        form={{
+          onValuesChange: triggerSearch,
         }}
         pagination={{
           pageSizeOptions: ['5', '10', '15', '20'],

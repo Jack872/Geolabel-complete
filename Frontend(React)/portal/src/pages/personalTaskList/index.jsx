@@ -70,9 +70,6 @@ const Category = () => {
       case 2:
         return { text: '审核未通过', color: 'error', icon: <CloseCircleOutlined /> };
       case 3:
-        if (record?.auditfeedback) {
-          return { text: '审核退回', color: 'orange', icon: <CloseCircleOutlined /> };
-        }
         return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
       default:
         return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
@@ -302,7 +299,7 @@ const Category = () => {
         return (
           <div>
             <Tag color={color} icon={icon} key={'status'} style={{ display: 'inline-block' }}>
-              {(text === '审核未通过' || text === '审核退回') ? <Tooltip title={record.auditfeedback}>{text}</Tooltip> : text}
+              {text === '审核未通过' ? <Tooltip title={record.auditfeedback}>{text}</Tooltip> : text}
             </Tag>
           </div>
         );

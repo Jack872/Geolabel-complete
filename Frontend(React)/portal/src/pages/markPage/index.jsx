@@ -1641,6 +1641,13 @@ export default function () {
 
     message.loading({ content: loadingText, key: loadingKey });
     try {
+      if (!currentUserFinished) {
+        const saved = await save();
+        if (!saved) {
+          message.destroy(loadingKey);
+          return;
+        }
+      }
       const result = await api({
         taskId: Number(getTaskId),
         taskItemId: Number(getTaskItemId),
@@ -1667,6 +1674,7 @@ export default function () {
     getTaskId,
     getTaskItemId,
     refreshMarkGeoJsonArr,
+    save,
   ]);
 
   const [param1, setParam1] = useState('');

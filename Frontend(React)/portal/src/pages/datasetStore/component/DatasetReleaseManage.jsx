@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Card, Button, Row, Col, Tag, Typography, Space, Modal, Radio,
   message, Input, List, Image, Popconfirm, Descriptions, Statistic, Empty, Divider, Tooltip
@@ -12,7 +12,6 @@ import moment from 'moment';
 
 const { Meta } = Card;
 const { Text, Title } = Typography;
-const { Search } = Input;
 
 // 类别颜色池
 const CATEGORY_COLORS = [
@@ -209,6 +208,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchText, setSearchText] = useState('');
+  const searchReadyRef = useRef(false);
 
   const [downloadModalVisible, setDownloadModalVisible] = useState(false);
   const [currentDataset, setCurrentDataset] = useState(null);
@@ -225,16 +225,25 @@ export default function DatasetReleaseManage({ currentState = {} }) {
 
 // 2. 加载数据
   useEffect(() => {
-    fetchDatasets(1);
+    fetchDatasets(1, '');
+    searchReadyRef.current = true;
   }, []);
 
-  const fetchDatasets = async (page = 1) => {
+  useEffect(() => {
+    if (!searchReadyRef.current) return;
+    const timer = setTimeout(() => {
+      fetchDatasets(1, searchText);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  const fetchDatasets = async (page = 1, keyword = searchText) => {
     setLoading(true);
     try {
       const params = {
         current: page,
         pageSize: 12,
-        name: searchText,
+        name: keyword,
       };
       const res = await reqGetSampleSetList(params);
       if (res && res.code === 200) {
@@ -351,15 +360,14 @@ export default function DatasetReleaseManage({ currentState = {} }) {
           </Col>
           <Col>
             <Space>
-              <Search
+              <Input
                 placeholder="搜索数据集名称"
                 allowClear
-                onSearch={() => fetchDatasets(1)}
+                prefix={<SearchOutlined />}
+                value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 style={{ width: 300 }}
-                enterButton
               />
-              <Button onClick={() => fetchDatasets(1)}>刷新</Button>
             </Space>
           </Col>
         </Row>

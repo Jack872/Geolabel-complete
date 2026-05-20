@@ -1,6 +1,6 @@
 import { ProList } from '@ant-design/pro-components';
 import {
-  DeleteTwoTone, UserOutlined, CalendarOutlined, ClockCircleOutlined,
+  DeleteTwoTone, UserOutlined, CalendarOutlined, ClockCircleOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-layout';
 import { Tag, Popconfirm, Button, message, Input, Skeleton, Empty, Typography } from 'antd';
@@ -63,12 +63,12 @@ export default () => {
     <PageContainer>
       {/* 工具栏 */}
       <div className="list-toolbar">
-        <Input.Search
+        <Input
           placeholder="搜索服务名称、描述或发布人..."
           allowClear
+          prefix={<SearchOutlined />}
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          onSearch={setSearchText}
           style={{ width: 380 }}
         />
         <Text type="secondary" className="list-total">
@@ -87,7 +87,7 @@ export default () => {
         /* 空状态 */
         <div className="list-empty">
           <Empty description={searchText ? '没有匹配的服务' : '暂无服务数据'}>
-            {searchText && (
+            {false && searchText && (
               <Button type="primary" ghost onClick={() => setSearchText('')}>
                 清除搜索
               </Button>
@@ -99,10 +99,11 @@ export default () => {
         <ProList
           rowKey="id"
           dataSource={dataSource}
-          showActions="hover"
+          showActions="always"
           pagination={{
-            defaultPageSize: 10,
-            showSizeChanger: false,
+            defaultPageSize: 5,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '20', '50'],
             showTotal: (total) => `共 ${total} 条`,
           }}
           metas={{

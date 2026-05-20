@@ -278,7 +278,14 @@ const DatasetCardPage = () => {
     { title: '波段数', dataIndex: 'bandCount', align: 'center', width: 80 },
     { title: '传感器/平台', dataIndex: 'sensorPlatform', align: 'center', width: 120, ellipsis: true },
     { title: '处理级别', dataIndex: 'processingLevel', align: 'center', width: 100, ellipsis: true },
-    { title: '上传备注', dataIndex: 'uploadDescription', align: 'center', width: 100, ellipsis: true },
+    {
+      title: '备注',
+      dataIndex: 'remark',
+      align: 'center',
+      width: 100,
+      ellipsis: true,
+      render: (_, record) => `${record?.remark || ''}`.trim() || '无',
+    },
     { title: '修改时间', dataIndex: 'updateTime', align: 'center', width: 160, ellipsis: true },
     { title: '状态', dataIndex: 'status', align: 'center', width: 80, valueEnum: { 0: '未发布', 1: '已发布' } },
     {
@@ -382,9 +389,10 @@ const DatasetCardPage = () => {
           >
             {(() => {
               const meta = datasetMetaMap[getDatasetId(dataset)] || {};
+              const description = `${dataset.description || ''}`.trim();
               return (
                 <>
-                  <p><b>坐标系：</b>{meta.crsCode || '-'}</p>
+                  <p><b>描述信息：</b>{description || '无'}</p>
                   <p><b>采集开始：</b>{meta.acquisitionTimeStart || '-'}</p>
                   <p><b>传感器/平台：</b>{meta.sensorPlatform || '-'}</p>
                   <p><b>波段数：</b>{meta.bandCount ?? '-'}</p>
@@ -416,18 +424,20 @@ const DatasetCardPage = () => {
   return (
     <PageContainer
       header={{
-        title: '数据集管理',
+        title: '影像数据集管理',
       }}
     >
       {/* 查询表单 */}
-      <Form layout="inline" form={form} onFinish={handleSearch} style={{ marginBottom: 16 }}>
-        <Form.Item name="name" label="名称">
-          <Input placeholder="输入数据集名称" allowClear />
+      <Form
+        layout="inline"
+        form={form}
+        onFinish={handleSearch}
+        onValuesChange={(_, values) => handleSearch(values)}
+        style={{ marginBottom: 16 }}
+      >
+        <Form.Item name="name" label="影像集名称">
+          <Input placeholder="按影像集名称模糊搜索" allowClear />
         </Form.Item>
-        <Form.Item>
-          <Button type="primary" htmlType="submit">查询</Button>
-        </Form.Item>
-
         <Form.Item>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openDatasetForm()}>
             新增数据集

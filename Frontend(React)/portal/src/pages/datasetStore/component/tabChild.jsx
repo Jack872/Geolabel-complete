@@ -1,25 +1,21 @@
 import { Button, Card, Col, Popconfirm, Row, Tag, message, Checkbox, Input, Modal, Form, InputNumber, Image } from 'antd';
 import '../style.less';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   reqDelDatasetStore,
   reqDownload,
   reqDownloadMultiple,
   reqGetDatasetStore,
-  reqGetDatasetImg,
   reqPublishSharedDataset,
 } from '@/services/dataset/api';
 import { DeleteOutlined, DownloadOutlined, SearchOutlined, ShareAltOutlined, EyeOutlined } from '@ant-design/icons';
 import { getUserByUsername } from '@/services/login/api';
 
-export default function tabChild({
+export default function TabChild({
   currentState = {}, // 提供默认值
 }) {
   // 正确获取currentUser
-  const currentUser = currentState?.currentUser || {};
-
-  // 如果currentUser是字符串，那么它就是用户名
-  const isCurrentUserString = typeof currentUser === 'string';
+  const currentUser = currentState?.currentUser;
 
   // 用户ID和用户名状态
   const [userId, setUserId] = useState(null);
@@ -29,7 +25,6 @@ export default function tabChild({
   const [
     {
       sampleid,
-      taskid,
     },
     setCurrentSample,
   ] = useState({
@@ -40,6 +35,7 @@ export default function tabChild({
   const [selectedSamples, setSelectedSamples] = useState([]);
   // 添加样本名称搜索状态
   const [searchSampleName, setSearchSampleName] = useState('');
+  const searchTimerRef = useRef();
   const [isSearching, setIsSearching] = useState(false);
   // 添加发布共享数据集弹窗状态
   const [publishModalVisible, setPublishModalVisible] = useState(false);
@@ -108,7 +104,7 @@ export default function tabChild({
   }, [currentUser]);
 
   // 加载样本数据的函数
-  const loadDatasets = async (sampleNameParam = '') => {
+  const loadDatasets = useCallback(async (sampleNameParam = '') => {
     try {
       // 使用从props中提取的userId
       console.log('当前用户:', username, '用户ID:', userId);
@@ -146,7 +142,7 @@ export default function tabChild({
     } finally {
       setIsSearching(false); // 设置搜索状态为false
     }
-  };
+  }, [userId, username]);
 
   useEffect(() => {
     console.log('获取样本信息');
@@ -155,30 +151,7 @@ export default function tabChild({
     if (userId || username) {
       loadDatasets();
     }
-  }, [username, userId]);
-
-  // 处理搜索按钮点击
-  const handleSearch = () => {
-    console.log('执行搜索，关键词:', searchSampleName);
-    if (!searchSampleName || searchSampleName.trim() === '') {
-      message.info('请输入搜索关键词');
-      return;
-    }
-    loadDatasets(searchSampleName.trim());
-  };
-
-  // 处理输入框按下回车
-  const handleInputKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
-  };
-
-  // 处理清除搜索
-  const handleClearSearch = () => {
-    setSearchSampleName('');
-    loadDatasets('');
-  };
+  }, [username, userId, loadDatasets]);
 
   // Handle sample selection change
   const handleSelectSample = (sampleId, taskId, checked) => {
@@ -411,29 +384,27 @@ export default function tabChild({
               <Input
                 placeholder="搜索任务名称"
                 value={searchSampleName}
-                onChange={(e) => setSearchSampleName(e.target.value)}
-                onKeyPress={handleInputKeyPress}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchSampleName(value);
+                  clearTimeout(searchTimerRef.current);
+                  searchTimerRef.current = setTimeout(() => {
+                    loadDatasets(value.trim());
+                  }, 300);
+                }}
                 style={{ width: 200, marginRight: '8px' }}
                 prefix={<SearchOutlined />}
                 allowClear
-                onPressEnter={handleSearch}
                 disabled={isSearching}
               />
-              <Button
-                type="primary"
-                onClick={handleSearch}
-                loading={isSearching}
-                disabled={!searchSampleName || searchSampleName.trim() === ''}
-                style={{ marginRight: '8px' }}
-              >
-                搜索
-              </Button>
-              {searchSampleName && (
+              {false && (
                 <Button
-                  onClick={handleClearSearch}
+                  type="primary"
+                  loading={isSearching}
+                  disabled={!searchSampleName || searchSampleName.trim() === ''}
                   style={{ marginRight: '8px' }}
                 >
-                  清除
+                  搜索
                 </Button>
               )}
               <Button

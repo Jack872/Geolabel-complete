@@ -36,6 +36,8 @@ import {reqGenerateMergedDataset } from '@/services/sampleSet/api'
 
 const TaskManage = () => {
   const actionRef = useRef();
+  const searchFormRef = useRef();
+  const searchTimerRef = useRef();
   // 控制模态框显示影藏
   const [visible, setVisible] = useState(false);
   const [defaultValue, setDefaultValue] = useState({});
@@ -49,6 +51,13 @@ const TaskManage = () => {
   // 为了更好的用户体验，我们记录当前正在加载报告的任务ID
   const [loadingTaskId, setLoadingTaskId] = useState(null);
   const [selectableImageOptions, setSelectableImageOptions] = useState([]);
+
+  const triggerSearch = () => {
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      searchFormRef.current?.submit?.();
+    }, 300);
+  };
 
   // 获取当前用户信息
   const { initialState } = useModel('@@initialState');
@@ -71,9 +80,6 @@ const TaskManage = () => {
       case 2:
         return { text: '审核未通过', color: 'error', icon: <CloseCircleOutlined /> };
       case 3:
-        if (record?.auditfeedback) {
-          return { text: '审核退回', color: 'orange', icon: <CloseCircleOutlined /> };
-        }
         return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
       default:
         return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
@@ -366,9 +372,7 @@ const TaskManage = () => {
     // 每次打开窗口都获取最新类别数据
     getTypeInfo();
 
-    if (userList.length === 0) {
-      getUserList({ isAdmin: 0 });
-    }
+    getUserList({ isAdmin: 0, current: 1, pageSize: 10000 });
 
     getServerListBySetName();
     loadSelectableImageOptions();
@@ -503,7 +507,7 @@ const TaskManage = () => {
         0: { text: '审核中' },
         1: { text: '审核通过' },
         2: { text: '审核未通过' },
-        3: { text: '审核退回/未提交' },
+        3: { text: '未提交' },
       },
       fieldProps: {
         placeholder: '请选择状态',
@@ -511,7 +515,7 @@ const TaskManage = () => {
       },
       render: (_, record) => {
         const { color, text, icon } = getTaskStatusMeta(record);
-        const content = record?.auditfeedback && text === '审核退回'
+        const content = record?.auditfeedback && text === '审核未通过'
           ? <Tag color={color} icon={icon}><span title={record.auditfeedback}>{text}</span></Tag>
           : <Tag color={color} icon={icon}>{text}</Tag>;
         return (
@@ -671,6 +675,7 @@ const TaskManage = () => {
         rowKey={(record) => record._rowKey || String(record.taskid)} // 支持批次折叠行
         columns={columns}
         actionRef={actionRef}
+        formRef={searchFormRef}
         // 1. 添加多选配置
         rowSelection={{
           onChange: (_, selectedRows) => {
@@ -752,6 +757,10 @@ const TaskManage = () => {
         editable={editable}
         search={{
           labelWidth: 'auto',
+          optionRender: false,
+        }}
+        form={{
+          onValuesChange: triggerSearch,
         }}
         pagination={{
           pageSizeOptions: ['10', '20', '30', '50'],
