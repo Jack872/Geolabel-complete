@@ -399,6 +399,15 @@ public class TaskController {
     @PostMapping("/submitTask")
     public Result submitTask(@RequestBody Map<String, Object> map) {
         Integer taskId = (Integer) map.get("taskid");
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) {
+            return ResultGenerator.getFailResult("任务影像不存在，无法提交审核");
+        }
+        boolean allItemsPendingReview = taskItems.stream()
+                .allMatch(item -> Objects.equals(item.getStatus(), 0));
+        if (!allItemsPendingReview) {
+            return ResultGenerator.getFailResult("所有任务影像均提交到待审核状态后，才能提交任务");
+        }
         List<TaskItemTypeAccepted> assignments = taskItemTypeAcceptedService.listByTaskId(taskId);
         if (assignments != null && !assignments.isEmpty()) {
             Map<String, Object> unfinishedSummary = buildTaskUnfinishedSummary(taskId);
@@ -460,6 +469,15 @@ public class TaskController {
         }
         taskItemTypeAcceptedService.markFinished(taskId, taskItemId, currentUser.getUserid(), true);
         Map<String, Object> summary = buildTaskItemFinishSummary(taskId, taskItemId);
+        if ((Boolean) summary.getOrDefault("allFinished", false)) {
+            taskItemService.update(new UpdateWrapper<TaskItem>()
+                    .eq("task_id", taskId)
+                    .eq("task_item_id", taskItemId)
+                    .set("status", 0)
+                    .set("submitter_id", currentUser.getUserid())
+                    .set("submitted_at", new Date()));
+            refreshTaskStatusByItems(taskId);
+        }
         Task task = taskService.selectTaskById(taskId);
         String taskType = task != null ? task.getTaskType() : null;
         Map<String, Object> conflictSummary = markService.calculateTaskItemConflictSummary(
@@ -2048,19 +2066,29 @@ public class TaskController {
     private void refreshTaskStatusByItems(Integer taskId) {
         List<TaskItem> items = taskItemService.listByTaskId(taskId);
         if (items == null || items.isEmpty()) return;
-        boolean hasEditable = items.stream().anyMatch(item -> Objects.equals(item.getStatus(), 3) || Objects.equals(item.getStatus(), 2));
+        boolean hasRejected = items.stream().anyMatch(item -> Objects.equals(item.getStatus(), 2));
+        boolean hasUnsubmitted = items.stream().anyMatch(item -> Objects.equals(item.getStatus(), 3));
+        boolean hasPending = items.stream().anyMatch(item -> Objects.equals(item.getStatus(), 0));
         boolean allPending = items.stream().allMatch(item -> Objects.equals(item.getStatus(), 0));
         boolean allApproved = items.stream().allMatch(item -> Objects.equals(item.getStatus(), 1));
 
-        Integer nextStatus;
-        if (allApproved) {
+        Task task = taskService.getById(taskId);
+        Integer currentStatus = task == null ? null : task.getStatus();
+        Integer nextStatus = currentStatus;
+        if (hasRejected) {
+            nextStatus = 2;
+        } else if (allApproved) {
             nextStatus = 1;
-        } else if (allPending) {
+        } else if (Objects.equals(currentStatus, 0) && hasPending) {
             nextStatus = 0;
-        } else if (hasEditable) {
+        } else if (Objects.equals(currentStatus, 2) && hasPending && !hasUnsubmitted) {
+            nextStatus = 0;
+        } else if (hasUnsubmitted) {
+            nextStatus = 3;
+        } else if (allPending) {
             nextStatus = 3;
         } else {
-            nextStatus = 3;
+            nextStatus = currentStatus == null ? 3 : currentStatus;
         }
         taskService.update(new UpdateWrapper<Task>()
                 .eq("task_id", taskId)

@@ -234,7 +234,18 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
 
     @Override
     public void updateTaskStatus(int taskId) {
-        taskMapper.updateTaskStatus(taskId);
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) {
+            return;
+        }
+        boolean allPendingReview = taskItems.stream()
+                .allMatch(item -> Integer.valueOf(0).equals(item.getStatus()));
+        if (!allPendingReview) {
+            return;
+        }
+        update(new UpdateWrapper<Task>()
+                .eq("task_id", taskId)
+                .set("status", 0));
     }
 
     @Override

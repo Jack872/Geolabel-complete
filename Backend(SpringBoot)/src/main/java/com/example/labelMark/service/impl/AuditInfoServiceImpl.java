@@ -398,34 +398,31 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         if (taskItems == null || taskItems.isEmpty()) {
             return;
         }
-        Integer nextStatus = 3;
-        boolean allApproved = true;
-        boolean allPendingReview = true;
-        for (TaskItem taskItem : taskItems) {
-            Integer status = taskItem.getStatus();
-            if (Objects.equals(status, 2) || Objects.equals(status, 3)) {
-                nextStatus = 3;
-                allApproved = false;
-                allPendingReview = false;
-                break;
-            }
-            if (!Objects.equals(status, 1)) {
-                allApproved = false;
-            }
-            if (!Objects.equals(status, 0)) {
-                allPendingReview = false;
-            }
-        }
-        if (nextStatus != 3) {
-            if (allApproved) {
-                nextStatus = 1;
-            } else if (allPendingReview) {
-                nextStatus = 0;
-            }
-        }
         Task task = taskService.getById(taskId);
         if (task == null) {
             return;
+        }
+        boolean hasRejected = taskItems.stream().anyMatch(item -> Objects.equals(item.getStatus(), 2));
+        boolean hasUnsubmitted = taskItems.stream().anyMatch(item -> Objects.equals(item.getStatus(), 3));
+        boolean hasPendingReview = taskItems.stream().anyMatch(item -> Objects.equals(item.getStatus(), 0));
+        boolean allApproved = taskItems.stream().allMatch(item -> Objects.equals(item.getStatus(), 1));
+        boolean allPendingReview = taskItems.stream().allMatch(item -> Objects.equals(item.getStatus(), 0));
+
+        Integer nextStatus;
+        if (hasRejected) {
+            nextStatus = 2;
+        } else if (allApproved) {
+            nextStatus = 1;
+        } else if (Objects.equals(task.getStatus(), 0) && hasPendingReview) {
+            nextStatus = 0;
+        } else if (Objects.equals(task.getStatus(), 2) && hasPendingReview && !hasUnsubmitted) {
+            nextStatus = 0;
+        } else if (hasUnsubmitted) {
+            nextStatus = 3;
+        } else if (allPendingReview) {
+            nextStatus = 3;
+        } else {
+            nextStatus = task.getStatus() == null ? 3 : task.getStatus();
         }
         task.setStatus(nextStatus);
         taskService.updateById(task);

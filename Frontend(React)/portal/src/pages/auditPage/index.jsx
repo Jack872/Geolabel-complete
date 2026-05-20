@@ -131,6 +131,18 @@ export default function AuditPage() {
   const isProgrammaticSelect = useRef(false); // 新增：同步锁
   const [featureFeedback, setFeatureFeedback] = useState({});
   const [currentFeatureFeedback, setCurrentFeatureFeedback] = useState('');
+  const getUniqueFeatures = useCallback((features = []) => [...new Set(features.filter(Boolean))], []);
+  const clearSelectedCollection = useCallback((selectInteraction) => {
+    if (!selectInteraction) return;
+    try {
+      isProgrammaticSelect.current = true;
+      selectInteraction.getFeatures().clear();
+    } finally {
+      setTimeout(() => {
+        isProgrammaticSelect.current = false;
+      }, 0);
+    }
+  }, []);
   const taskCoordinateSystem = useMemo(
     () => normalizeCoordinateCode(taskInfo?.data?.[0]?.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857'),
     [taskInfo],
@@ -186,10 +198,15 @@ export default function AuditPage() {
     }
 
     const allUsers = taskInfo.data[0]?.userArr ?? [];
-    const totalTypeIdArr = [];
+    const typeMap = new Map();
     for (const { typeArr } of allUsers) {
-      totalTypeIdArr.push(...typeArr);
+      for (const typeItem of typeArr || []) {
+        if (!typeMap.has(typeItem.typeId)) {
+          typeMap.set(typeItem.typeId, typeItem);
+        }
+      }
     }
+    const totalTypeIdArr = Array.from(typeMap.values());
 
     const layers = totalTypeIdArr.map(({ typeColor, typeName, typeId }) => {
       const src = new VectorSource({ format: new GeoJSON(), projection: mapProjection });
@@ -283,7 +300,7 @@ export default function AuditPage() {
       mapInstance.addInteraction(selectInteraction);
       selectInteraction.on('select', (e) => {
         if (isProgrammaticSelect.current) return;
-        setSelectedFeatures(e.target.getFeatures().getArray());
+        setSelectedFeatures(getUniqueFeatures(e.target.getFeatures().getArray()));
       });
     }
 
@@ -397,7 +414,7 @@ export default function AuditPage() {
       setSelectedFeatures([]);
     };
 
-  }, [mapInstance, auditDecision, currentStep, auditLayers, selectedDrawType, targetDrawLayerId]);
+  }, [mapInstance, auditDecision, currentStep, auditLayers, selectedDrawType, targetDrawLayerId, getUniqueFeatures]);
 
 
 
@@ -412,10 +429,10 @@ export default function AuditPage() {
 
     const olSelectedFeatures = selectInteraction.getFeatures();
 
-    const stateIds = new Set(selectedFeatures.map(f => f.getId()));
-    const olIds = new Set(olSelectedFeatures.getArray().map(f => f.getId()));
+    const stateFeatures = new Set(getUniqueFeatures(selectedFeatures));
+    const olFeatures = new Set(getUniqueFeatures(olSelectedFeatures.getArray()));
 
-    if (stateIds.size === olIds.size && [...stateIds].every(id => olIds.has(id))) {
+    if (stateFeatures.size === olFeatures.size && [...stateFeatures].every(feature => olFeatures.has(feature))) {
       return;
     }
 
@@ -425,7 +442,7 @@ export default function AuditPage() {
 
       // 2. 执行同步操作
       olSelectedFeatures.clear();
-      selectedFeatures.forEach(feature => olSelectedFeatures.push(feature));
+      [...stateFeatures].forEach(feature => olSelectedFeatures.push(feature));
 
     } finally {
       // 关键修正：使用 setTimeout (宏任务) 来延迟解锁
@@ -436,7 +453,7 @@ export default function AuditPage() {
       }, 0);
     }
 
-  }, [selectedFeatures, mapInstance]);
+  }, [selectedFeatures, mapInstance, getUniqueFeatures]);
 
 
 
@@ -517,7 +534,10 @@ export default function AuditPage() {
     }
   }, [applyConflictHighlight, auditLayers, mapInstance, restoreConflictHighlight]);
 
-  const findParentLayer = (feature, map, layers) => layers.find(l => l.getSource && l.getSource().hasFeature(feature));
+  const findParentLayer = (feature, map, layers) => layers.find((layer) => {
+    const source = layer.getSource?.();
+    return source?.getFeatures?.().includes(feature);
+  });
 
   // 在组件内（return 之前）添加以下函数
 
@@ -527,10 +547,18 @@ export default function AuditPage() {
       return message.warning("请先选择要删除的多余标注");
     }
 
-    const featuresToDelete = [...selectedFeatures];
+    const featuresToDelete = getUniqueFeatures(selectedFeatures)
+      .map(f => ({ feature: f, layer: findParentLayer(f, mapInstance, auditLayers) }))
+      .filter(({ layer }) => layer);
+    if (featuresToDelete.length === 0) {
+      setSelectedFeatures([]);
+      const selectInteraction = mapInstance?.getInteractions().getArray().find(i => i instanceof OlSelect);
+      clearSelectedCollection(selectInteraction);
+      return message.warning("No valid selected annotation to delete");
+    }
     console.log("featuresToDelete from React State:", featuresToDelete); // 现在这里一定有内容
     const ids = featuresToDelete
-      .map(f => f.get('markId') ||f.getId())
+      .map(({ feature }) => feature.get('markId') || feature.getId())
       .filter(id => id != null);
 
     setAuditData(prev => ({
@@ -538,22 +566,17 @@ export default function AuditPage() {
       deleted_feature_ids: [...new Set([...prev.deleted_feature_ids, ...ids])]
     }));
 
-    featuresToDelete.forEach(f => {
-      const layer = findParentLayer(f, mapInstance, auditLayers);
-      if (layer) {
-        layer.getSource().removeFeature(f);
-      }
-    });
-
     const selectInteraction = mapInstance?.getInteractions().getArray().find(i => i instanceof OlSelect);
-    if (selectInteraction) {
-      selectInteraction.getFeatures().clear();
-    }
+    clearSelectedCollection(selectInteraction);
+
+    featuresToDelete.forEach(({ feature, layer }) => {
+      layer.getSource().removeFeature(feature);
+    });
 
     setSelectedFeatures([]);
     message.success(`${featuresToDelete.length} 个多余标注已移除`);
     // api.deleteFeatures(featureIds).then(...);
-  }, [selectedFeatures,mapInstance, auditLayers]);
+  }, [selectedFeatures, mapInstance, auditLayers, getUniqueFeatures, clearSelectedCollection]);
 
   // --- 步骤 1: 检测错标 ---
   //  重构 handleChangeCategory 以支持批量修改
