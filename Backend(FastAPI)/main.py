@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 加载 .env 配置文件（从当前文件所在目录向上查找）
+# 加载 .env 配置文件
 env_path = Path(__file__).resolve().parent / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path)
@@ -30,6 +30,7 @@ from pyproj import CRS, Transformer
 
 from utils_db import (connect_db, delete_latest_prompt_db, fetch_labels_from_db,
                       fetch_model_by_id, fetch_model_from_db)
+from utils_storage import ensure_model_local, ensure_task_image_local
 from utils_sam import (identify_holes_and_split_SAM,
                        post_process_mask_sam, discretize_line)
 from update_label import insert_segmentation_results_db, update_label_function
@@ -81,8 +82,8 @@ LOCAL_CRS_ALIAS_MAP = {
 }
 
 SAM_MODEL_ID = os.getenv("SAM_MODEL_ID", "sam2-hiera-tiny")
-SAM_CHECKPOINT = os.getenv("SAM_CHECKPOINT", "D:/sam2_checkpoints/sam2_hiera_tiny.pt")
-AUTO_BUILDING_YOLO_PATH = os.getenv("AUTO_BUILDING_YOLO_PATH", "F:/chromeDownload/best.pt")
+SAM_CHECKPOINT = os.getenv("SAM_CHECKPOINT", "/opt/geolabel/models/sam2_hiera_tiny.pt")
+AUTO_BUILDING_YOLO_PATH = os.getenv("AUTO_BUILDING_YOLO_PATH", "/opt/geolabel/models/best.pt")
 PRELOAD_SAM_ON_STARTUP = os.getenv("PRELOAD_SAM_ON_STARTUP", "false").lower() == "true"
 PRELOAD_AUTO_YOLO_ON_STARTUP = os.getenv("PRELOAD_AUTO_YOLO_ON_STARTUP", "false").lower() == "true"
 
@@ -203,8 +204,9 @@ def resolve_preannotation_yolo(params: dict):
         model_meta = parse_model_metadata(model_info)
         validate_model_metadata(model_meta)
         runtime_meta = dict(model_meta)
-        runtime_meta["modelPath"] = model_info["path"]
-        runtime_meta["path"] = model_info["path"]
+        local_model_path = ensure_model_local(model_info)
+        runtime_meta["modelPath"] = local_model_path
+        runtime_meta["path"] = local_model_path
         runtime_meta["modelName"] = model_info.get("model_name")
 
         built = build_model_from_spec(runtime_meta, torch.device(preferred_device))
@@ -247,7 +249,7 @@ def resolve_image_path(base_path: str) -> str:
         candidates.append(os.path.join(minio_dir, file_key))
 
     # 兜底：GeoServer 本地覆盖目录（用于 map_server 存了绝对目录路径时按 basename 回退）
-    coverage_dir = os.getenv("GEOSERVER_LOCAL_COVERAGE_DIR", "F:/PG-project/mapDataStore").strip()
+    coverage_dir = os.getenv("GEOSERVER_LOCAL_COVERAGE_DIR", "/opt/geolabel/geoserver/coverages").strip()
     if coverage_dir:
         file_key = os.path.basename(base_path)
         stem, ext = os.path.splitext(file_key)
@@ -564,7 +566,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         TASK_ID = int(params['taskid'])
         TASK_ITEM_ID = params.get('taskItemId')
         raw_path = params['mapfile_path']
-        IMAGE_PATH = resolve_image_path(raw_path)
+        IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=resolve_image_path(raw_path))
         USER_ID = params.get('user_id')
         PROMPT_TYPE = params.get('promptType', 'point')
         INTERACTIVE_COORDS = params.get('coordinates')
@@ -784,7 +786,12 @@ def auto_building_segmentation(params: dict):
     yolo_model, yolo_device, yolo_label = resolve_preannotation_yolo(params)
     TASK_ITEM_ID = params.get('taskItemId')
     raw_path = params['mapfile_path']
-    IMAGE_PATH = resolve_image_path(raw_path)
+    conn = connect_db()
+    try:
+        IMAGE_PATH = ensure_task_image_local(conn, int(params['taskid']), TASK_ITEM_ID, fallback_path=resolve_image_path(raw_path))
+    finally:
+        if conn:
+            conn.close()
     with rasterio.open(IMAGE_PATH) as src:
         raw_read = src.read([1, 2, 3])
         img_array = raw_read.transpose(1, 2, 0)
@@ -1130,7 +1137,7 @@ def _load_quality_model(model_info):
     if not class_mapping:
         raise ValueError("模型缺少类别映射，无法执行参考评估")
 
-    model_path = model_info.get("path")
+    model_path = ensure_model_local(model_info)
     if not model_path or not os.path.exists(model_path):
         raise FileNotFoundError(f"模型文件不存在: {model_path}")
 

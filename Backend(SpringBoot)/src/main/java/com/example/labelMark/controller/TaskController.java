@@ -15,6 +15,7 @@ import com.example.labelMark.domain.TaskDatasetInfo;
 import com.example.labelMark.domain.Type;
 import com.example.labelMark.service.DatasetService;
 import com.example.labelMark.service.MarkService;
+import com.example.labelMark.service.MinioFileResolveService;
 import com.example.labelMark.service.ServerService;
 import com.example.labelMark.service.AttributeDefService;
 import com.example.labelMark.service.SysFileService;
@@ -130,6 +131,8 @@ public class TaskController {
     private GeoServerService geoServerService;
     @Resource
     private CoordinateSystemUtils coordinateSystemUtils;
+    @Resource
+    private MinioFileResolveService minioFileResolveService;
 
 
     @PostMapping("/createTask")
@@ -928,6 +931,7 @@ public class TaskController {
         response.put("taskSource", currentTaskItem != null ? currentTaskItem.getTaskSource() : (task.getTaskSource() != null ? task.getTaskSource() : "geoserver"));
         response.put("coordinateSystem", taskInfo.getCoordinateSystem());
         response.put("localImagePath", currentTaskItem != null ? currentTaskItem.getLocalImagePath() : task.getLocalImagePath());
+        response.put("fileId", currentTaskItem != null ? currentTaskItem.getFileId() : null);
         return response;
     }
 
@@ -1013,12 +1017,22 @@ public class TaskController {
             return ResultGenerator.getFailResult("请至少提供一张本地影像");
         }
         for (TaskItem taskItem : taskItems) {
-            String localImagePath = resolveExistingLocalImagePath(taskItem.getLocalImagePath());
-            File imageFile = new File(localImagePath);
-            if (!imageFile.exists() || !imageFile.isFile()) {
-                return ResultGenerator.getFailResult("本地图片文件不存在: " + localImagePath);
+            if (taskItem.getFileId() != null) {
+                SysFile file = sysFileService.getFileById(taskItem.getFileId());
+                if (file == null) {
+                    return ResultGenerator.getFailResult("影像不存在: fileId=" + taskItem.getFileId());
+                }
+                if (taskItem.getItemName() == null || taskItem.getItemName().trim().isEmpty()) {
+                    taskItem.setItemName(resolveFileName(firstNonBlank(file.getOriginalFilename(), file.getFileName())));
+                }
+            } else {
+                String localImagePath = resolveExistingLocalImagePath(taskItem.getLocalImagePath());
+                File imageFile = new File(localImagePath);
+                if (!imageFile.exists() || !imageFile.isFile()) {
+                    return ResultGenerator.getFailResult("本地图片文件不存在: " + localImagePath);
+                }
+                taskItem.setLocalImagePath(localImagePath);
             }
-            taskItem.setLocalImagePath(localImagePath);
             taskItem.setTaskSource("local");
             taskItem.setMapServer("local:" + taskItem.getItemName());
             taskItem.setServerId(0);
@@ -1162,8 +1176,9 @@ public class TaskController {
                 for (SysFile file : files) {
                     TaskItem taskItem = new TaskItem();
                     taskItem.setTaskSource("local");
+                    taskItem.setFileId(file.getFileId());
                     taskItem.setLocalImagePath(buildLocalImagePath(file.getFileName()));
-                    taskItem.setItemName(resolveFileName(file.getFileName()));
+                    taskItem.setItemName(resolveFileName(firstNonBlank(file.getOriginalFilename(), file.getFileName())));
                     taskItems.add(taskItem);
                 }
             } else {
@@ -1545,7 +1560,8 @@ public class TaskController {
                 if ((resolvedSetName == null || resolvedSetName.trim().isEmpty()) && file.getDatasetId() != null) {
                     resolvedSetName = localDatasetNameById.get(file.getDatasetId());
                 }
-                String displayName = Paths.get(file.getFileName().replace("\\", "/")).getFileName().toString();
+                String displayName = firstNonBlank(file.getOriginalFilename(), file.getFileName());
+                displayName = Paths.get(displayName.replace("\\", "/")).getFileName().toString();
 
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("value", optionValue);
@@ -1597,6 +1613,7 @@ public class TaskController {
                 taskItem.setTaskSource("local".equalsIgnoreCase(sourceType) ? "local" : "geoserver");
                 taskItem.setMapServer(stringValue(itemMap.get("mapserver"), itemMap.get("mapServer")));
                 taskItem.setLocalImagePath(stringValue(itemMap.get("localImagePath")));
+                taskItem.setFileId(integerValue(itemMap.get("fileId")));
                 String itemName = stringValue(itemMap.get("name"), itemMap.get("itemName"));
                 if (itemName == null || itemName.trim().isEmpty()) {
                     itemName = "local".equals(taskItem.getTaskSource())
@@ -1659,6 +1676,7 @@ public class TaskController {
             item.put("taskSource", taskItem.getTaskSource());
             item.put("mapserver", taskItem.getMapServer());
             item.put("localImagePath", taskItem.getLocalImagePath());
+            item.put("fileId", taskItem.getFileId());
             item.put("status", taskItem.getStatus());
             item.put("submitterId", taskItem.getSubmitterId());
             item.put("submittedAt", taskItem.getSubmittedAt());
@@ -1685,6 +1703,49 @@ public class TaskController {
             }
         }
         return null;
+    }
+
+    private Integer integerValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(String.valueOf(value).trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private Task enrichTaskWithDefaultItem(Task task) {
+        if (task == null) {
+            return null;
+        }
+        TaskItem firstItem = taskService.getDefaultTaskItem(task.getTaskId());
+        if (firstItem != null) {
+            task.setFileId(firstItem.getFileId());
+            if (firstItem.getTaskSource() != null) {
+                task.setTaskSource(firstItem.getTaskSource());
+            }
+            if (firstItem.getLocalImagePath() != null) {
+                task.setLocalImagePath(firstItem.getLocalImagePath());
+            }
+            if (firstItem.getMapServer() != null) {
+                task.setMapServer(firstItem.getMapServer());
+            }
+        }
+        return task;
     }
 
     private String buildLocalImagePath(String fileName) {
@@ -2099,6 +2160,17 @@ public class TaskController {
     private String resolveTaskMapfilePath(Task task) {
         if (task == null) return "";
         if ("local".equals(task.getTaskSource())) {
+            if (task.getFileId() != null) {
+                try {
+                    return minioFileResolveService.resolveToLocalFile(
+                            task.getFileId(),
+                            Path.of(System.getProperty("java.io.tmpdir"), "geolabel_fastapi_cache")
+                    ).getAbsolutePath();
+                } catch (Exception e) {
+                    log.warn("解析本地任务影像失败，回退旧路径, taskId={}, fileId={}, err={}",
+                            task.getTaskId(), task.getFileId(), e.getMessage());
+                }
+            }
             String localPath = task.getLocalImagePath() == null ? "" : task.getLocalImagePath();
             if (localPath.toLowerCase().endsWith(".tif") || localPath.toLowerCase().endsWith(".tiff")) {
                 int idx = localPath.lastIndexOf('.');
@@ -2125,68 +2197,49 @@ public class TaskController {
                 return;
             }
 
-            String rawPath = taskItem.getLocalImagePath();
-            if (rawPath == null || rawPath.trim().isEmpty()) {
-                response.sendError(404, "本地影像路径为空");
-                return;
-            }
-
             BufferedImage img = null;
-            String normalizedPath = rawPath.trim();
+            String rawPath = taskItem.getLocalImagePath();
 
-            // 1) 尝试直接按 local_image_path 读取
-            File imageFile = new File(normalizedPath);
-            if (imageFile.exists()) {
+            if (taskItem.getFileId() != null) {
                 try {
-                    img = ImageIO.read(imageFile);
+                    File resolvedFile = minioFileResolveService.resolveToLocalFile(
+                            taskItem.getFileId(),
+                            Path.of(System.getProperty("java.io.tmpdir"), "geolabel_task_preview")
+                    );
+                    img = ImageIO.read(resolvedFile);
                 } catch (Exception e) {
-                    // 本地文件可能被锁或无权限，继续尝试其他来源
-                    log.warn("读取本地影像失败，将尝试其他来源, taskId={}, path={}, err={}",
-                            taskId, normalizedPath, e.getMessage());
+                    log.warn("读取 file_id 影像失败，将回退旧路径, taskId={}, fileId={}, err={}",
+                            taskId, taskItem.getFileId(), e.getMessage());
                 }
             }
 
-            // 2) 若 local_image_path 是相对名，尝试拼接 minio.uploaddir
-            if (img == null && !imageFile.isAbsolute() && minioUploadDir != null && !minioUploadDir.trim().isEmpty()) {
-                File uploadDirFile = new File(minioUploadDir.trim(), normalizedPath);
-                if (uploadDirFile.exists()) {
+            if (img == null && rawPath != null && !rawPath.trim().isEmpty()) {
+                String normalizedPath = rawPath.trim();
+                File imageFile = new File(normalizedPath);
+                if (imageFile.exists()) {
                     try {
-                        img = ImageIO.read(uploadDirFile);
+                        img = ImageIO.read(imageFile);
                     } catch (Exception e) {
-                        log.warn("读取上传目录影像失败，将尝试 MinIO, taskId={}, path={}, err={}",
-                                taskId, uploadDirFile.getAbsolutePath(), e.getMessage());
+                        log.warn("读取本地影像失败，将尝试其他来源, taskId={}, path={}, err={}",
+                                taskId, normalizedPath, e.getMessage());
                     }
                 }
-            }
 
-            // 3) 本地仍失败时，回退到 MinIO 读取（尝试完整对象名 + basename）
-            if (img == null) {
-                List<String> objectCandidates = new ArrayList<>();
-                objectCandidates.add(normalizedPath.replace('\\', '/'));
-                objectCandidates.add(new File(normalizedPath).getName());
-
-                for (String objectName : objectCandidates) {
-                    if (objectName == null || objectName.trim().isEmpty()) {
-                        continue;
-                    }
-                    try (InputStream objectStream = minioClient.getObject(
-                            GetObjectArgs.builder()
-                                    .bucket(minioConfig.getBucketName())
-                                    .object(objectName)
-                                    .build()
-                    )) {
-                        img = ImageIO.read(objectStream);
-                        if (img != null) {
-                            break;
+                if (img == null && !imageFile.isAbsolute() && minioUploadDir != null && !minioUploadDir.trim().isEmpty()) {
+                    File uploadDirFile = new File(minioUploadDir.trim(), normalizedPath);
+                    if (uploadDirFile.exists()) {
+                        try {
+                            img = ImageIO.read(uploadDirFile);
+                        } catch (Exception e) {
+                            log.warn("读取上传目录影像失败, taskId={}, path={}, err={}",
+                                    taskId, uploadDirFile.getAbsolutePath(), e.getMessage());
                         }
-                    } catch (Exception ignored) {
-                        // continue try next candidate
                     }
                 }
             }
 
             if (img == null) {
-                response.sendError(404, "图片文件不存在或无法解码: " + rawPath);
+                response.sendError(404, "图片文件不存在或无法解码");
                 return;
             }
 
@@ -2254,7 +2307,7 @@ public class TaskController {
             // 构造mapfile_path列表
             List<String> mapfilePaths = new ArrayList<>();
             for (String taskId : taskIds) {
-                Task task = taskService.selectTaskById(Integer.parseInt(taskId));
+                Task task = enrichTaskWithDefaultItem(taskService.selectTaskById(Integer.parseInt(taskId)));
                 mapfilePaths.add(resolveTaskMapfilePath(task));
             }
 
@@ -2337,7 +2390,7 @@ public class TaskController {
 
             // 为每个任务创建推理请求并异步执行
             for (String taskId : taskIds) {
-                Task task = taskService.selectTaskById(Integer.parseInt(taskId));
+                Task task = enrichTaskWithDefaultItem(taskService.selectTaskById(Integer.parseInt(taskId)));
                 String mapfilePath = resolveTaskMapfilePath(task);
                 TaskItem currentTaskItem = taskItemService.getDefaultItem(Integer.parseInt(taskId));
                 String taskCoordinateSystem = resolveTaskCoordinateSystem(task, currentTaskItem);

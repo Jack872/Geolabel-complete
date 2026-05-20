@@ -166,11 +166,12 @@ public class SysFileController {
             // 5. 用 file_id 重命名 MinIO 对象，避免不同用户上传同名文件造成冲突
             String originalFileName = data.getFileName();
             String newFileName = renameWithFileId(originalFileName, fileId);
-            if (!originalFileName.equals(newFileName)) {
+            String objectKey = buildObjectKey(fileId, newFileName);
+            if (!originalFileName.equals(objectKey)) {
                 try {
                     CopyObjectRequest copyReq = new CopyObjectRequest(
                             minioConfig.getBucketName(), originalFileName,
-                            minioConfig.getBucketName(), newFileName);
+                            minioConfig.getBucketName(), objectKey);
                     s3.copyObject(copyReq);
                     s3.deleteObject(minioConfig.getBucketName(), originalFileName);
 
@@ -178,10 +179,23 @@ public class SysFileController {
                     SysFile savedFile = new SysFile();
                     savedFile.setFileId(fileId);
                     savedFile.setFileName(newFileName);
+                    savedFile.setOriginalFilename(originalFileName);
+                    savedFile.setStorageType("minio");
+                    savedFile.setBucketName(minioConfig.getBucketName());
+                    savedFile.setObjectKey(objectKey);
                     sysfileService.updateById(savedFile);
                 } catch (Exception e) {
                     System.err.println("MinIO 文件重命名失败: " + e.getMessage());
                 }
+            } else {
+                SysFile savedFile = new SysFile();
+                savedFile.setFileId(fileId);
+                savedFile.setFileName(newFileName);
+                savedFile.setOriginalFilename(originalFileName);
+                savedFile.setStorageType("minio");
+                savedFile.setBucketName(minioConfig.getBucketName());
+                savedFile.setObjectKey(objectKey);
+                sysfileService.updateById(savedFile);
             }
 
             // 8. 返回成功结果
@@ -262,9 +276,9 @@ public class SysFileController {
             return ResultGenerator.getFailResult("影像不存在或已删除");
         }
         try {
-            String fileName = file.getFileName();
-            if (fileName != null && s3.doesObjectExist(minioConfig.getBucketName(), fileName)) {
-                s3.deleteObject(minioConfig.getBucketName(), fileName);
+            String objectName = file.getObjectKey() != null ? file.getObjectKey() : file.getFileName();
+            if (objectName != null && s3.doesObjectExist(minioConfig.getBucketName(), objectName)) {
+                s3.deleteObject(minioConfig.getBucketName(), objectName);
             }
         } catch (Exception e) {
             System.err.println("删除 MinIO 文件失败, fileId=" + fileId + ", err=" + e.getMessage());
@@ -281,5 +295,9 @@ public class SysFileController {
             return fileName.substring(0, dot) + "_" + fileId + fileName.substring(dot);
         }
         return fileName + "_" + fileId;
+    }
+
+    private String buildObjectKey(Integer fileId, String finalFileName) {
+        return "imagery/original/" + fileId + "/" + finalFileName;
     }
 }

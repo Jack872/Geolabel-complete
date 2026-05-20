@@ -19,7 +19,7 @@ class RemoteSensingSegmentationDataset(Dataset):
                  vis_output_path=None,
                  target_size=(512, 512)):
         if vis_output_path is None:
-            vis_output_path = os.getenv("VIS_OUTPUT_PATH", "F:/PG-project/modalDataStore/PNG/visualization.png")
+            vis_output_path = os.getenv("VIS_OUTPUT_PATH", "/opt/geolabel/cache/png/visualization.png")
         self.image_path = image_path
         self.labels_data = labels_data or []
         self.num_classes = num_classes

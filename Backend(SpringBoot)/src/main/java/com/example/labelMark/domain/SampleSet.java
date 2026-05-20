@@ -62,6 +62,9 @@ public class SampleSet implements Serializable {
     @TableField("image_url")
     private String imageUrl;
 
+    @TableField("export_object_key")
+    private String exportObjectKey;
+
     @TableField("crs")
     private String crs;
 

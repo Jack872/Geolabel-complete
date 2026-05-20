@@ -1,26 +1,31 @@
 package com.example.labelMark.controller;
 
 import com.example.labelMark.DTO.model.ModelUploadDTO;
+import com.example.labelMark.config.MinioConfig;
 import com.example.labelMark.domain.Model;
 import com.example.labelMark.service.ModelService;
+import com.example.labelMark.utils.MinIoUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
-import org.springframework.beans.factory.annotation.Value;
+import io.minio.PutObjectArgs;
+import io.minio.MinioClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.annotation.Resource;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.Date;
 
 /**
  * 模型管理控制器
@@ -33,8 +38,12 @@ public class ModelController {
 
     @Resource
     private ModelService modelService;
-    @Value("${modal.path}")
-    private String modalPath;
+    @Resource
+    private MinioClient minioClient;
+    @Resource
+    private MinioConfig minioConfig;
+    @Resource
+    private MinIoUtils minIoUtils;
 
     /**
      * 根据用户ID获取模型列表
@@ -49,6 +58,89 @@ public class ModelController {
             models = modelService.getModelListByUserIdWithoutTaskType(userId);
         }
         return ResponseEntity.ok(models);
+    }
+
+    /**
+     * 获取模型训练详情
+     */
+    @GetMapping("/getModelTrainDetails")
+    public ResponseEntity<Map<String, Object>> getModelTrainDetails(
+            @RequestParam("model_id") Integer modelId,
+            @RequestParam("user_id") Integer userId) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            if (modelId == null || userId == null) {
+                response.put("code", 400);
+                response.put("success", false);
+                response.put("message", "model_id 和 user_id 不能为空");
+                return ResponseEntity.badRequest().body(response);
+            }
+
+            Model model = modelService.getById(modelId);
+            if (model == null || !userId.equals(model.getUserId())) {
+                response.put("code", 404);
+                response.put("success", false);
+                response.put("message", "未找到模型或无权访问");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+            }
+
+            Map<String, Object> modelMeta = parseJsonMap(model.getModelDes());
+            boolean manualUploadModel = isManualUploadModel(model);
+            Map<String, Object> inferParams = safeMap(modelMeta.get("inferParams"));
+            Map<String, Object> constructorArgs = safeMap(modelMeta.get("constructorArgs"));
+
+            Map<String, Object> params = new LinkedHashMap<>();
+            if (!manualUploadModel) {
+                putIfPresent(params, "epochs", firstNonNullNumber(
+                        constructorArgs.get("epochs"),
+                        constructorArgs.get("num_epochs"),
+                        inferParams.get("epochs")));
+                putIfPresent(params, "batch_size", firstNonNullNumber(
+                        constructorArgs.get("batchSize"),
+                        constructorArgs.get("batch_size"),
+                        inferParams.get("batch_size")));
+                putIfPresent(params, "learning_rate", firstNonNullNumber(
+                        constructorArgs.get("learningRate"),
+                        constructorArgs.get("learning_rate")));
+                putIfPresent(params, "optimizer", firstNonBlank(
+                        constructorArgs.get("optimizer"),
+                        constructorArgs.get("optim")));
+                putIfPresent(params, "img_size", firstNonNullNumber(
+                        constructorArgs.get("imgSize"),
+                        constructorArgs.get("img_size"),
+                        inferParams.get("img_size")));
+                putIfPresent(params, "conf_threshold", firstNonNullNumber(
+                        inferParams.get("conf_threshold"),
+                        inferParams.get("confidenceThreshold")));
+            }
+
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("modelId", model.getModelId());
+            data.put("modelName", model.getModelName());
+            data.put("modelDes", model.getModelDes());
+            data.put("taskType", model.getTaskType());
+            data.put("modelType", model.getModelType());
+            data.put("inputNum", model.getInputNum());
+            data.put("outputNum", model.getOutputNum());
+            data.put("mapping", safeString(modelMeta.get("classMapping")));
+            data.put("path", model.getPath());
+            data.put("userId", model.getUserId());
+            data.put("createTime", null);
+            data.put("status", normalizeStatus(model.getStatus()));
+            data.put("metrics", manualUploadModel ? null : new LinkedHashMap<>());
+            data.put("params", params);
+
+            response.put("code", 200);
+            response.put("success", true);
+            response.put("data", data);
+            response.put("message", "获取模型详情成功");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("code", 500);
+            response.put("success", false);
+            response.put("message", "获取模型详情失败: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
     }
 
     /**
@@ -68,44 +160,13 @@ public class ModelController {
         try {
             ModelUploadDTO uploadDTO = parseAndValidateModelSpec(modelDes);
 
-            // 确保目录存在 - 使用与train.py相同的路径格式
-            String baseDir = modalPath;
-            String uploadDir =baseDir +File.separator+ userId;
-            Path uploadPath = Path.of(baseDir, String.valueOf(userId));
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
-            }
-
-            // 根据任务类型创建子目录
-            String subDir = "地物分类".equals(taskType) ? "segmentation_results" : "detection_results";
-            String taskTypeDir = uploadDir + File.separator + subDir;
-            Path taskTypePath = Path.of(uploadDir,subDir);
-            if (!Files.exists(taskTypePath)) {
-                Files.createDirectories(taskTypePath);
-            }
-
-            // 保留原始文件名，避免重命名导致模型加载问题
             String originalFilename = file.getOriginalFilename();
             if (originalFilename == null || originalFilename.trim().isEmpty()) {
                 throw new IllegalArgumentException("模型文件名无效，请重新选择文件");
             }
-            String filePath = taskTypeDir + File.separator + originalFilename;
+            String normalizedTaskType = normalizeTaskTypeSegment(taskType);
+            String storageFileName = sanitizeFileName(originalFilename);
 
-            // 检查文件是否已存在，如果存在则添加时间戳
-            Path targetPath = Paths.get(filePath);
-            if (Files.exists(targetPath)) {
-                int dotIndex = originalFilename.lastIndexOf(".");
-                String nameWithoutExt = dotIndex > 0 ? originalFilename.substring(0, dotIndex) : originalFilename;
-                String extension = dotIndex > 0 ? originalFilename.substring(dotIndex) : "";
-                String timestamp = String.valueOf(System.currentTimeMillis());
-                filePath = taskTypeDir + File.separator + nameWithoutExt + "_" + timestamp + extension;
-                targetPath = Paths.get(filePath);
-            }
-
-            // 保存文件
-            Files.copy(file.getInputStream(), targetPath);
-
-            // 保存模型信息到数据库
             Model model = new Model();
             model.setModelName(modelName);
             Map<String, Object> modelSpec = normalizeModelSpec(uploadDTO, originalFilename);
@@ -114,20 +175,51 @@ public class ModelController {
             model.setOutputNum(uploadDTO.getNumClasses());
             model.setTaskType(taskType);
             model.setUserId(userId);
-            model.setPath(filePath);
+            model.setPath("");
             model.setStatus(1);
             model.setModelType(normalizeDisplayModelType(modelType, uploadDTO.getArch()));
+            model.setStorageType("minio");
+            model.setBucketName(minioConfig.getBucketName());
+            model.setFileName(storageFileName);
+            model.setOriginalFilename(originalFilename);
 
             boolean saved = modelService.saveModel(model);
+            if (!saved || model.getModelId() == null) {
+                response.put("success", false);
+                response.put("message", "Failed to save model information");
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            }
 
-            if (saved) {
+            String objectKey = buildManualModelObjectKey(userId, model.getModelId(), normalizedTaskType, storageFileName);
+            try {
+                ensureBucketReady();
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket(minioConfig.getBucketName())
+                                .object(objectKey)
+                                .stream(file.getInputStream(), file.getSize(), -1)
+                                .contentType(resolveContentType(file))
+                                .build()
+                );
+            } catch (Exception uploadEx) {
+                modelService.removeById(model.getModelId());
+                throw new IOException("Failed to upload model to MinIO: " + uploadEx.getMessage(), uploadEx);
+            }
+
+            model.setObjectKey(objectKey);
+            model.setPath(objectKey);
+            boolean updated = modelService.updateById(model);
+
+            if (updated) {
                 response.put("success", true);
                 response.put("message", "Model uploaded successfully");
                 response.put("model", model);
                 return ResponseEntity.ok(response);
             } else {
+                minIoUtils.remove(objectKey);
+                modelService.removeById(model.getModelId());
                 response.put("success", false);
-                response.put("message", "Failed to save model information");
+                response.put("message", "Failed to persist uploaded model metadata");
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
             }
         } catch (IllegalArgumentException e) {
@@ -135,6 +227,10 @@ public class ModelController {
             response.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         } catch (IOException e) {
+            response.put("success", false);
+            response.put("message", "Failed to upload model: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        } catch (Exception e) {
             response.put("success", false);
             response.put("message", "Failed to upload model: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
@@ -231,6 +327,50 @@ public class ModelController {
         return value == null ? "" : value.trim();
     }
 
+    private void ensureBucketReady() {
+        if (!minIoUtils.bucketExists(minioConfig.getBucketName())) {
+            boolean created = minIoUtils.makeBucket(minioConfig.getBucketName());
+            if (!created) {
+                throw new IllegalStateException("MinIO bucket unavailable: " + minioConfig.getBucketName());
+            }
+        }
+    }
+
+    private String buildManualModelObjectKey(Integer userId, Integer modelId, String taskType, String fileName) {
+        return "models/manual/" + userId + "/" + taskType + "/" + modelId + "/" + fileName;
+    }
+
+    private String normalizeTaskTypeSegment(String taskType) {
+        if ("地物分类".equals(taskType)) {
+            return "segmentation";
+        }
+        if ("目标检测".equals(taskType)) {
+            return "detection";
+        }
+        return safeLower(taskType).replaceAll("[^a-z0-9_-]+", "_");
+    }
+
+    private String sanitizeFileName(String fileName) {
+        String candidate = fileName == null ? "" : fileName.trim();
+        if (candidate.isEmpty()) {
+            return "model.bin";
+        }
+        candidate = candidate.replace("\\", "/");
+        int slashIndex = candidate.lastIndexOf('/');
+        if (slashIndex >= 0) {
+            candidate = candidate.substring(slashIndex + 1);
+        }
+        candidate = candidate.replaceAll("[\\r\\n]", "_");
+        return candidate.isEmpty() ? "model.bin" : candidate;
+    }
+
+    private String resolveContentType(MultipartFile file) {
+        if (StringUtils.hasText(file.getContentType())) {
+            return file.getContentType();
+        }
+        return "application/octet-stream";
+    }
+
     /**
      * 删除模型
      */
@@ -238,16 +378,23 @@ public class ModelController {
     public ResponseEntity<Map<String, Object>> deleteModel(@PathVariable Integer modelId) {
         Map<String, Object> response = new HashMap<>();
 
-        // 获取模型信息，以便删除文件
         Model model = modelService.getById(modelId);
-        if (model != null && model.getPath() != null) {
-            try {
-                // 删除文件
-                Path filePath = Paths.get(model.getPath());
-                Files.deleteIfExists(filePath);
-            } catch (IOException e) {
-                // 文件删除失败，但仍然可以继续删除数据库记录
-                response.put("warning", "Model file could not be deleted: " + e.getMessage());
+        if (model != null) {
+            String objectKey = trimToNull(model.getObjectKey());
+            if (objectKey != null) {
+                boolean removed = minIoUtils.remove(objectKey);
+                if (!removed) {
+                    response.put("warning", "Model object could not be deleted from MinIO");
+                }
+            }
+            String legacyPath = trimToNull(model.getPath());
+            if (objectKey == null && legacyPath != null) {
+                try {
+                    Path filePath = Paths.get(legacyPath);
+                    Files.deleteIfExists(filePath);
+                } catch (IOException e) {
+                    response.put("warning", "Legacy model file could not be deleted: " + e.getMessage());
+                }
             }
         }
 
@@ -282,5 +429,107 @@ public class ModelController {
             response.put("message", "Failed to update model");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private Map<String, Object> parseJsonMap(String rawJson) {
+        if (!StringUtils.hasText(rawJson)) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return OBJECT_MAPPER.readValue(rawJson, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> safeMap(Object value) {
+        if (value instanceof Map) {
+            return new LinkedHashMap<>((Map<String, Object>) value);
+        }
+        return new LinkedHashMap<>();
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String && !StringUtils.hasText((String) value)) {
+            return;
+        }
+        target.put(key, value);
+    }
+
+    private Object firstNonNullNumber(Object... values) {
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+            if (value instanceof Number) {
+                return value;
+            }
+            String str = String.valueOf(value).trim();
+            if (!str.isEmpty()) {
+                return str;
+            }
+        }
+        return null;
+    }
+
+    private String firstNonBlank(Object... values) {
+        for (Object value : values) {
+            if (value == null) {
+                continue;
+            }
+            String str = String.valueOf(value).trim();
+            if (!str.isEmpty()) {
+                return str;
+            }
+        }
+        return null;
+    }
+
+    private String normalizeStatus(Integer status) {
+        if (status == null) {
+            return "unknown";
+        }
+        if (status == 1) {
+            return "completed";
+        }
+        if (status == 0) {
+            return "training";
+        }
+        return String.valueOf(status);
+    }
+
+    private boolean isManualUploadModel(Model model) {
+        String objectKey = trimToNull(model.getObjectKey());
+        if (objectKey != null && objectKey.startsWith("models/manual/")) {
+            return true;
+        }
+        String path = trimToNull(model.getPath());
+        return path != null && path.startsWith("models/manual/");
+    }
+
+    private String safeString(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof Map || value instanceof List) {
+            try {
+                return OBJECT_MAPPER.writeValueAsString(value);
+            } catch (Exception ignored) {
+                return String.valueOf(value);
+            }
+        }
+        return String.valueOf(value);
     }
 }

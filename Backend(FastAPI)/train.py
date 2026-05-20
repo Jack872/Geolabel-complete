@@ -10,6 +10,7 @@ from shapely import MultiPolygon, Polygon
 import shutil
 from utils import crop_image_by_scope, identify_holes_and_split, post_process_mask, prepare_data_for_sklearn, prepare_data_for_sklearn_with_windows
 from utils_db import connect_db, delete_existing_results_db, fetch_labels_from_db, fetch_map_server_from_db, insert_segmentation_results_db, match_typeid_to_name, save_model_to_db
+from utils_storage import ensure_task_image_local
 from utils_yolo import create_yolo_data_yaml, create_yolo_dataset, filter_original_labels, process_yolo_results
 import torch
 from torch.utils.data import DataLoader
@@ -168,7 +169,7 @@ def train_function(argv=None):
     model_name = argv[11]
 
     # 模型保存路径
-    model_save_dir = os.getenv("MODEL_SAVE_DIR", "F:/PG-project/modalDataStore/trained_models")
+    model_save_dir = os.getenv("MODEL_SAVE_DIR", "/opt/geolabel/cache/trained-models")
     # 修改模型保存路径，加入 task_id 文件夹
     task_model_save_dir = os.path.join(model_save_dir, str(USER_ID)) # 创建 task_id 文件夹路径
     # 检查文件夹是否存在，如果不存在则创建
@@ -186,7 +187,7 @@ def train_function(argv=None):
     IMG_SIZE = int(argv[6]) if argv[6] else None# 输入图像尺寸
 
     # 获取地图服务器路径
-    IMAGE_PATH = resolve_image_path(MAPFILE_PATH)
+    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, None, fallback_path=resolve_image_path(MAPFILE_PATH))
 
 
     # 获取标签数据

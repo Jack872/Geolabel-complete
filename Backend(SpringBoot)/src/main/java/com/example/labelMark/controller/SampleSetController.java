@@ -105,6 +105,23 @@ public class SampleSetController {
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
+
+    @PostMapping("/export")
+    public Result export(@RequestBody Map<String, Object> params) {
+        try {
+            Integer id = Integer.parseInt(params.get("id").toString());
+            String format = (String) params.getOrDefault("format", "COCO");
+            Map<String, Object> exportOptions = new HashMap<>(params);
+            String shareMode = String.valueOf(exportOptions.getOrDefault("shareMode", "relative_path"));
+            if ("absolute_url".equalsIgnoreCase(shareMode) && exportOptions.get("baseUrl") == null) {
+                exportOptions.put("baseUrl", ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString());
+            }
+            return ResultGenerator.getSuccessResult(sampleSetService.exportSampleSet(id, format, exportOptions));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResultGenerator.getFailResult("导出失败: " + e.getMessage());
+        }
+    }
     // 4. 获取切片预览列表 (返回文件名 + 标注框数据)
     @GetMapping("/preview/list")
     public Result getPreviewList(@RequestParam Integer id, @RequestParam(defaultValue = "8") Integer limit) {

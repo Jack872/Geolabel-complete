@@ -3,6 +3,7 @@ import psycopg2
 import json
 import numpy as np
 from scipy.spatial import KDTree
+from utils_storage import upload_local_file_to_minio
 
 # 数据库操作
 def connect_db(host=None, dbname=None, user=None, password=None, port=None):
@@ -43,9 +44,28 @@ def save_model_to_db(conn, model_name, user_id, mapping, model_path, input_num, 
     if conn is None:
         return
     try:
+        storage_meta = {
+            "storage_type": "local",
+            "bucket_name": None,
+            "object_key": None,
+            "file_name": os.path.basename(model_path) if model_path else None,
+            "original_filename": os.path.basename(model_path) if model_path else None,
+        }
+        if model_path and os.path.exists(model_path):
+            object_key = f"models/{user_id}/{model_name}/{os.path.basename(model_path)}"
+            storage_meta = upload_local_file_to_minio(model_path, object_key)
         with conn.cursor() as cursor:
-            query = f"INSERT INTO {table_name} (model_name, user_id, model_des, path, input_num, output_num, status,model_type,task_type) VALUES (%s, %s, %s, %s, %s, %s, %s,%s,%s)"
-            cursor.execute(query, (model_name, user_id, mapping, model_path, input_num, output_num, 0,model_type,tasktype))
+            query = f"""
+                INSERT INTO {table_name}
+                (model_name, user_id, model_des, path, input_num, output_num, status, model_type, task_type,
+                 storage_type, bucket_name, object_key, file_name, original_filename)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (
+                model_name, user_id, mapping, model_path, input_num, output_num, 0, model_type, tasktype,
+                storage_meta.get("storage_type"), storage_meta.get("bucket_name"), storage_meta.get("object_key"),
+                storage_meta.get("file_name"), storage_meta.get("original_filename")
+            ))
             conn.commit()
             print("Model record inserted successfully.")
     except psycopg2.Error as e:
@@ -74,7 +94,12 @@ def fetch_model_from_db(conn, model_name, table_name="model"):
         # 使用 with 语句确保 cursor 被正确关闭
         with conn.cursor() as cursor:
             # 构建 SQL 查询语句
-            query = f"SELECT model_name, user_id, model_des, path, input_num, output_num, status,model_type FROM {table_name} WHERE model_id= %s"
+            query = f"""
+                SELECT model_id, model_name, user_id, model_des, path, input_num, output_num, status, model_type,
+                       task_type, storage_type, bucket_name, object_key, file_name, original_filename
+                FROM {table_name}
+                WHERE model_id = %s
+            """
             
             # 执行查询，使用参数化查询防止SQL注入
             cursor.execute(query, (model_name,))
@@ -131,7 +156,12 @@ def fetch_model_by_id(conn, model_id, table_name="model"):
 
     try:
         with conn.cursor() as cursor:
-            query = f"SELECT model_id, model_name, user_id, model_des, path, input_num, output_num, status, model_type, task_type FROM {table_name} WHERE model_id = %s"
+            query = f"""
+                SELECT model_id, model_name, user_id, model_des, path, input_num, output_num, status, model_type,
+                       task_type, storage_type, bucket_name, object_key, file_name, original_filename
+                FROM {table_name}
+                WHERE model_id = %s
+            """
             cursor.execute(query, (model_id,))
 
             if cursor.description is None:

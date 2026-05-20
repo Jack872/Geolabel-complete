@@ -21,6 +21,7 @@ import {
   reqDeleteTask,
   reqEditTask,
   reqGetSelectableImagesByName,
+  reqPublishLocalTask,
   reqPublishTaskBySet,
 } from '@/services/taskManage/api.js';
 // 引入封装的跳转方法
@@ -319,6 +320,7 @@ const TaskManage = () => {
         })),
         ...localImages.map((item) => ({
           source: 'local',
+          fileId: item.fileId,
           localImagePath: item.localImagePath,
           itemName: item.name || item.fileName,
         })),
@@ -787,6 +789,7 @@ const TaskManage = () => {
           }}
           renderUserList={renderUserList}
           renderServiceList={renderServiceList}
+          selectableImageOptions={selectableImageOptions}
           renderTypeList={typeList}
         />
       )}

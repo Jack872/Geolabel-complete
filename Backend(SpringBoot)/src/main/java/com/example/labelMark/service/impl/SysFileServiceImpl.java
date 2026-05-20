@@ -180,12 +180,18 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
         // 1. 在数据库中创建文件记录
         SysFile sysFile = new SysFile();
         sysFile.setFileName(data.getFileName());
+        sysFile.setOriginalFilename(data.getFileName());
         sysFile.setUpdateTime(updatetime);
         sysFile.setSize(data.getFileSize());
+        sysFile.setFileSize(parseLong(data.getFileSize()));
         sysFile.setUserId(userId);
         sysFile.setSetName(data.getSetName());
         sysFile.setDatasetId(data.getDatasetId());
         sysFile.setStatus(0);
+        sysFile.setStorageType("minio");
+        sysFile.setBucketName("PENDING");
+        sysFile.setObjectKey(data.getFileName());
+        sysFile.setCrs(trimToNull(data.getCoordinateSystem()));
         sysfileService.save(sysFile); // 保存后 sysFile 会自动获得 fileId
         Integer fileId = sysFile.getFileId();
 
@@ -361,6 +367,18 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
         String normalized = trimToNull(value);
         if (normalized != null) {
             target.put(key, normalized);
+        }
+    }
+
+    private Long parseLong(String raw) {
+        String normalized = trimToNull(raw);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(normalized);
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

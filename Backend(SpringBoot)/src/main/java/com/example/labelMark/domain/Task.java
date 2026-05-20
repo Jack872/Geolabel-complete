@@ -108,4 +108,8 @@ public class Task implements Serializable {
     @ApiModelProperty("标注属性约束版本 - 兼容字段，当前不落库")
     @TableField(exist = false)
     private Integer annotationSchemaVersion;
+
+    @ApiModelProperty("任务主影像 file_id（运行态字段）")
+    @TableField(exist = false)
+    private Integer fileId;
 }

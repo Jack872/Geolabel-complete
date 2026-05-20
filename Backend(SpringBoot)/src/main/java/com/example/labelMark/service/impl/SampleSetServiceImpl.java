@@ -18,10 +18,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.minio.GetObjectArgs;
+import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import io.minio.Result;
 import io.minio.messages.Item;
+import io.minio.http.Method;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +83,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     @Resource private ProvAgentMapper provAgentMapper;
     @Resource private MinioClient minioClient;
     @Resource private MinioConfig minioConfig;
+    @Resource private MinioFileResolveService minioFileResolveService;
 
     private static final Logger logger = LoggerFactory.getLogger(SampleSetServiceImpl.class);
     @Value("${sampleSet.path}")
@@ -405,6 +409,21 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void downloadSampleSet(Integer id, String format, Map<String, Object> exportOptions, HttpServletResponse response) throws Exception {
+        Map<String, Object> exportResult = exportSampleSet(id, format, exportOptions);
+        String objectKey = String.valueOf(exportResult.get("objectKey"));
+        String downloadName = String.valueOf(exportResult.get("fileName"));
+        response.setContentType("application/zip");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + downloadName + "\"");
+        try (InputStream in = minioClient.getObject(
+                GetObjectArgs.builder().bucket(minioConfig.getBucketName()).object(objectKey).build())) {
+            in.transferTo(response.getOutputStream());
+            response.getOutputStream().flush();
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> exportSampleSet(Integer id, String format, Map<String, Object> exportOptions) throws Exception {
         SampleSet sampleSet = this.getById(id);
         if (sampleSet == null) throw new RuntimeException("样本集不存在");
 
@@ -471,12 +490,33 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             }
             provUtils.generateProvMetadataFile(sampleSet, format, meta, tempRoot, history);
 
-            // 4. 打包输出
-            response.setContentType("application/zip");
-            response.setHeader("Content-Disposition", "attachment; filename=\"" + sampleSet.getName() + "_" + format + ".zip\"");
-            try (ZipOutputStream zos = new ZipOutputStream(response.getOutputStream())) {
+            String zipFileName = sampleSet.getName() + "_" + format + ".zip";
+            Path zipPath = tempRoot.resolve(zipFileName);
+            try (OutputStream fileOut = Files.newOutputStream(zipPath);
+                 ZipOutputStream zos = new ZipOutputStream(fileOut)) {
                 SampleUtils.compressDir(tempRoot, sampleSet.getName(), zos);
             }
+            String objectKey = "datasets/" + sampleSet.getTaskIds().replaceAll("[\\[\\]\\s]", "") + "/" + sampleSet.getId() + "/" + zipFileName;
+            try (InputStream zipIn = Files.newInputStream(zipPath)) {
+                minioClient.putObject(
+                        PutObjectArgs.builder()
+                                .bucket(minioConfig.getBucketName())
+                                .object(objectKey)
+                                .stream(zipIn, Files.size(zipPath), -1)
+                                .contentType("application/zip")
+                                .build()
+                );
+            }
+            sampleSet.setExportObjectKey(objectKey);
+            this.updateById(sampleSet);
+            String presignedUrl = minioClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .method(Method.GET)
+                            .bucket(minioConfig.getBucketName())
+                            .object(objectKey)
+                            .expiry(60 * 60)
+                            .build()
+            );
 
             // 5. 记录本次导出活动到数据库
             try {
@@ -500,6 +540,13 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             } catch (Exception e) {
                 logger.warn("记录导出活动失败: " + e.getMessage());
             }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("objectKey", objectKey);
+            result.put("bucketName", minioConfig.getBucketName());
+            result.put("fileName", zipFileName);
+            result.put("downloadUrl", presignedUrl);
+            return result;
 
         } finally {
             FileSystemUtils.deleteRecursively(tempRoot);
@@ -849,6 +896,18 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     }
 
     private BufferedImage loadTaskSourceImage(Task task, Integer taskId, Integer taskItemId) {
+        if (task.getFileId() != null) {
+            try {
+                File resolvedFile = minioFileResolveService.resolveToLocalFile(
+                        task.getFileId(),
+                        Paths.get(System.getProperty("java.io.tmpdir"), "geolabel_sampleset_cache")
+                );
+                return ImageIO.read(resolvedFile);
+            } catch (Exception e) {
+                logger.warn("[SampleSet] file_id 解析影像失败, taskId={}, taskItemId={}, fileId={}, err={}",
+                        taskId, taskItemId, task.getFileId(), e.getMessage());
+            }
+        }
         String rawPath = task.getLocalImagePath();
         if (rawPath == null || rawPath.trim().isEmpty()) return null;
         String normalizedRawPath = rawPath.trim().replace('\\', '/');
@@ -904,6 +963,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
         merged.setServerId(taskItem.getServerId() != null ? taskItem.getServerId() : task.getServerId());
         merged.setMapServer(taskItem.getMapServer() != null ? taskItem.getMapServer() : task.getMapServer());
         merged.setLocalImagePath(taskItem.getLocalImagePath() != null ? taskItem.getLocalImagePath() : task.getLocalImagePath());
+        merged.setFileId(taskItem.getFileId());
         return merged;
     }
 

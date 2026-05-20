@@ -7,7 +7,7 @@ import {
   DownloadOutlined, DeleteOutlined, EyeOutlined, SearchOutlined,
   FileZipOutlined, UserOutlined, CalendarOutlined, NumberOutlined, PictureOutlined
 } from '@ant-design/icons';
-import { reqGetSampleSetList, reqDeleteSampleSet, reqDownloadSampleSet, reqGetSampleSliceList } from '@/services/sampleSet/api';
+import { reqGetSampleSetList, reqDeleteSampleSet, reqExportSampleSet, reqGetSampleSliceList } from '@/services/sampleSet/api';
 import moment from 'moment';
 
 const { Meta } = Card;
@@ -291,24 +291,15 @@ export default function DatasetReleaseManage({ currentState = {} }) {
     const hide = message.loading(`正在打包 ${exportFormat} 格式，请稍候...`, 0);
 
     try {
-      const res = await reqDownloadSampleSet({
+      const res = await reqExportSampleSet({
         id: currentDataset.id,
         format: exportFormat,
       });
-
-      if (res.size < 100 && res.type === 'application/json') {
-        const text = await res.text();
-        const json = JSON.parse(text);
-        message.error(json.message || '下载失败');
+      const payload = res?.data || res;
+      if (!payload?.downloadUrl) {
+        message.error(res?.message || '下载失败');
       } else {
-        const blob = new Blob([res], { type: 'application/zip' });
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.download = `${currentDataset.name}_${exportFormat}.zip`;
-        document.body.appendChild(link);
-        link.click();
-        window.URL.revokeObjectURL(link.href);
-        document.body.removeChild(link);
+        window.open(payload.downloadUrl, '_blank', 'noopener,noreferrer');
         message.success('下载成功');
         setDownloadModalVisible(false);
       }

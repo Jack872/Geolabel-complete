@@ -14,6 +14,7 @@ export default ({
   onCancel,
   renderUserList,
   renderServiceList,
+  selectableImageOptions,
   defaultValue,
   renderTypeList,
 }) => {
@@ -39,6 +40,10 @@ export default ({
   const [userArrId, setUserArrId] = useState([]);
   const [datasetSetTypeMap, setDatasetSetTypeMap] = useState({});
   const [attributeDefs, setAttributeDefs] = useState([]);
+  const localSelectableOptions = useMemo(
+    () => (selectableImageOptions || []).filter((item) => item?.source === 'local' && item?.fileId),
+    [selectableImageOptions],
+  );
   let { taskid, taskname, type, mapserver, daterange, userArr } = defaultValue;
   const defaultTaskTypeAttributeValues = useMemo(() => {
     const rows = Array.isArray(defaultValue?.taskTypeAttributes) ? defaultValue.taskTypeAttributes : [];
