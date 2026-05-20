@@ -46,7 +46,7 @@ minio:
   bucketName: geoserver #存储桶名称
   accessKey: admin #访问的key
   secretKey: 12345678 #访问的秘钥
-  uploaddir: D:\\program\\MINIO\\data\\geoserver
+  uploaddir: D:\\MinIO\\data\\geoserver
 
 knife4j:
   enable: true
