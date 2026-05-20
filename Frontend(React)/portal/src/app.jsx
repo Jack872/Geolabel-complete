@@ -2,7 +2,6 @@ import { PageLoading } from '@ant-design/pro-layout';
 import { history, request } from 'umi';
 import RightContent from '@/components/RightContent';
 import { currentState as queryCurrentUser } from './services/login/api';
-import { message } from 'antd';
 import logo from '@/assets/LUUlogo.svg';
 import logoSVG from '@/assets/LUUlogo.svg';
 
@@ -59,7 +58,6 @@ export const layout = ({ initialState }) => {
     onPageChange: () => {
       const { location } = history; // 如果没有登录，重定向到 login
       if (!initialState.currentState && !location.pathname.includes('user/')) {
-        message.error('请先登录！');
         history.push(loginPath);
       }
     },

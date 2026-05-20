@@ -34,6 +34,10 @@ const errorHandler = error => {
   const { response } = error;
 
   if (response && response.status) {
+    // 鉴权探测接口失败时跳过通知，由调用方静默处理
+    if (response.url && response.url.includes('/user/currentState')) {
+      return response;
+    }
     const errorText = codeMessage[response.status] || response.statusText;
     const { status, url } = response;
     notification.error({
@@ -62,9 +66,10 @@ request.interceptors.request.use((url, options) => {
       };
     } else {
       if (getCookie('TOKEN') == '' || getCookie('TOKEN') == null) {
-        message.error("TOKEN 丢失，请重新登录");
-        // history.push('/user/login'); // 注释掉这一行，因为history可能未定义
-        // 平阻断请求 （暂时未写）
+        // 鉴权探测接口无 token 属正常，静默放行
+        if (!url.includes('/user/currentState')) {
+          message.error("TOKEN 丢失，请重新登录");
+        }
         return {
           url: `${url}`,
           options: { ...options, interceptors: true },

@@ -99,10 +99,11 @@ export default () => {
         <ProList
           rowKey="id"
           dataSource={dataSource}
-          showActions="hover"
+          showActions="always"
           pagination={{
-            defaultPageSize: 10,
-            showSizeChanger: false,
+            defaultPageSize: 5,
+            showSizeChanger: true,
+            pageSizeOptions: ['5', '10', '20', '50'],
             showTotal: (total) => `共 ${total} 条`,
           }}
           metas={{
