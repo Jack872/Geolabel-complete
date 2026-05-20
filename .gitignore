@@ -75,4 +75,4 @@ Frontend(React)/portal/src/config.js
 # FastAPI env
 Backend(FastAPI)/.env
 
-Backend(SpringBoot)\src\main\resources\application-dev.yml
+Backend(SpringBoot)/src/main/resources/application-dev.yml
