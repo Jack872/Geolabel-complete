@@ -447,15 +447,7 @@ const Category = () => {
               showQuickJumper: true,
               showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条/共 ${total} 条`,
             }}
-            expandable={{
-              expandedRowRender: (record) => (
-                <div style={{ padding: '8px 0' }}>
-                  <p><strong>任务ID：</strong>{record.taskid}</p>
-                  <p><strong>期限区间：</strong>{record.daterange}</p>
-                  {record.auditfeedback && <p><strong>审核反馈：</strong>{record.auditfeedback}</p>}
-                </div>
-              ),
-            }}
+
             toolBarRender={() => [
               // 只有普通用户且未加入团队时才显示加入团队按钮
               isNormalUser && (!userTeamInfo || !userTeamInfo.teamId) && (

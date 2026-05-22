@@ -779,9 +779,7 @@ const TaskManage = () => {
 
           return data;
         }}
-        expandable={{
-          defaultExpandAllRows: false,
-        }}
+
         editable={editable}
         search={{
           labelWidth: 'auto',

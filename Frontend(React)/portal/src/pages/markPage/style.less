@@ -742,45 +742,45 @@
   border-radius: 8px;
   padding: 12px;
   border: 1px solid #e9ecef;
-  
+
   .parameter-row {
     display: flex;
     gap: 10px;
     margin-bottom: 10px;
-    
+
     &:last-child {
       margin-bottom: 0;
     }
-    
+
     .parameter-item {
       flex: 1;
-      
+
       &.full-width {
         flex: 0 0 100%;
       }
-      
+
       label {
         display: block;
         font-size: 12px;
         color: #495057;
         font-weight: 500;
         margin-bottom: 4px;
-        
+
         &::after {
           content: ':';
         }
       }
-      
+
       .ant-input,
       .ant-input-textarea {
         font-size: 13px;
-        
+
         &:focus {
           border-color: #3498db;
           box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
         }
       }
-      
+
       .ant-input-textarea {
         resize: vertical;
         min-height: 60px;
@@ -806,17 +806,17 @@
   padding: 10px 16px;
   font-weight: 500;
   transition: all 0.3s ease;
-  
+
   &:hover:not(:disabled) {
     background: linear-gradient(135deg, #2980b9 0%, #1c6ea4 100%);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
   }
-  
+
   &:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   &:disabled {
     background: #bdc3c7;
     cursor: not-allowed;
@@ -831,17 +831,17 @@
     .parameter-row {
       flex-direction: column;
       gap: 8px;
-      
+
       .parameter-item {
         width: 100%;
       }
     }
   }
-  
+
   .model-tools {
     .quick-tools {
       flex-direction: column;
-      
+
       .model-btn {
         width: 100%;
       }
@@ -857,17 +857,17 @@
   border-radius: 6px;
   font-weight: 500;
   transition: all 0.3s ease;
-  
+
   &:hover:not(:disabled) {
     background: linear-gradient(135deg, #8e44ad 0%, #7d3c98 100%);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(142, 68, 173, 0.3);
   }
-  
+
   &:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   &:disabled {
     background: #bdc3c7;
     cursor: not-allowed;
@@ -916,25 +916,25 @@
 .parameter-row .parameter-item {
   .ant-select {
     width: 100%;
-    
+
     .ant-select-selector {
       border-radius: 6px;
       border-color: #d9d9d9;
-      
+
       &:hover {
         border-color: #3498db;
       }
     }
-    
+
     &.ant-select-focused .ant-select-selector {
       border-color: #3498db;
       box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
     }
   }
-  
+
   .ant-input {
     border-radius: 6px;
-    
+
     &:focus {
       border-color: #3498db;
       box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
@@ -1463,7 +1463,7 @@
 /* ── 新布局：左上角面板 ─────────────────────────────────────────────────────── */
 .left-panel {
   position: absolute;
-  top: 16px;
+  top: 80px;
   left: 16px;
   z-index: 1001;
   display: flex;
@@ -1720,7 +1720,7 @@
 /* 右侧模型面板：绝对定位 */
 .model-panel {
   position: absolute !important;
-  top: 16px !important;
+  top: 60px !important;
   right: 16px !important;
   width: 320px;
   background: rgba(255, 255, 255, 0.95);
@@ -1778,7 +1778,7 @@
 
 /* 主模型面板固定右上，并给右下属性面板留出空间 */
 .model-panel-main {
-  top: 16px !important;
+  top: 60px !important;
   right: 16px !important;
   bottom: auto !important;
   max-height: calc(100vh - 360px) !important;
@@ -1834,6 +1834,8 @@
   /* 无白底，只有轻微文字阴影保证可读性 */
   background: transparent;
   padding: 0;
+  max-width: none;
+  overflow: visible;
 
   .top-info-item {
     display: flex;
@@ -1879,7 +1881,7 @@
     font-weight: 500;
     color: #ffc069;
     text-shadow: 0 1px 4px rgba(0,0,0,0.6);
-    max-width: 220px;
+    max-width: 420px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2071,74 +2073,54 @@
 }
 
 /* ── 上下任务导航按钮 ────────────────────────────────────────────────────────── */
-.task-nav-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid rgba(255, 255, 255, 0.6);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-
-  &:hover:not(:disabled) {
-    background: rgba(24, 144, 255, 0.7);
-    border-color: #1890ff;
-  }
-
-  &:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-}
-
-.task-nav-progress {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  font-weight: 500;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-  margin-left: 4px;
-}
-
-/* ── 上下任务导航：底部居中 ─────────────────────────────────────────────────── */
 .task-nav-bar {
   position: absolute;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1002;
+
   display: flex;
   align-items: center;
   gap: 12px;
+
   background: rgba(0, 0, 0, 0.45);
   border-radius: 24px;
   padding: 6px 18px;
+
   backdrop-filter: blur(8px);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 
   .task-nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1.5px solid rgba(255, 255, 255, 0.5);
-    color: #fff;
-    font-size: 15px;
-    cursor: pointer;
+
     display: flex;
     align-items: center;
     justify-content: center;
+
+    /* 删除白色圆块 */
+    background: transparent;
+    border: none;
+    box-shadow: none;
+
+    color: #fff;
+    font-size: 15px;
+    cursor: pointer;
+
     transition: all 0.2s;
 
     &:hover:not(:disabled) {
-      background: rgba(24, 144, 255, 0.7);
-      border-color: #1890ff;
+      color: #1890ff;
+      background: transparent;
+    }
+
+    &:focus,
+    &:active {
+      outline: none;
+      border: none;
+      box-shadow: none;
+      background: transparent;
     }
 
     &:disabled {
@@ -2162,7 +2144,6 @@
     color: rgba(255, 255, 255, 0.6);
     white-space: nowrap;
     margin: 0;
-    text-shadow: none;
   }
 }
 

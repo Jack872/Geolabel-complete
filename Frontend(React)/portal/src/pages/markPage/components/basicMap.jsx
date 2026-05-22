@@ -17,14 +17,6 @@ export default function BasicMap(props) {
   const { setMap } = props;
   const mapRef = useRef(null);
   // const { setMap } = props;
-  const openNotification = (placement) => {
-    notification.open({
-      message: '温馨提示',
-      description: '服务瓦片可能加载较慢，请耐心等待!',
-      placement,
-      icon: <InfoCircleOutlined style={{ color: '#108ee9' }} />,
-    });
-  };
   const initMap = () => {
     const GDVectorLayer = new TileLayer({
       title: '高德矢量图',
@@ -134,7 +126,6 @@ export default function BasicMap(props) {
   };
 
   useEffect(() => {
-    openNotification('topLeft');
     initMap();
   }, [mapRef]);
   return <div id="map-container" ref={mapRef} className="map-container" />;
