@@ -258,7 +258,7 @@ public class DatasetController {
      *
      * @return 结果
      */
-    @GetMapping("/editDataSet")
+    @PostMapping("/editDataSet")
     public Result editDataSet(@RequestBody Dataset dataset) {
         try {
             boolean succeed = datasetService.editDataSet(dataset);

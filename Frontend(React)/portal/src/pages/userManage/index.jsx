@@ -1,7 +1,7 @@
-import { Tabs, Card, Button, message, Avatar, Select, Popconfirm } from 'antd';
+import { Tabs, Card, Button, message, Avatar, Select, Popconfirm, Input, Tooltip } from 'antd';
 // 引入头像icon
 import { DeleteOutlined, EditOutlined, RedoOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useModel, useAccess } from 'umi';
 import { PageContainer } from '@ant-design/pro-layout';
 import { ProCard, ProTable } from '@ant-design/pro-components';
@@ -16,7 +16,6 @@ import {
 import { reqCreateTeam, reqGetMyTeamCode, reqGetTeamList } from '@/services/teamManage/api';
 import CollectionCreateForm from './components/index.jsx';
 import CreateTeamForm from './components/CreateTeamForm.jsx';
-import { useRef } from 'react';
 
 const App = () => {
   const actionRef = useRef();
@@ -24,9 +23,21 @@ const App = () => {
   const [teamFormVisible, setTeamFormVisible] = useState(false);
   const [initialValue, setInitialValue] = useState({});
   const [teamCode, setTeamCode] = useState(null);
+  const [searchUserid, setSearchUserid] = useState('');
+  const [searchUsername, setSearchUsername] = useState('');
+  const [searchTeamId, setSearchTeamId] = useState(null);
   const [teamOptions, setTeamOptions] = useState([]);
   const { userList, getUserList } = useModel('userModel');
+  const searchTimerRef = useRef();
   const access = useAccess();
+
+  // 搜索条件变化时自动刷新（防抖）
+  useEffect(() => {
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      actionRef.current?.reload();
+    }, 300);
+  }, [searchUserid, searchUsername]);
 
   // 获取当前管理员的团队码
   const getMyTeamCode = useCallback(async () => {
@@ -135,20 +146,49 @@ const App = () => {
             )}
           </div>
           {access.canAdmin && (
-            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center' }}>
-              <Button
-                type="primary"
-                icon={<TeamOutlined />}
-                onClick={() => setTeamFormVisible(true)}
-                style={{ marginRight: 16 }}
-              >
-                创建团队
-              </Button>
-              {teamCode && (
-                <div style={{ marginLeft: 16 }}>
-                  <strong>团队码:</strong> {teamCode}
-                </div>
-              )}
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={teamCode ? "已创建团队" : null}>
+                  <Button
+                    type="primary"
+                    icon={<TeamOutlined />}
+                    onClick={() => setTeamFormVisible(true)}
+                    disabled={!!teamCode}
+                    style={{ marginRight: 16 }}
+                  >
+                    创建团队
+                  </Button>
+                </Tooltip>
+                {teamCode && (
+                  <div style={{ marginLeft: 16 }}>
+                    <strong>团队码:</strong> {teamCode}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Select
+                  placeholder="所属团队"
+                  value={searchTeamId}
+                  onChange={(val) => setSearchTeamId(val)}
+                  style={{ width: 150 }}
+                  allowClear
+                  options={teamOptions.map((t) => ({ label: t.name, value: t.teamId }))}
+                />
+                <Input
+                  placeholder="用户编号"
+                  value={searchUserid}
+                  onChange={(e) => setSearchUserid(e.target.value)}
+                  style={{ width: 150 }}
+                  allowClear
+                />
+                <Input
+                  placeholder="用户名"
+                  value={searchUsername}
+                  onChange={(e) => setSearchUsername(e.target.value)}
+                  style={{ width: 150 }}
+                  allowClear
+                />
+              </div>
             </div>
           )}
           <div>
@@ -156,6 +196,9 @@ const App = () => {
               actionRef={actionRef}
               setVisible={setVisible}
               setInitialValue={setInitialValue}
+              searchUserid={searchUserid}
+              searchUsername={searchUsername}
+              searchTeamId={searchTeamId}
               teamOptions={teamOptions}
               // setid={setid}
               // getDataSource={getDataSource}
@@ -172,7 +215,7 @@ const App = () => {
 
 
 const UserTable = (props) => {
-  const { setVisible, params, setInitialValue, actionRef, teamOptions } = props;
+  const { setVisible, setInitialValue, actionRef, teamOptions, searchUserid, searchUsername, searchTeamId } = props;
 
   const getTeamName = (teamId) => {
     const team = teamOptions.find((item) => item.teamId === teamId);
@@ -204,7 +247,7 @@ const UserTable = (props) => {
       dataIndex: 'userid',
       align: 'center',
       key: 'userid',
-      valueType: 'digit',
+      valueType: 'text',
     },
     {
       title: '用户名',
@@ -302,7 +345,7 @@ const UserTable = (props) => {
 
   return (
     <ProTable
-      params={params}
+      params={{ userid: searchUserid, username: searchUsername, teamId: searchTeamId }}
       request={reqGetUserList}
       /*request={async (
       )=>{
@@ -325,6 +368,7 @@ const UserTable = (props) => {
       }}*/
       columns={columns}
       actionRef={actionRef}
+      search={false}
       rowKey="userid"
       pagination={{
         pageSizeOptions: ['5', '10', '15', '20'],

@@ -1,8 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Modal, Form, Input, DatePicker } from 'antd';
 // 封装模态框表单
-export default ({ open, onCreate, onCancel, title, formItemList, info }) => {
+export default ({ open, onCreate, onCancel, title, formItemList, info, initialValues = {} }) => {
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (open) {
+      form.setFieldsValue(initialValues || {});
+    }
+  }, [form, initialValues, open]);
 
   // 根据配置生成表单项
   const renderFormItems = () => {
@@ -88,10 +94,11 @@ export default ({ open, onCreate, onCancel, title, formItemList, info }) => {
     >
       <Form
         form={form}
-        layout="ho"
+        layout="horizontal"
         name="form_in_modal"
         initialValues={{
           modifier: 'public',
+          ...initialValues,
         }}
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 16 }}

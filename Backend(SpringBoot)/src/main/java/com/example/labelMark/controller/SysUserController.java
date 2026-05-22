@@ -118,11 +118,12 @@ public class SysUserController {
 
     @ApiOperation("获取用户分页列表")
     @RequestMapping(value = "/getUsers", method = RequestMethod.GET)
-    public Map getUsers(@RequestParam(required = false) Integer userid
+    public Map getUsers(@RequestParam(required = false) String userid
             , @RequestParam(required = false) Integer isAdmin
             , @RequestParam(required = false) Integer current
             , @RequestParam(required = false) Integer pageSize
-            , @RequestParam(required = false) String username) {
+            , @RequestParam(required = false) String username
+            , @RequestParam(required = false) Integer teamId) {
         try {
             // 无参时默认值
             if (ObjectUtil.isEmpty(current)) {
@@ -134,40 +135,20 @@ public class SysUserController {
 
             // 获取当前登录用户信息
             LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            SysUser currentUser = loginUser.getSysUser();
 
-            // 检查是否是管理员
-            boolean isCurrentUserAdmin = currentUser.getIsadmin() == 1;
-            Integer teamId = currentUser.getTeamId();
-
-            long total;
             Page<SysUser> usersPage;
 
-            // 如果当前用户是管理员且查看普通用户列表
-            if (isCurrentUserAdmin && isAdmin != null && isAdmin == 0) {
-                // 如果管理员的team_id为空，不显示任何用户
-                if (teamId == null) {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("code", StatusEnum.SUCCESS);
-                    map.put("data", new ArrayList<>());  // 返回空列表
-                    map.put("total", 0);  // 总数为0
-                    map.put("success", true);
-                    return map;
-                }
-
-                // 团队管理员查看普通用户，只显示团队内的普通用户
-                total = SysUserService.getUsersCountByAdminAndTeamId(isAdmin, teamId);
+            if (teamId != null) {
+                // 按前端传入的团队ID筛选
                 usersPage = SysUserService.getUsersPageByTeamId(current, pageSize, userid, username, isAdmin, teamId);
             } else {
-                // 非管理员查看用户列表，或管理员查看管理员列表
-                total = SysUserService.getTotalCount();
                 usersPage = SysUserService.getUsersPage(current, pageSize, userid, username, isAdmin);
             }
 
             Map<String, Object> map = new HashMap<>();
             map.put("code", StatusEnum.SUCCESS);
             map.put("data", usersPage.getRecords());
-            map.put("total", total);
+            map.put("total", usersPage.getTotal());
             map.put("success", true);
             return map;
         } catch (Exception e) {

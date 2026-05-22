@@ -43,7 +43,7 @@ public interface DatasetMapper extends BaseMapper<Dataset> {
      * @param userId 用户ID
      * @return 数据集列表
      */
-    @Select("SELECT * FROM dataset WHERE user_id = #{userId}")
+    @Select("SELECT * FROM dataset WHERE user_id = #{userId} ORDER BY id ASC")
     List<Dataset> findDatasetByUserId(@Param("userId") int userId);
 
     /**
@@ -51,6 +51,6 @@ public interface DatasetMapper extends BaseMapper<Dataset> {
      *
      * @return 数据集列表
      */
-    @Select("SELECT * FROM dataset")
+    @Select("SELECT * FROM dataset ORDER BY id ASC")
     List<Dataset> getDataSet();
 }

@@ -23,6 +23,8 @@ public interface SysFileService extends IService<SysFile> {
 
     void updateFile(Integer fileId, String fileName, String updateTime);
 
+    boolean updateFileDetail(SysFile sysFile, Integer userId);
+
     void deleteFile(String fileName);
 
     void deleteFileById(Integer fileId);

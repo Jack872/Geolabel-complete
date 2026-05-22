@@ -54,7 +54,7 @@ public interface SysUserService extends IService<SysUser> {
      * @param isAdmin
      * @return
      */
-    Page<SysUser> getUsersPage(Integer current, Integer pageSize, Integer userid, String username, Integer isAdmin);
+    Page<SysUser> getUsersPage(Integer current, Integer pageSize, String userid, String username, Integer isAdmin);
 
     /**
      * 根据团队ID获取用户分页列表
@@ -67,7 +67,7 @@ public interface SysUserService extends IService<SysUser> {
      * @param teamId
      * @return
      */
-    Page<SysUser> getUsersPageByTeamId(Integer current, Integer pageSize, Integer userid, String username, Integer isAdmin, Integer teamId);
+    Page<SysUser> getUsersPageByTeamId(Integer current, Integer pageSize, String userid, String username, Integer isAdmin, Integer teamId);
 
     boolean updateUser(Integer userId, String username, Integer isAdmin, Integer teamId);
 
