@@ -120,7 +120,7 @@ const App = () => {
   };
 
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       <ProCard style={{ marginTop: 8 }} gutter={8} ghost>
         <ProCard layout="left" bordered className={styles.content}>
           <div className={styles.title}>

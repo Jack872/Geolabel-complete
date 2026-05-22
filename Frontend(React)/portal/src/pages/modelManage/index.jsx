@@ -511,7 +511,7 @@ const ModelManage = () => {
   };
 
   return (
-    <PageContainer className="model-manage-container">
+    <PageContainer className="model-manage-container" header={false}>
       {userId ? (
         <>
         <ProTable

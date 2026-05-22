@@ -670,7 +670,7 @@ const TaskManage = () => {
     },
   };
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       <ProTable
         rowKey={(record) => record._rowKey || String(record.taskid)} // 支持批次折叠行
         columns={columns}

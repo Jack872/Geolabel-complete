@@ -49,6 +49,7 @@ export const layout = ({ initialState }) => {
     logo: logoSVG,
     rightContentRender: () => <RightContent />,
     disableContentMargin: false,
+    breadcrumbRender: false,
     // 头像水印
     waterMarkProps: {
       content: initialState?.currentState?.currentUser,

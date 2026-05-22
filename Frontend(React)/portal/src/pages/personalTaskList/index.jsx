@@ -400,7 +400,7 @@ const Category = () => {
   };
 
   return (
-    <PageContainer className="personal-task-container">
+    <PageContainer className="personal-task-container" header={false}>
       {/* 任务类型选项卡 */}
       <div className="task-tabs">
         <div

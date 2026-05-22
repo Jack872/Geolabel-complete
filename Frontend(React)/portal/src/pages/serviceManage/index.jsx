@@ -60,7 +60,7 @@ export default () => {
   const dataSource = filteredList.map((item) => ({ ...item, id: item.serName }));
 
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       {/* 工具栏 */}
       <div className="list-toolbar">
         <Input

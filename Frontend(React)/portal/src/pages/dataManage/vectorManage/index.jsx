@@ -531,11 +531,7 @@ const DatasetCardPage = () => {
   };
 
   return (
-    <PageContainer
-      header={{
-        title: '影像数据集管理',
-      }}
-    >
+    <PageContainer>
       {/* 查询表单 */}
       <Form
         layout="inline"
