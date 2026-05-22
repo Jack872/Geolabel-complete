@@ -93,7 +93,7 @@ const TableList = () => {
     },
   ];
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       <ProTable
         actionRef={actionRef} //数据发生变化时重新加载
         headerTitle="微集思机构管理"

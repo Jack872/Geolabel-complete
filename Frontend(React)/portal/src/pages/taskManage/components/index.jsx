@@ -45,6 +45,7 @@ export default ({
     [selectableImageOptions],
   );
   let { taskid, taskname, type, mapserver, daterange, userArr } = defaultValue;
+  const isEdit = !!taskid;
   const defaultTaskTypeAttributeValues = useMemo(() => {
     const rows = Array.isArray(defaultValue?.taskTypeAttributes) ? defaultValue.taskTypeAttributes : [];
     const typeSet = new Set();
@@ -299,7 +300,7 @@ export default ({
   return (
     <Modal
       open={open}
-      title="新建任务"
+      title={isEdit ? '编辑任务' : '新建任务'}
       okText="提交"
       cancelText="取消"
       onCancel={onCancel}
@@ -308,6 +309,14 @@ export default ({
         form
           .validateFields()
           .then((values) => {
+            if (isEdit) {
+              onCreate({
+                taskid,
+                taskname: values.taskname,
+                daterange: values.daterange,
+              });
+              return;
+            }
             // 根据目标用户类型处理表单数据
             const formData = { ...values };
 
@@ -397,9 +406,9 @@ export default ({
           label="标注类型"
           name="type"
           initialValue={type}
-          rules={[{ required: true, message: '必须选择标注类型！' }]}
+          rules={[{ required: !isEdit, message: '必须选择标注类型！' }]}
         >
-          <Select placeholder="请选择标注类型" optionFilterProp="children" onChange={onChange}>
+          <Select placeholder="请选择标注类型" optionFilterProp="children" onChange={onChange} disabled={isEdit}>
             <Select.Option value="目标检测" key="1">
               目标检测
             </Select.Option>
@@ -414,7 +423,7 @@ export default ({
           name="mapSelectMode"
           initialValue="byName"
         >
-          <Radio.Group onChange={handleMapSelectModeChange}>
+          <Radio.Group onChange={handleMapSelectModeChange} disabled={isEdit}>
             <Radio value="byName">按影像名称选择</Radio>
             <Radio value="bySetName">按影像集名称选择</Radio>
           </Radio.Group>
@@ -425,7 +434,7 @@ export default ({
             label="影像名称"
             name="mapserver"
             initialValue={taskid ? [mapserver] : []}
-            rules={[{ required: true, message: '必须选择影像！' }]}
+            rules={[{ required: !isEdit, message: '必须选择影像！' }]}
             tooltip="支持同时选择服务影像和本地影像，系统会按所选影像逐一创建任务"
           >
             <Select
@@ -435,6 +444,7 @@ export default ({
               optionFilterProp="label"
               onChange={onChange}
               onSearch={onSearch}
+              disabled={isEdit}
               filterOption={(input, option) =>
                 (option?.label || option?.value || '').toLowerCase().includes(input.toLowerCase())
               }
@@ -447,7 +457,7 @@ export default ({
             <Form.Item
               label="影像集名称"
               name="setNames"
-              rules={[{ required: true, message: '必须选择影像集！' }]}
+              rules={[{ required: !isEdit, message: '必须选择影像集！' }]}
               tooltip="支持服务影像集和本地影像集，系统会自动按影像逐一创建任务"
             >
               <Select
@@ -456,6 +466,7 @@ export default ({
                 placeholder="请选择影像集"
                 optionFilterProp="children"
                 onChange={handleSetNameChange}
+                disabled={isEdit}
                 filterOption={(input, option) =>
                   option.children.toLowerCase().includes(input.toLowerCase())
                 }
@@ -497,12 +508,12 @@ export default ({
           label="目标用户类型"
           name="targetUserType"
           initialValue={isAdmin ? targetUserType : 'allNonAdminUsers'}
-          rules={[{ required: true, message: '必须选择目标用户类型！' }]}
+          rules={[{ required: !isEdit, message: '必须选择目标用户类型！' }]}
         >
           <Select
             placeholder="请选择目标用户类型"
             onChange={handleTargetUserTypeChange}
-            disabled={!isAdmin} // 普通用户不能更改
+            disabled={isEdit || !isAdmin} // 普通用户不能更改，编辑模式冻结
           >
             {isAdmin ? (
               <>
@@ -517,7 +528,7 @@ export default ({
         </Form.Item>
 
         {/* 根据shouldShowScoreInput()函数判断是否显示积分输入框 */}
-        {shouldShowScoreInput() && (
+        {!isEdit && shouldShowScoreInput() && (
           <Form.Item
             label="每张影像积分"
             name="score"
@@ -536,12 +547,13 @@ export default ({
           <Form.Item
             label="样本类型"
             name="uniformSampleTypes"
-            rules={[{ required: true, message: '必须选择样本类型！' }]}
+            rules={[{ required: !isEdit, message: '必须选择样本类型！' }]}
           >
             <Select
               mode="multiple"
               showArrow
               allowClear
+              disabled={isEdit}
               placeholder="请选择样本类型"
               options={filteredOptions.map((item) => ({
                 value: item.typeId,
@@ -558,13 +570,14 @@ export default ({
               label="任务受理人"
               name="userArr"
               tooltip="多人协同模式下，各成员分配的标签不可重复"
-              rules={[{ required: true, message: '必须选择任务受理人！' }]}
+              rules={[{ required: !isEdit, message: '必须选择任务受理人！' }]}
             >
               <Select
                 showSearch
                 mode="multiple"
                 showArrow
                 allowClear
+                disabled={isEdit}
                 placeholder="请选择任务受理人"
                 optionFilterProp="children"
                 onChange={(value) => {
@@ -590,12 +603,13 @@ export default ({
                   label={userName}
                   name={userName}
                   initialValue={typestring}
-                  rules={[{ required: true, message: '必须指定标签！' }]}
+                  rules={[{ required: !isEdit, message: '必须指定标签！' }]}
                 >
                   <Select
                     mode="multiple"
                     showArrow
                     allowClear
+                    disabled={isEdit}
                     value={selectedItems}
                     onChange={(value) => {
                       console.log(value);
@@ -611,6 +625,7 @@ export default ({
           </>
         )}
 
+        {!isEdit && (<>
         <Form.Item
           label="属性配置类别"
           name="attributeTypeIds"
@@ -707,6 +722,7 @@ export default ({
             });
           }}
         </Form.Item>
+        </>)}
 
         {taskid && (
           <Form.Item

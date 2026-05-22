@@ -9,8 +9,7 @@ export default function SharedDataset() {
 
   return (
     <PageContainer
-      title="共享数据集"
-      subTitle="浏览和下载社区共享的高质量标注数据集"
+      header={false}
       className="shared-dataset-page"
     >
       <SharedDatasetTab currentState={currentState} />

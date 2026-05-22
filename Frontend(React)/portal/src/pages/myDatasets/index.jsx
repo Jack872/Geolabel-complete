@@ -9,8 +9,7 @@ export default function MyDatasets() {
 
   return (
     <PageContainer
-      title="已兑换的共享数据集"
-      subTitle="管理您已兑换的共享数据集，支持免费下载"
+      header={false}
       className="my-datasets-page"
     >
       <MyDatasetTab currentState={currentState} />

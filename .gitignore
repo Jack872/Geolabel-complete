@@ -48,8 +48,7 @@ post_processed_mask.png
 post_processed_predicted_mask.png
 *.sql
 raw_predicted_mask.png
-yolo11m-obb.pt
-yolo11n.pt
+*.pt
 __pycache__/
 
 *.tif

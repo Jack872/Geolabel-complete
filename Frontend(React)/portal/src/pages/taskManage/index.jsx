@@ -219,6 +219,34 @@ const TaskManage = () => {
   // 新建参数收集
   const onCreate = async (values) => {
     let { daterange, taskid, taskname, type, mapserver, targetUserType, score, mapSelectMode } = values;
+
+    // 编辑模式：只更新任务名称和任务期限
+    if (taskid && !type && !mapSelectMode) {
+      const hide = message.loading('正在更新任务');
+      try {
+        const dateMap = daterange.map((item) => item.format('YYYY-MM-DD'));
+        const result = await reqEditTask({
+          taskid,
+          taskname,
+          daterange: dateMap,
+        });
+        hide();
+        if (result.code === 200) {
+          setVisible(false);
+          setDefaultValue({});
+          message.success('任务更新成功！');
+          actionRef.current.reload();
+        } else {
+          message.error(result.message || '任务更新失败');
+        }
+      } catch (error) {
+        hide();
+        console.error('编辑任务失败！', error);
+        message.error('编辑任务失败！');
+      }
+      return;
+    }
+
     const isNonTeamTaskLogic =
       targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
 
@@ -670,7 +698,7 @@ const TaskManage = () => {
     },
   };
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       <ProTable
         rowKey={(record) => record._rowKey || String(record.taskid)} // 支持批次折叠行
         columns={columns}
@@ -751,9 +779,7 @@ const TaskManage = () => {
 
           return data;
         }}
-        expandable={{
-          defaultExpandAllRows: false,
-        }}
+
         editable={editable}
         search={{
           labelWidth: 'auto',

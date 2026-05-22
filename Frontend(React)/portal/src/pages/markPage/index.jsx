@@ -2301,7 +2301,9 @@ const navigateTask = useCallback(async (direction) => {
             <div className="top-info-sep" />
             <div className="top-info-item">
               <span className="top-info-label">审核反馈：</span>
-              <span className="top-info-feedback">{currentTaskItemAuditFeedback}</span>
+              <Tooltip title={currentTaskItemAuditFeedback} mouseEnterDelay={0.1}>
+                <span className="top-info-feedback">{currentTaskItemAuditFeedback}</span>
+              </Tooltip>
             </div>
           </>
         )}

@@ -29,7 +29,7 @@ public interface TaskService extends IService<Task> {
 
     List<Integer> getIDs();
 
-    void updateTaskById(int taskId, String taskName, String dateRange, String taskType, String mapServer);
+    void updateTaskById(int taskId, String taskName, String dateRange);
 
     void deleteTaskById(int taskId);
 

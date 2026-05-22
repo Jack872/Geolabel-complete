@@ -348,38 +348,12 @@ public class TaskController {
     public Result updateTask(@RequestBody Map<String, Object> map) {
         ArrayList<String> dateRange = (ArrayList<String>) map.get("daterange");
         String taskName = map.get("taskname").toString();
-        String taskType = map.get("type").toString();
-        ArrayList<String> usernameAndTypeArr = (ArrayList<String>) map.get("userArr");
-        String mapServer = map.get("mapserver").toString();
         Integer taskId = Integer.valueOf(map.get("taskid").toString());
-//        拼接起止日期
         String dateRangeStr = dateRange.get(0) + " " + dateRange.get(1);
 
-        taskService.updateTaskById(taskId, taskName, dateRangeStr, taskType, mapServer);
-        applyTaskAnnotationSchema(taskId, map);
-        applyTaskTypeAttributes(taskId, map);
-
-        //        拆解用户和所属类型
-        String username, typeArr = "";
-        for (String usernameAndType : usernameAndTypeArr) {
-            String[] usernameAndTypeStr = usernameAndType.split(",");
-            username = usernameAndTypeStr[0];
-            for (int i = 1; i < usernameAndTypeStr.length; i++) {
-                if (i == usernameAndTypeStr.length - 1) {
-                    typeArr += usernameAndTypeStr[i];
-                } else {
-                    typeArr += usernameAndTypeStr[i] + ",";
-                }
-            }
-            boolean isUpdate = taskAcceptedService.createTaskAccept(taskId, username, typeArr);
-//            重置
-            typeArr = "";
-            if (isUpdate == false) {
-                return ResultGenerator.getSuccessResult("插入接收任务失败");
-            }
-        }
+        taskService.updateTaskById(taskId, taskName, dateRangeStr);
         return ResultGenerator.getSuccessResult("任务更新成功");
-        }
+    }
 
     @DeleteMapping("/deleteTask/{taskId}")
     @Transactional(rollbackFor = Exception.class)

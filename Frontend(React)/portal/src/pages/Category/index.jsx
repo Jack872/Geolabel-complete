@@ -110,7 +110,7 @@ const Category = () => {
     }
   };
   return (
-    <PageContainer>
+    <PageContainer header={false}>
       <ProTable
         columns={columns}
         actionRef={actionRef}

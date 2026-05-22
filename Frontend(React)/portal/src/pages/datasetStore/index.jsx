@@ -34,8 +34,7 @@ export default function DatasetStore() {
 
   return (
     <PageContainer
-      title="样本集仓库"
-      subTitle="查看已生成的合并数据集，支持预览统计、多格式转换 (COCO/YOLO/VOC) 与打包下载"
+      header={false}
       className="dataset-store-page"
       // 建议设置高度以适应内部的 Flex 布局和滚动条
       style={{ height: 'calc(100vh - 100px)' }}

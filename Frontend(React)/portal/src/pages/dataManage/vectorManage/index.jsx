@@ -5,6 +5,7 @@ import {
   Col,
   Row,
   Input,
+  InputNumber,
   Select,
   Popconfirm,
   message,
@@ -18,6 +19,7 @@ import StepUploadModal from '../component/StepUploadModal.jsx';
 import CollectionCreateForm from '@/components/CollectionCreateForm';
 import { PageContainer } from '@ant-design/pro-layout';
 import { useModel } from 'umi';
+import moment from 'moment';
 
 // ===== 保留原接口 (暂时注释，标注 TODO) =====
 import { reqGetfileData, reqEditfileData, reqDeleteFileDataById, reqPublishSet } from '@/services/dataManage/api';
@@ -61,6 +63,9 @@ const DatasetCardPage = () => {
   const [isEdit, setIsEdit] = useState(false);
   const [fileList, setFileList] = useState([]);
   const [datasetMetaMap, setDatasetMetaMap] = useState({});
+  const [editingFile, setEditingFile] = useState(null);
+  const [fileEditVisible, setFileEditVisible] = useState(false);
+  const [fileEditForm] = Form.useForm();
 
 
   /** --------------------
@@ -94,6 +99,44 @@ const DatasetCardPage = () => {
   };
 
   const getDatasetId = (dataset) => dataset?.id ?? dataset?.setId ?? null;
+
+  const toMoment = (value) => {
+    if (!value) return undefined;
+    const parsed = moment(value);
+    return parsed.isValid() ? parsed : undefined;
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return undefined;
+    if (typeof value === 'string') return value;
+    if (typeof value.format === 'function') return value.format('YYYY-MM-DD HH:mm:ss');
+    return undefined;
+  };
+
+  const parseBandsInput = (rawValue) => {
+    if (!rawValue || !`${rawValue}`.trim()) return undefined;
+    const raw = `${rawValue}`.trim();
+    if (raw.startsWith('[')) {
+      JSON.parse(raw);
+      return raw;
+    }
+    const list = raw
+      .split(/[,\n，]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return list.length ? JSON.stringify(list) : undefined;
+  };
+
+  const stringifyBandsInput = (value) => {
+    if (!value) return undefined;
+    if (Array.isArray(value)) return value.join(',');
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.join(',') : value;
+    } catch (error) {
+      return value;
+    }
+  };
 
   const fetchDatasetMetaSummary = async (datasets) => {
     if (!Array.isArray(datasets) || datasets.length === 0) {
@@ -149,9 +192,16 @@ const DatasetCardPage = () => {
 
   const handleDatasetFormSubmit = async (values) => {
     try {
-      if (datasetFormValues.setId) {
+      const datasetId = getDatasetId(datasetFormValues);
+      const payload = {
+        ...datasetFormValues,
+        ...values,
+        id: datasetId,
+        year: values.year && typeof values.year.format === 'function' ? values.year.format('YYYY') : values.year,
+      };
+      if (datasetId) {
         // 编辑数据集
-        const res = await reqEditDataset({ ...values, setId: datasetFormValues.setId });
+        const res = await reqEditDataset(payload);
         if (res.code==200) {
           message.success('编辑数据集成功！');
         } else {
@@ -160,7 +210,7 @@ const DatasetCardPage = () => {
         }
       } else {
         // 新增数据集
-        const res = await reqAddDataset(values);
+        const res = await reqAddDataset(payload);
         if (res.code==200) {
           message.success('新增数据集成功！');
         } else {
@@ -269,6 +319,62 @@ const DatasetCardPage = () => {
       message.error('获取影像列表失败');
     }
   };
+
+  const openFileEditForm = (record) => {
+    setEditingFile(record);
+    fileEditForm.setFieldsValue({
+      ...record,
+      acquisitionTimeStart: toMoment(record.acquisitionTimeStart),
+      acquisitionTimeEnd: toMoment(record.acquisitionTimeEnd),
+      bandsInput: stringifyBandsInput(record.bandsJson),
+    });
+    setFileEditVisible(true);
+  };
+
+  const refreshCurrentFileList = async () => {
+    const datasetId = getDatasetId(currentDataset);
+    if (!datasetId) return;
+    const updated = await reqGetfileData({ datasetId, current: 1, pageSize: 500 });
+    if (updated?.code === 200 && Array.isArray(updated.data)) {
+      setFileList(updated.data);
+    }
+  };
+
+  const handleFileEditSubmit = async () => {
+    try {
+      const values = await fileEditForm.validateFields();
+      if (values.acquisitionTimeStart && values.acquisitionTimeEnd) {
+        const start = values.acquisitionTimeStart.valueOf();
+        const end = values.acquisitionTimeEnd.valueOf();
+        if (end < start) {
+          message.error('采集结束时间不能早于采集开始时间');
+          return;
+        }
+      }
+      const payload = {
+        ...editingFile,
+        ...values,
+        acquisitionTimeStart: formatDateTime(values.acquisitionTimeStart),
+        acquisitionTimeEnd: formatDateTime(values.acquisitionTimeEnd),
+        bandsJson: parseBandsInput(values.bandsInput),
+      };
+      delete payload.bandsInput;
+      const res = await reqEditfileData(payload);
+      if (res?.code === 200 || res?.success) {
+        message.success('编辑影像成功');
+        setFileEditVisible(false);
+        setEditingFile(null);
+        fileEditForm.resetFields();
+        await refreshCurrentFileList();
+        fetchDatasets();
+      } else {
+        message.error(res?.message || '编辑影像失败');
+      }
+    } catch (error) {
+      if (error?.errorFields) return;
+      message.error(error?.message || '编辑影像失败');
+    }
+  };
   /** ProTable 影像表格列 */
   const columns = [
     { title: '序号', dataIndex: 'index', valueType: 'indexBorder', align: 'center', width: 60 },
@@ -299,11 +405,7 @@ const DatasetCardPage = () => {
           <Button
             size="small"
             icon={<EditTwoTone />}
-            onClick={() => {
-              message.info(`编辑影像（模拟）：${record.fileName}`);
-              // TODO: 调用编辑接口
-              // await reqEditfileData(record);
-            }}
+            onClick={() => openFileEditForm(record)}
           >
             编辑
           </Button>
@@ -421,12 +523,15 @@ const DatasetCardPage = () => {
     </Row>
   );
 
+  const datasetFormHasImages = Number(datasetFormValues?.sampleNum || 0) > 0;
+  const datasetInitialValues = {
+    ...datasetFormValues,
+    id: getDatasetId(datasetFormValues),
+    year: datasetFormValues?.year ? moment(String(datasetFormValues.year), 'YYYY') : undefined,
+  };
+
   return (
-    <PageContainer
-      header={{
-        title: '影像数据集管理',
-      }}
-    >
+    <PageContainer>
       {/* 查询表单 */}
       <Form
         layout="inline"
@@ -503,6 +608,184 @@ const DatasetCardPage = () => {
         />
       </Modal>
 
+      <Modal
+        title={`编辑影像 - ${editingFile?.fileName || ''}`}
+        open={fileEditVisible}
+        width={900}
+        okText="完成"
+        cancelText="取消"
+        onOk={handleFileEditSubmit}
+        onCancel={() => {
+          setFileEditVisible(false);
+          setEditingFile(null);
+          fileEditForm.resetFields();
+        }}
+        destroyOnClose
+      >
+        <Form form={fileEditForm} layout="vertical">
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="文件名称"
+                name="fileName"
+                rules={[{ required: true, message: '请输入文件名称' }]}
+                extra={editingFile?.status === 1 ? '已发布影像的文件名称不可修改' : undefined}
+              >
+                <Input disabled={editingFile?.status === 1} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="坐标系代码" name="crsCode">
+                <Input placeholder="例如 EPSG:4326 或 NONE" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="坐标系名称" name="crsName">
+                <Input placeholder="例如 WGS 84 / UTM zone 50N" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="时间精度" name="timePrecision">
+                <Select allowClear>
+                  <Option value="year">年</Option>
+                  <Option value="month">月</Option>
+                  <Option value="day">日</Option>
+                  <Option value="hour">小时</Option>
+                  <Option value="minute">分钟</Option>
+                  <Option value="second">秒</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="采集时间开始" name="acquisitionTimeStart">
+                <DatePicker style={{ width: '100%' }} showTime format="YYYY-MM-DD HH:mm:ss" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="采集时间结束" name="acquisitionTimeEnd">
+                <DatePicker style={{ width: '100%' }} showTime format="YYYY-MM-DD HH:mm:ss" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="时区" name="timeZone">
+                <Input placeholder="例如 Asia/Shanghai, UTC+8" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="传感器/平台" name="sensorPlatform">
+                <Input placeholder="例如 Sentinel-2A / UAV / GF-2" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="数据提供方" name="provider">
+                <Input placeholder="例如 ESA / Planet / 自采" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="处理级别" name="processingLevel">
+                <Input placeholder="例如 L1C / L2A / Ortho" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item label="波段数" name="bandCount">
+                <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Form.Item label="波段名称" name="bandsInput" extra='支持 JSON 数组或逗号分隔，例如 ["R","G","B","NIR"] 或 R,G,B,NIR'>
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item label="宽度(px)" name="widthPx">
+                <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="高度(px)" name="heightPx">
+                <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="云量(%)" name="cloudCover">
+                <InputNumber min={0} max={100} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="像素大小 X" name="pixelSizeX">
+                <InputNumber style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="像素大小 Y" name="pixelSizeY">
+                <InputNumber style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="像元数据类型" name="dataType">
+                <Select allowClear>
+                  <Option value="uint8">uint8</Option>
+                  <Option value="uint16">uint16</Option>
+                  <Option value="int16">int16</Option>
+                  <Option value="int32">int32</Option>
+                  <Option value="float32">float32</Option>
+                  <Option value="float64">float64</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="NoData 值" name="nodataValue">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="许可协议" name="license">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="使用范围" name="usageScope">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item label="描述信息（可选）" name="uploadDescription">
+            <Input.TextArea rows={2} maxLength={200} showCount />
+          </Form.Item>
+          <Form.Item label="备注" name="remark">
+            <Input.TextArea rows={2} maxLength={300} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* 数据集新增/编辑 Modal */}
       <CollectionCreateForm
         formItemList={[
@@ -523,7 +806,7 @@ const DatasetCardPage = () => {
               isEdit ? [] : [{ required: true, message: '请选择影像集类型！' }]
             }
           >
-            <Select>
+            <Select disabled={isEdit && datasetFormHasImages}>
               <Option value="service">服务文件夹</Option>
               <Option value="local">本地文件夹</Option>
             </Select>
@@ -542,6 +825,7 @@ const DatasetCardPage = () => {
         ]}
         title={datasetFormTitle}
         open={datasetFormVisible}
+        initialValues={datasetInitialValues}
         onCreate={handleDatasetFormSubmit}
         onCancel={() => setDatasetFormVisible(false)}
       />

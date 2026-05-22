@@ -207,6 +207,7 @@ const Workplace = () => {
           // 管理员：获取创建的任务
           const params = {
             userArr: currentUser,
+            userId: currentState?.userid,
             isAdmin: 1,
             pageSize: 1000
           };
@@ -234,6 +235,7 @@ const Workplace = () => {
             // 获取用户创建的任务
             reqGetTaskList({
               userArr: currentUser,
+              userId: currentState?.userid,
               isAdmin: 0,
               pageSize: 1000
             }),
@@ -314,28 +316,34 @@ const Workplace = () => {
 
     if (taskStatusData.length > 0) {
       return (
-        <div className={styles.chartContainer} style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div className={styles.chartContainer} style={{ padding: '20px 0' }}>
           <Pie
             data={taskStatusData}
             angleField="value"
             colorField="type"
-            radius={0.75}
-            height={280}
+            radius={0.8}
+            innerRadius={0.58}
+            height={500}
             label={{
               type: 'outer',
-              content: '{name}: {percentage}',
+              content: '{name}\n{percentage}',
               style: {
-                fontSize: 14,
+                fontSize: 16,
                 textAlign: 'center',
-                fontWeight: 500,
+                fontWeight: 600,
               },
             }}
             legend={{
               position: 'bottom',
+              layout: 'horizontal',
               itemName: {
                 style: {
-                  fontSize: 14,
+                  fontSize: 16,
                 },
+              },
+              marker: {
+                symbol: 'circle',
+                style: { r: 6 },
               },
             }}
             tooltip={{
@@ -344,11 +352,26 @@ const Workplace = () => {
               },
             }}
             interactions={[
-              {
-                type: 'element-active',
-              },
+              { type: 'element-active' },
+              { type: 'pie-statistic-active' },
             ]}
-            color={['#1890ff', '#52c41a', '#faad14', '#f5222d']}
+            pieStyle={{
+              stroke: '#fff',
+              lineWidth: 3,
+            }}
+            color={['#1890ff', '#52c41a', '#f5222d', '#722ed1', '#faad14']}
+            statistic={{
+              title: {
+                offsetY: -10,
+                style: { fontSize: '18px', color: '#8c8c8c' },
+                content: '总任务数',
+              },
+              content: {
+                offsetY: 6,
+                style: { fontSize: '42px', fontWeight: 'bold', color: '#262626' },
+                content: taskStatusData.reduce((sum, d) => sum + d.value, 0),
+              },
+            }}
           />
         </div>
       );
@@ -454,6 +477,8 @@ const Workplace = () => {
   ];
   return (
     <PageContainer
+      breadcrumbRender={false}
+      title={false}
       content={
         <PageHeaderContent
           currentUser={{
