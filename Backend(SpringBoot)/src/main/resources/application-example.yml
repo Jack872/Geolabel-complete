@@ -11,7 +11,7 @@ spring:
 #    数据库连接 URL 后面加上 stringtype=unspecified。这会让 PG 驱动尝试自动转换类型
     url: jdbc:postgresql://localhost:5432/geolabel?stringtype=unspecified  # POSTGRESQL 数据库的 JDBC URL
     username: postgres  # 数据库用户名
-    password: 822558  # 数据库密码
+    password: 88888888  # 数据库密码
     driver-class-name: org.postgresql.Driver  # POSTGRESQL JDBC 驱动类名
     # Spring Security 配置，用于 JWT 身份验证
   security:
@@ -26,7 +26,7 @@ spring:
   redis:
     host: localhost   # Redis服务器主机名
     port: 6379        # Redis服务器端口
-    password:       # Redis服务器密码（如果有的话）
+    password: '123321'# Redis服务器密码（如果有的话）
     database: 0       # Redis数据库索引，默认是0
 
 
@@ -36,16 +36,16 @@ spring:
       max-request-size: 256MB
 
 geoserver:
-  url: http://localhost:8080/geoserver
+  url: http://localhost:8081/geoserver
   username: admin
   password: geoserver
   localCoverageDir: D:/PG-project/mapDataStore
 
 minio:
-  endpoint: http://127.0.0.1:9005 #Minio服务所在地址
-  bucketName: geoserver #存储桶名称
-  accessKey: admin #访问的key
-  secretKey: 12345678 #访问的秘钥
+  endpoint: http://127.0.0.1:9000 #Minio服务所在地址
+  bucketName: geoserver
+  accessKey: minioadmin
+  secretKey: minioadmin
   uploaddir: D:\\program\\MINIO\\data\\geoserver
 
 knife4j:
@@ -66,7 +66,14 @@ modal:
 
 sampleSet:
   path: D:\PG-project\sampleSetDataStore
-
+  tempDir: D:\PG-project\sampleSetDataStore\_tmp
+  maxTaskCount: 20
+  maxSliceCount: 10000
+  maxImageWidth: 20000
+  maxImageHeight: 20000
+  maxExportSize: 2147483648
+  maxConcurrentExportTasks: 2
+  
 python:
   service:
     url: ${PYTHON_SERVICE_URL:http://localhost:5000}

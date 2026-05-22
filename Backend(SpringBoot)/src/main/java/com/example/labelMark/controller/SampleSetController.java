@@ -44,7 +44,33 @@ public class SampleSetController {
     @Resource
     private SampleSetService sampleSetService;
 
+    @Value("${sampleSet.path}")
+    private String sampleSetPath;
 
+    private Path sampleSetBaseDir() {
+        return Paths.get(sampleSetPath).toAbsolutePath().normalize();
+    }
+
+    private Path normalizeStoredPathUnderSampleBase(String storedPath) {
+        Path base = sampleSetBaseDir();
+        Path path = Paths.get(storedPath).toAbsolutePath().normalize();
+        if (!path.startsWith(base)) {
+            throw new IllegalArgumentException("样本集路径越界");
+        }
+        return path;
+    }
+
+    private Path resolveUnderBaseDir(Path baseDir, String fileName) {
+        if (fileName == null || fileName.contains("..") || fileName.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*")) {
+            throw new IllegalArgumentException("文件名非法");
+        }
+        Path base = baseDir.toAbsolutePath().normalize();
+        Path resolved = base.resolve(fileName).normalize();
+        if (!resolved.startsWith(base)) {
+            throw new IllegalArgumentException("路径越界");
+        }
+        return resolved;
+    }
 
     /**
      * 方法一：资源生成 (IO密集型)
@@ -59,7 +85,7 @@ public class SampleSetController {
 
             // 校验
             if (taskIds == null || taskIds.isEmpty()) return ResultGenerator.getFailResult("任务ID不能为空");
-            if (datasetName == null || datasetName.isEmpty()) return ResultGenerator.getFailResult("数据集名称不能为空");
+            if (datasetName == null || datasetName.trim().isEmpty()) return ResultGenerator.getFailResult("数据集名称不能为空");
 
             // 调用 Service (包含事务)
             int count = sampleSetService.createMergedDataset(taskIds, datasetName, params);
@@ -128,8 +154,9 @@ public class SampleSetController {
         try {
             SampleSet sampleSet = sampleSetService.getById(id);
             if (sampleSet == null) return ResultGenerator.getFailResult("数据集不存在");
+            sampleSet = sampleSetService.getReadableSampleSet(id);
 
-            Path slicesDir = Paths.get(sampleSet.getImageUrl());
+            Path slicesDir = normalizeStoredPathUnderSampleBase(sampleSet.getImageUrl());
             System.out.println("[Preview/list] slicesDir=" + slicesDir.toAbsolutePath() + ", exists=" + Files.exists(slicesDir));
             if (!Files.exists(slicesDir)) return ResultGenerator.getSuccessResult(new ArrayList<>());
 
@@ -146,7 +173,7 @@ public class SampleSetController {
 
             // 读取 meta.json，构建 sliceFileName -> annotations 映射
             Map<String, List<Map<String, Object>>> annotationMap = new HashMap<>();
-            Path metaFile = Paths.get(sampleSet.getLabelUrl());
+            Path metaFile = normalizeStoredPathUnderSampleBase(sampleSet.getLabelUrl());
             if (Files.exists(metaFile)) {
                 try {
                     ObjectMapper mapper = new ObjectMapper();
@@ -179,9 +206,9 @@ public class SampleSetController {
             }
 
             return ResultGenerator.getSuccessResult(result);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            return ResultGenerator.getFailResult("读取文件列表失败");
+            return ResultGenerator.getFailResult("读取文件列表失败: " + e.getMessage());
         }
     }
 
@@ -189,16 +216,12 @@ public class SampleSetController {
     @GetMapping(value = "/image/preview")
     public void getPreviewImage(@RequestParam Integer datasetId, @RequestParam String fileName, HttpServletResponse response) {
         try {
-            SampleSet sampleSet = sampleSetService.getById(datasetId);
+            SampleSet sampleSet = sampleSetService.getReadableSampleSet(datasetId);
             if (sampleSet == null) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 return;
             }
-            if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
-            Path imagePath = Paths.get(sampleSet.getImageUrl()).resolve(fileName);
+            Path imagePath = resolveUnderBaseDir(normalizeStoredPathUnderSampleBase(sampleSet.getImageUrl()), fileName);
             System.out.println("[Preview] 请求图片路径: " + imagePath.toAbsolutePath());
             if (!Files.exists(imagePath)) {
                 System.out.println("[Preview] 文件不存在: " + imagePath.toAbsolutePath());
@@ -214,8 +237,9 @@ public class SampleSetController {
             response.setHeader("Cache-Control", "max-age=3600");
             Files.copy(imagePath, response.getOutputStream());
             response.getOutputStream().flush();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
     }
 
@@ -223,19 +247,15 @@ public class SampleSetController {
     @GetMapping(value = "/mask/preview")
     public void getPreviewMask(@RequestParam Integer datasetId, @RequestParam String fileName, HttpServletResponse response) {
         try {
-            SampleSet sampleSet = sampleSetService.getById(datasetId);
+            SampleSet sampleSet = sampleSetService.getReadableSampleSet(datasetId);
             if (sampleSet == null) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 return;
             }
-            if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
-                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                return;
-            }
             // mask 存放在 slicesDir 的上级目录的 masks/ 子目录
-            Path slicesDir = Paths.get(sampleSet.getImageUrl());
+            Path slicesDir = normalizeStoredPathUnderSampleBase(sampleSet.getImageUrl());
             Path masksDir = slicesDir.getParent().resolve("masks");
-            Path maskPath = masksDir.resolve(fileName);
+            Path maskPath = resolveUnderBaseDir(masksDir, fileName);
             if (!Files.exists(maskPath)) {
                 response.setStatus(HttpServletResponse.SC_NOT_FOUND);
                 return;
@@ -244,17 +264,21 @@ public class SampleSetController {
             response.setHeader("Cache-Control", "max-age=3600");
             Files.copy(maskPath, response.getOutputStream());
             response.getOutputStream().flush();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
     }
 
     @GetMapping("/getProv/{id}")
     public Result getDatasetProvenance(@PathVariable Integer id) {
 
-        Map<String, Object> result = sampleSetService.getDatasetProvenance(id);
-
-        return ResultGenerator.getSuccessResult(result);
+        try {
+            Map<String, Object> result = sampleSetService.getDatasetProvenance(id);
+            return ResultGenerator.getSuccessResult(result);
+        } catch (Exception e) {
+            return ResultGenerator.getFailResult(e.getMessage());
+        }
     }
 
     /**
@@ -262,11 +286,9 @@ public class SampleSetController {
      */
     @GetMapping("/list")
     public Result list(@RequestParam(defaultValue = "1") Integer pageNum,
-                       @RequestParam(defaultValue = "10") Integer pageSize) {
-        // 使用 MyBatis Plus 的分页
-        Page<SampleSet> page = new Page<>(pageNum, pageSize);
-        IPage<SampleSet> result = sampleSetService.page(page,
-                new QueryWrapper<SampleSet>().orderByDesc("create_date"));
+                       @RequestParam(defaultValue = "10") Integer pageSize,
+                       @RequestParam(required = false) String name) {
+        IPage<SampleSet> result = sampleSetService.listVisibleSampleSets(pageNum, pageSize, name);
 
         return ResultGenerator.getSuccessResult(result);
     }

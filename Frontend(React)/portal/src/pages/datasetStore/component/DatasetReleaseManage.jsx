@@ -8,6 +8,7 @@ import {
   FileZipOutlined, UserOutlined, CalendarOutlined, NumberOutlined, PictureOutlined
 } from '@ant-design/icons';
 import { reqGetSampleSetList, reqDeleteSampleSet, reqExportSampleSet, reqGetSampleSliceList } from '@/services/sampleSet/api';
+import { getCookie } from '@/utils/cookie';
 import moment from 'moment';
 
 const { Meta } = Card;
@@ -23,6 +24,12 @@ const getCategoryColor = (name) => {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length];
+};
+
+const withPreviewToken = (url) => {
+  const token = getCookie('TOKEN');
+  if (!token) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
 };
 
 // slice 文件名 → mask 文件名：slice_1_0.jpg → mask_1_0.png
@@ -344,7 +351,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
   // 假设后端接口为 /wegismarkapi/sampleSet/image?path=xxx
   const getSliceImageUrl = (fileName) => {
     if (!currentDataset || !fileName) return '';
-    return `/wegismarkapi/sampleSet/image/preview?datasetId=${currentDataset.id}&fileName=${encodeURIComponent(fileName)}`;
+    return withPreviewToken(`/wegismarkapi/sampleSet/image/preview?datasetId=${currentDataset.id}&fileName=${encodeURIComponent(fileName)}`);
   };
 
   // --- 渲染 ---
@@ -407,10 +414,10 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                     {coverSlicesMap[item.id] && coverSlicesMap[item.id].length > 0 ? (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 1, width: '100%', height: '100%' }}>
                         {coverSlicesMap[item.id].slice(0, 4).map((slice, idx) => {
-                          const imgUrl = `/wegismarkapi/sampleSet/image/preview?datasetId=${item.id}&fileName=${encodeURIComponent(slice.fileName)}`;
+                          const imgUrl = withPreviewToken(`/wegismarkapi/sampleSet/image/preview?datasetId=${item.id}&fileName=${encodeURIComponent(slice.fileName)}`);
                           const maskFileName = toMaskFileName(slice.fileName);
                           const maskUrl = maskFileName
-                            ? `/wegismarkapi/sampleSet/mask/preview?datasetId=${item.id}&fileName=${encodeURIComponent(maskFileName)}`
+                            ? withPreviewToken(`/wegismarkapi/sampleSet/mask/preview?datasetId=${item.id}&fileName=${encodeURIComponent(maskFileName)}`)
                             : null;
                           return item.taskType === '地物分类' ? (
                             <SegCoverCell key={idx} imgSrc={imgUrl} maskSrc={maskUrl} />
@@ -456,7 +463,12 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                       <span title={item.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>
                         {item.name}
                       </span>
-                      <Tag color="blue" style={{ marginRight: 0 }}>{item.taskType || 'DET'}</Tag>
+                      <Space size={4}>
+                        <Tag color={item.isPublic ? 'green' : 'default'} style={{ marginRight: 0 }}>
+                          {item.isPublic ? '公开' : '私有'}
+                        </Tag>
+                        <Tag color="blue" style={{ marginRight: 0 }}>{item.taskType || 'DET'}</Tag>
+                      </Space>
                     </div>
                   }
                   description={
@@ -524,7 +536,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                       const imgUrl = getSliceImageUrl(slice.fileName);
                       const maskFileName = toMaskFileName(slice.fileName);
                       const maskUrl = maskFileName
-                        ? `/wegismarkapi/sampleSet/mask/preview?datasetId=${currentDataset.id}&fileName=${encodeURIComponent(maskFileName)}`
+                        ? withPreviewToken(`/wegismarkapi/sampleSet/mask/preview?datasetId=${currentDataset.id}&fileName=${encodeURIComponent(maskFileName)}`)
                         : null;
 
                       return (

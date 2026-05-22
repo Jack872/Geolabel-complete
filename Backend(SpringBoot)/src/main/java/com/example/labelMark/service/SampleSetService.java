@@ -1,5 +1,6 @@
 package com.example.labelMark.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.labelMark.domain.DatasetStore;
 import com.example.labelMark.domain.SampleSet;
@@ -18,6 +19,10 @@ import java.util.Map;
 public interface SampleSetService extends IService<SampleSet> {
 
     int createMergedDataset(List<Integer> taskIds, String datasetName, Map<String, Object> params) throws IOException;
+
+    IPage<SampleSet> listVisibleSampleSets(Integer pageNum, Integer pageSize, String name);
+
+    SampleSet getReadableSampleSet(Integer id);
 
     void deleteSampleSets(List<Integer> ids);
 

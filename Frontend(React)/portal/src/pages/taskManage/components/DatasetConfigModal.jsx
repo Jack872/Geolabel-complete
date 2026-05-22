@@ -19,9 +19,7 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
       onOk={() => {
         form.validateFields().then((values) => {
           onCreate(values);
-        }).catch((info) => {
-          console.log('Validate Failed:', info);
-        });
+        }).catch(() => {});
       }}
     >
       <Form
@@ -35,6 +33,7 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
           targetSize: 256,   // 默认 256x256
           expandRatio: 0.1,  // 默认外扩 10%
           forceSquare: true, // 默认补黑边成正方形
+          isPublic: false,
         }}
       >
         <div style={{ marginBottom: 16, color: '#666', background: '#f5f5f5', padding: '8px 12px', borderRadius: '4px' }}>
@@ -47,11 +46,10 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
               name="datasetName"
               label="数据集名称"
               rules={[
-                { required: true, message: '请输入数据集名称' },
-                { pattern: /^[a-zA-Z0-9_\-]+$/, message: '仅支持字母、数字、下划线和中划线' }
+                { required: true, message: '请输入数据集名称' }
               ]}
             >
-              <Input placeholder="例如: Vehicle_Train_20231027" />
+              <Input placeholder="例如: 车辆训练集_20231027" />
             </Form.Item>
           </Col>
         </Row>
@@ -63,6 +61,25 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
               label="描述备注"
             >
               <Input.TextArea rows={2} placeholder="请输入数据集描述..." />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={24}>
+            <Form.Item
+              name="isPublic"
+              label={
+                <span>
+                  公开样本集&nbsp;
+                  <Tooltip title="公开后，所有登录用户都可以查看、预览和导出该样本集，但只有创建者和管理员可以删除。">
+                    <QuestionCircleOutlined style={{ color: '#999' }} />
+                  </Tooltip>
+                </span>
+              }
+              valuePropName="checked"
+            >
+              <Switch checkedChildren="公开" unCheckedChildren="私有" />
             </Form.Item>
           </Col>
         </Row>

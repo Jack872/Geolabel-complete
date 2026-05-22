@@ -89,9 +89,6 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 .antMatchers("/user/login", "/user/register").permitAll()
                 // 允许访问缩略图接口
                 .antMatchers("/dataset/thumbnail").permitAll()
-                // 允许访问样本图像预览接口
-                .antMatchers("/sampleSet/image/preview/**").permitAll()
-                .antMatchers("/sampleSet/mask/preview/**").permitAll()
                 // 允许访问原始影像预览接口
                 .antMatchers("/datasetStore/getSampleOriginalImage").permitAll()
                 // 允许访问静态资源

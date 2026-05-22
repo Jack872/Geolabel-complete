@@ -1,8 +1,10 @@
 package com.example.labelMark.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.example.labelMark.DTO.TDML.TdmlExportOptions;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.labelMark.DTO.prov.ProvEntityRef;
 import com.example.labelMark.DTO.sample.DatasetMeta;
 import com.example.labelMark.DTO.sample.MetaCategory;
@@ -30,12 +32,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.FileSystemUtils;
 
 import javax.annotation.Resource;
+import javax.annotation.PostConstruct;
 import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletResponse;
 import java.awt.image.BufferedImage;
@@ -51,6 +55,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import java.util.zip.ZipOutputStream;
 
@@ -63,6 +68,7 @@ import java.util.zip.ZipOutputStream;
 public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet> implements SampleSetService {
     private static final Set<String> QUALITY_PROVENANCE_TYPES = new HashSet<>(Arrays.asList("QUALITY_EVALUATE", "QUALITY_REFERENCE_EVALUATE"));
     private static final int MAX_QUALITY_PROVENANCE_RECORDS = 3;
+    private Semaphore exportSemaphore;
 
     @Autowired
     private TaskService taskService;
@@ -88,11 +94,172 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     private static final Logger logger = LoggerFactory.getLogger(SampleSetServiceImpl.class);
     @Value("${sampleSet.path}")
     private String sampleSetPath;
+    @Value("${sampleSet.maxTaskCount:20}")
+    private Integer maxTaskCount;
+    @Value("${sampleSet.maxSliceCount:10000}")
+    private Integer maxSliceCount;
+    @Value("${sampleSet.maxImageWidth:20000}")
+    private Integer maxImageWidth;
+    @Value("${sampleSet.maxImageHeight:20000}")
+    private Integer maxImageHeight;
+    @Value("${sampleSet.maxExportSize:2147483648}")
+    private Long maxExportSize;
+    @Value("${sampleSet.maxConcurrentExportTasks:2}")
+    private Integer maxConcurrentExportTasks;
+    @Value("${sampleSet.tempDir:}")
+    private String sampleSetTempDir;
+
+    @PostConstruct
+    public void initSampleSetLimits() {
+        int permits = maxConcurrentExportTasks == null || maxConcurrentExportTasks <= 0 ? 2 : maxConcurrentExportTasks;
+        this.exportSemaphore = new Semaphore(permits);
+    }
+
+    private LoginUser currentLoginUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof LoginUser)) {
+            throw new RuntimeException("用户未登录");
+        }
+        return (LoginUser) authentication.getPrincipal();
+    }
+
+    private String currentUsername() {
+        return currentLoginUser().getSysUser().getUsername();
+    }
+
+    private String currentUserId() {
+        Integer userId = currentLoginUser().getSysUser().getUserid();
+        return userId == null ? null : userId.toString();
+    }
+
+    private boolean currentUserIsAdmin() {
+        Integer isAdmin = currentLoginUser().getSysUser().getIsadmin();
+        return isAdmin != null && isAdmin == 1;
+    }
+
+    private boolean isCreator(SampleSet sampleSet) {
+        if (sampleSet == null || sampleSet.getCreator() == null) return false;
+        String creator = sampleSet.getCreator();
+        return creator.equals(currentUsername()) || creator.equals(currentUserId());
+    }
+
+    private boolean canReadSampleSet(SampleSet sampleSet) {
+        return currentUserIsAdmin() || isCreator(sampleSet) || Boolean.TRUE.equals(sampleSet.getIsPublic());
+    }
+
+    private boolean canWriteSampleSet(SampleSet sampleSet) {
+        return currentUserIsAdmin() || isCreator(sampleSet);
+    }
+
+    private Path sampleSetBaseDir() throws IOException {
+        Path base = Paths.get(sampleSetPath).toAbsolutePath().normalize();
+        Files.createDirectories(base);
+        return base;
+    }
+
+    private Path exportTempBaseDir() throws IOException {
+        if (sampleSetTempDir != null && !sampleSetTempDir.trim().isEmpty()) {
+            Path configured = Paths.get(sampleSetTempDir).toAbsolutePath().normalize();
+            Files.createDirectories(configured);
+            return configured;
+        }
+        Path base = sampleSetBaseDir().resolve("_tmp").normalize();
+        Files.createDirectories(base);
+        return base;
+    }
+
+    private String sanitizeDatasetName(String datasetName) {
+        if (datasetName == null) {
+            throw new IllegalArgumentException("数据集名称不能为空");
+        }
+        String value = datasetName.trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("数据集名称不能为空");
+        }
+        if (value.contains("..") || value.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*")) {
+            throw new IllegalArgumentException("数据集名称包含非法字符");
+        }
+        if (!value.matches("[\\p{IsHan}A-Za-z0-9_\\- ]+")) {
+            throw new IllegalArgumentException("数据集名称仅支持中文、英文、数字、空格、下划线和短横线");
+        }
+        return value;
+    }
+
+    private Path resolveUnderBaseDir(Path baseDir, String relativePath) {
+        Path normalizedBase = baseDir.toAbsolutePath().normalize();
+        Path resolved = normalizedBase.resolve(relativePath).normalize();
+        if (!resolved.startsWith(normalizedBase)) {
+            throw new IllegalArgumentException("路径越界");
+        }
+        return resolved;
+    }
+
+    private Path normalizeStoredPathUnderSampleBase(String storedPath) throws IOException {
+        if (storedPath == null || storedPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("样本集路径为空");
+        }
+        Path base = sampleSetBaseDir();
+        Path path = Paths.get(storedPath).toAbsolutePath().normalize();
+        if (!path.startsWith(base)) {
+            throw new IllegalArgumentException("样本集路径越界");
+        }
+        return path;
+    }
+
+    private void safeDeleteDirectory(Path targetDir) throws IOException {
+        Path base = sampleSetBaseDir();
+        Path target = targetDir.toAbsolutePath().normalize();
+        if (!target.startsWith(base) || target.equals(base)) {
+            throw new IllegalArgumentException("拒绝删除样本集根目录之外的路径");
+        }
+        if (Files.exists(target)) {
+            FileSystemUtils.deleteRecursively(target);
+        }
+    }
+
+    private void validateImageSize(BufferedImage image) {
+        if (image == null) return;
+        if (image.getWidth() > maxImageWidth || image.getHeight() > maxImageHeight) {
+            throw new IllegalArgumentException("图像尺寸超过限制");
+        }
+    }
+
+    private void validateSliceCount(int sliceCount) {
+        if (sliceCount > maxSliceCount) {
+            throw new IllegalArgumentException("样本切片数量超过限制");
+        }
+    }
+
+    private long directorySize(Path dir) throws IOException {
+        if (dir == null || !Files.exists(dir)) return 0L;
+        try (java.util.stream.Stream<Path> paths = Files.walk(dir)) {
+            return paths.filter(Files::isRegularFile).mapToLong(path -> {
+                try {
+                    return Files.size(path);
+                } catch (IOException e) {
+                    return 0L;
+                }
+            }).sum();
+        }
+    }
     @Transactional(rollbackFor = Exception.class)
     public int createMergedDataset(List<Integer> taskIds, String datasetName, Map<String, Object> params) throws IOException {
         ImageIO.setUseCache(false);
+        if (taskIds == null || taskIds.isEmpty()) {
+            throw new IllegalArgumentException("任务ID不能为空");
+        }
+        if (taskIds.size() > maxTaskCount) {
+            throw new IllegalArgumentException("任务数量超过限制");
+        }
+        String safeDatasetName = sanitizeDatasetName(datasetName);
+        String username = currentUsername();
+        String operatorId = currentUserId() != null ? currentUserId() : username;
+        boolean isPublic = params != null && Boolean.parseBoolean(String.valueOf(params.getOrDefault("isPublic", false)));
         // 1. 准备路径
-        Path outputDir = Paths.get(sampleSetPath + File.separator + datasetName);
+        Path outputDir = resolveUnderBaseDir(sampleSetBaseDir(), safeDatasetName);
+        if (Files.exists(outputDir)) {
+            throw new IllegalArgumentException("数据集名称已存在");
+        }
         Path imageDir = outputDir.resolve("images");
         Path slicesDir = outputDir.resolve("slices");
         Path metaJsonPath = outputDir.resolve("project_meta.json");
@@ -101,7 +268,6 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             SampleUtils.createDirs(imageDir, slicesDir);
 
             // 获取参数
-            String username = params.get("username") != null ? params.get("username").toString() : "system";
             String description = params.get("description") != null ? params.get("description").toString() : "";
             double expandRatio = params.getOrDefault("expandRatio", 0.1) instanceof Number ? ((Number) params.get("expandRatio")).doubleValue() : 0.1;
             boolean forceSquare = params.getOrDefault("forceSquare", true) instanceof Boolean ? (Boolean) params.get("forceSquare") : true;
@@ -109,7 +275,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             if (targetSize != null && targetSize <= 0) targetSize = null;
 
             DatasetMeta projectMeta = new DatasetMeta();
-            projectMeta.setDatasetName(datasetName);
+            projectMeta.setDatasetName(safeDatasetName);
             projectMeta.setCreateTime(new Date().toString());
 
             Map<String, MetaCategory> categoryMap = new HashMap<>();
@@ -146,6 +312,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                                 effectiveTask, marks, taskId, taskItemId, sourceKey, params, targetSize,
                                 slicesDir, outputDir, projectMeta, categoryMap,
                                 globalObjectId);
+                        validateSliceCount(totalSliceCount);
                         globalObjectId = projectMeta.getImages().stream()
                                 .flatMap(img -> img.getObjects().stream())
                                 .mapToInt(MetaObject::getId).max().orElse(globalObjectId) + 1;
@@ -159,6 +326,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                         Path largeFilePath = imageDir.resolve(largeFileName);
                         sourceImage = loadTaskSourceImage(effectiveTask, taskId, taskItemId);
                         if (sourceImage == null) continue;
+                        validateImageSize(sourceImage);
                         if (!largeFilePath.toFile().exists()) {
                             ImageIO.write(sourceImage, "jpg", largeFilePath.toFile());
                         }
@@ -187,6 +355,9 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
                         double height = 2048;
                         double width = Math.ceil(((maxx - minx) / (maxy - miny)) * height);
+                        if (width > maxImageWidth || height > maxImageHeight) {
+                            throw new IllegalArgumentException("图像尺寸超过限制");
+                        }
                         String bboxStr = String.format("%f,%f,%f,%f", minx, miny, maxx, maxy);
                         largeFileName = "train_" + sourceKey + ".tif";
                         Path largeFilePath = imageDir.resolve(largeFileName);
@@ -214,6 +385,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
                         sourceImage = ImageIO.read(largeFilePath.toFile());
                         if (sourceImage == null) continue;
+                        validateImageSize(sourceImage);
 
                         MetaImage metaImage = new MetaImage();
                         metaImage.setId(taskItemId != null ? taskItemId : taskId);
@@ -222,34 +394,14 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
                         for (int i = 0; i < segmentationArr.size(); i++) {
                             Map<String, Object> segItem = segmentationArr.get(i);
-                            Integer typeId = (Integer) segItem.get("type_id");
-                            String typeName = typeService.getTypeNameById(typeId);
-                            String typeColor = (String) segItem.get("type_color");
+                            List<Double> rawBbox = SampleUtils.normalizeBbox(segItem.get("bbox"));
+                            if (rawBbox == null || rawBbox.size() < 4) continue;
 
-                            if (!categoryMap.containsKey(typeName)) {
-                                MetaCategory category = new MetaCategory();
-                                category.setId(typeId);
-                                category.setName(typeName);
-                                category.setColor(typeColor);
-                                categoryMap.put(typeName, category);
-                            }
-                            int finalNextCategoryId = nextCategoryId;
-                            MetaCategory cat = categoryMap.computeIfAbsent(typeName, k -> {
-                                MetaCategory c = new MetaCategory();
-                                c.setId(finalNextCategoryId);
-                                c.setName(typeName);
-                                c.setColor(typeColor);
-                                return c;
-                            });
-                            if (cat.getId() == nextCategoryId) nextCategoryId++;
-
-                            List<Double> rawBbox = (List<Double>) segItem.get("bbox");
                             boolean smallObjectOptimize = params.get("smallObjectOptimize") != null
                                     ? Boolean.parseBoolean(params.get("smallObjectOptimize").toString()) : true;
                             double maxSide = Math.max((double) rawBbox.get(2), (double) rawBbox.get(3));
 
                             SampleUtils.CropRect cropRect;
-                            double scale = 1.0;
                             int finalW;
                             int finalH;
                             if (targetSize != null && smallObjectOptimize && maxSide < targetSize) {
@@ -261,7 +413,6 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                                 if (targetSize != null) {
                                     finalW = targetSize;
                                     finalH = targetSize;
-                                    scale = (double) targetSize / cropRect.getW();
                                 } else {
                                     finalW = cropRect.getFinalW();
                                     finalH = cropRect.getFinalH();
@@ -270,25 +421,57 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
                             String sliceName = "slice_" + sourceKey + "_" + i + ".jpg";
                             Path slicePath = slicesDir.resolve(sliceName);
+                            double scaleX = (double) finalW / cropRect.getW();
+                            double scaleY = (double) finalH / cropRect.getH();
+                            List<MetaObject> sliceObjects = new ArrayList<>();
+
+                            for (Map<String, Object> candidate : segmentationArr) {
+                                Integer typeId = (Integer) candidate.get("type_id");
+                                if (typeId == null) continue;
+                                String typeName = typeService.getTypeNameById(typeId);
+                                String typeColor = (String) candidate.get("type_color");
+                                if (typeName == null) continue;
+
+                                if (!categoryMap.containsKey(typeName)) {
+                                    MetaCategory category = new MetaCategory();
+                                    category.setId(typeId);
+                                    category.setName(typeName);
+                                    category.setColor(typeColor);
+                                    categoryMap.put(typeName, category);
+                                }
+                                MetaCategory cat = categoryMap.get(typeName);
+
+                                List<List<Double>> originalPoly = SampleUtils.normalizeSegmentationRings(candidate.get("segmentation"));
+                                List<List<Double>> localPoly = SampleUtils.clipSegmentationToRect(
+                                        originalPoly,
+                                        cropRect.getX(), cropRect.getY(), cropRect.getW(), cropRect.getH(),
+                                        scaleX, scaleY, finalW, finalH);
+                                List<Double> localBbox = SampleUtils.calculateBboxFromSegmentation(localPoly);
+                                if (!SampleUtils.isValidDetectionBbox(localBbox)) continue;
+
+                                MetaObject obj = new MetaObject();
+                                obj.setId(globalObjectId++);
+                                obj.setCategoryId(cat.getId());
+                                obj.setCategoryName(cat.getName());
+                                obj.setSliceFileName(sliceName);
+                                obj.setWidth(finalW);
+                                obj.setHeight(finalH);
+                                obj.setBbox(localBbox);
+                                obj.setSegmentation(localPoly);
+                                sliceObjects.add(obj);
+                            }
+
+                            if (sliceObjects.isEmpty()) {
+                                continue;
+                            }
+
                             if (!slicePath.toFile().exists()) {
                                 SampleUtils.cropAndSave(sourceImage, cropRect, finalW, finalH, slicePath.toFile());
                             }
 
-                            List<List<Double>> originalPoly = (List<List<Double>>) segItem.get("segmentation");
-                            List<List<Double>> localPoly = SampleUtils.transformPoly(originalPoly, cropRect.getX(), cropRect.getY(), scale);
-                            List<Double> localBbox = SampleUtils.transformBbox(rawBbox, cropRect.getX(), cropRect.getY(), scale);
-
-                            MetaObject obj = new MetaObject();
-                            obj.setId(globalObjectId++);
-                            obj.setCategoryId(cat.getId());
-                            obj.setCategoryName(cat.getName());
-                            obj.setSliceFileName(sliceName);
-                            obj.setWidth(finalW);
-                            obj.setHeight(finalH);
-                            obj.setBbox(localBbox);
-                            obj.setSegmentation(localPoly);
-                            metaImage.getObjects().add(obj);
+                            metaImage.getObjects().addAll(sliceObjects);
                             totalSliceCount++;
+                            validateSliceCount(totalSliceCount);
                         }
                         sourceImage.flush();
                         projectMeta.getImages().add(metaImage);
@@ -301,7 +484,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
             // ================== 数据库记录 ==================
             SampleSet sampleSet = new SampleSet();
-            sampleSet.setName(datasetName);
+            sampleSet.setName(safeDatasetName);
             sampleSet.setCreator(username);
             sampleSet.setDescription(description);
             sampleSet.setTaskIds(taskIds.toString());
@@ -315,6 +498,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             sampleSet.setType(allTypeNames);
             sampleSet.setTaskType(taskType);
             sampleSet.setCrs("EPSG:3857");
+            sampleSet.setIsPublic(isPublic);
 
             boolean saveResult = this.save(sampleSet);
             if (!saveResult) {
@@ -323,8 +507,6 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
             // ================== 新增：记录 PROV 溯源 (多对一合并) ==================
             try {
-                String operatorId = params.get("userId") != null ? params.get("userId").toString() : username;
-
                 // 1. 将所有 taskId 转换为输入实体列表
                 List<ProvEntityRef> inputTasks = taskIds.stream()
                         .map(id -> ProvEntityRef.of(id.toString(), "TASK", "源任务#" + id))
@@ -335,7 +517,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                         ProvEntityRef.of(
                                 sampleSet.getId().toString(),
                                 "SAMPLE_SET",
-                                "数据集：" + datasetName
+                                "数据集：" + safeDatasetName
                         )
                 );
 
@@ -356,7 +538,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                         provParams          // 参数
                 );
             } catch (Exception e) {
-                log.warn("数据集合并溯源记录失败: " + e.getMessage());
+                logger.warn("数据集合并溯源记录失败: " + e.getMessage());
             }
             // ===================================================================
 
@@ -376,23 +558,62 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public IPage<SampleSet> listVisibleSampleSets(Integer pageNum, Integer pageSize, String name) {
+        currentLoginUser();
+        Page<SampleSet> page = new Page<>(pageNum == null ? 1 : pageNum, pageSize == null ? 10 : pageSize);
+        QueryWrapper<SampleSet> wrapper = new QueryWrapper<>();
+        if (!currentUserIsAdmin()) {
+            String username = currentUsername();
+            String userId = currentUserId();
+            wrapper.and(q -> {
+                q.eq("creator", username);
+                if (userId != null) {
+                    q.or().eq("creator", userId);
+                }
+                q.or().eq("is_public", true);
+            });
+        }
+        if (name != null && !name.trim().isEmpty()) {
+            wrapper.like("name", name.trim());
+        }
+        wrapper.orderByDesc("create_date");
+        return this.page(page, wrapper);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SampleSet getReadableSampleSet(Integer id) {
+        SampleSet sampleSet = this.getById(id);
+        if (sampleSet == null) {
+            throw new RuntimeException("样本集不存在");
+        }
+        if (!canReadSampleSet(sampleSet)) {
+            throw new RuntimeException("无权访问该样本集");
+        }
+        return sampleSet;
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteSampleSets(List<Integer> ids) {
+        currentLoginUser();
         List<SampleSet> sets = this.listByIds(ids);
         if (sets.isEmpty()) return;
 
         // 1. 删除物理文件
         for (SampleSet s : sets) {
+            if (!canWriteSampleSet(s)) {
+                throw new RuntimeException("无权删除样本集: " + s.getName());
+            }
             // 假设 s.getImageUrl() 指向的是 .../slices 目录
             // 我们需要删除上一级目录，即数据集根目录
             try {
-                Path slicesDir = Paths.get(s.getImageUrl());
+                Path slicesDir = normalizeStoredPathUnderSampleBase(s.getImageUrl());
                 Path datasetRoot = slicesDir.getParent(); // 获取数据集根目录
-                if (Files.exists(datasetRoot)) {
-                    FileSystemUtils.deleteRecursively(datasetRoot);
-                }
+                safeDeleteDirectory(datasetRoot);
             } catch (Exception e) {
-                System.err.println("物理文件删除失败: " + s.getName());
+                throw new RuntimeException("物理文件删除失败: " + s.getName() + ", " + e.getMessage(), e);
             }
         }
 
@@ -426,21 +647,27 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     public Map<String, Object> exportSampleSet(Integer id, String format, Map<String, Object> exportOptions) throws Exception {
         SampleSet sampleSet = this.getById(id);
         if (sampleSet == null) throw new RuntimeException("样本集不存在");
+        if (!canReadSampleSet(sampleSet)) throw new RuntimeException("无权访问该样本集");
 
-        Path slicesDir = Paths.get(sampleSet.getImageUrl());
-        Path metaFile = Paths.get(sampleSet.getLabelUrl());
+        Path slicesDir = normalizeStoredPathUnderSampleBase(sampleSet.getImageUrl());
+        Path metaFile = normalizeStoredPathUnderSampleBase(sampleSet.getLabelUrl());
         if (!Files.exists(metaFile)) throw new RuntimeException("元数据文件丢失");
 
         ObjectMapper mapper = new ObjectMapper();
         DatasetMeta meta = mapper.readValue(metaFile.toFile(), DatasetMeta.class);
 
-        Path tempRoot = Paths.get(sampleSetPath).resolve("temp_download_" + UUID.randomUUID());
-        Files.createDirectories(tempRoot);
-        Path tempImages = tempRoot.resolve("images");
-        Files.createDirectories(tempImages);
+        Path tempBase = exportTempBaseDir();
+        Path tempRoot = tempBase.resolve("temp_download_" + UUID.randomUUID()).normalize();
+        Path zipPath = tempBase.resolve("export_" + UUID.randomUUID() + ".zip").normalize();
         boolean tdmlFormat = "DML".equalsIgnoreCase(format) || "TDML".equalsIgnoreCase(format);
+        if (!exportSemaphore.tryAcquire()) {
+            throw new RuntimeException("当前导出任务过多，请稍后再试");
+        }
 
         try {
+            Files.createDirectories(tempRoot);
+            Path tempImages = tempRoot.resolve("images");
+            Files.createDirectories(tempImages);
             if (tdmlFormat) {
                 SampleUtils.generateTrainingTdmlPackage(
                         sampleSet.getId(),
@@ -456,9 +683,9 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                     for (MetaObject obj : bigImg.getObjects()) {
                         String fileName = obj.getSliceFileName();
                         if (!copiedFiles.contains(fileName)) {
-                            Path source = slicesDir.resolve(fileName);
+                            Path source = resolveUnderBaseDir(slicesDir, fileName);
                             if (Files.exists(source)) {
-                                Files.copy(source, tempImages.resolve(fileName));
+                                Files.copy(source, resolveUnderBaseDir(tempImages, fileName));
                                 copiedFiles.add(fileName);
                             }
                         }
@@ -471,8 +698,8 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
             // 3. 【解耦调用】生成深度溯源元文件并放入打包目录
             String taskIdsStr = sampleSet.getTaskIds().replace("[", "").replace("]", "").replace(" ", "");
-            List<ProvActivity> history = null;
-            if (!taskIdsStr.isEmpty()) {
+                List<ProvActivity> history = null;
+                if (!taskIdsStr.isEmpty()) {
                 List<String> taskIdList = Arrays.asList(taskIdsStr.split(","));
                 String sqlInIds = "'" + String.join("','", taskIdList) + "'";
                 // 2. 【核心修改】：通过连接 prov_entity 表来查询业务 ID
@@ -491,10 +718,16 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             provUtils.generateProvMetadataFile(sampleSet, format, meta, tempRoot, history);
 
             String zipFileName = sampleSet.getName() + "_" + format + ".zip";
-            Path zipPath = tempRoot.resolve(zipFileName);
+            if (directorySize(tempRoot) > maxExportSize) {
+                throw new RuntimeException("导出内容大小超过限制");
+            }
             try (OutputStream fileOut = Files.newOutputStream(zipPath);
                  ZipOutputStream zos = new ZipOutputStream(fileOut)) {
                 SampleUtils.compressDir(tempRoot, sampleSet.getName(), zos);
+            }
+            long zipSize = Files.size(zipPath);
+            if (zipSize > maxExportSize) {
+                throw new RuntimeException("导出文件大小超过限制");
             }
             String objectKey = "datasets/" + sampleSet.getTaskIds().replaceAll("[\\[\\]\\s]", "") + "/" + sampleSet.getId() + "/" + zipFileName;
             try (InputStream zipIn = Files.newInputStream(zipPath)) {
@@ -502,7 +735,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                         PutObjectArgs.builder()
                                 .bucket(minioConfig.getBucketName())
                                 .object(objectKey)
-                                .stream(zipIn, Files.size(zipPath), -1)
+                                .stream(zipIn, zipSize, -1)
                                 .contentType("application/zip")
                                 .build()
                 );
@@ -550,6 +783,8 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
         } finally {
             FileSystemUtils.deleteRecursively(tempRoot);
+            Files.deleteIfExists(zipPath);
+            exportSemaphore.release();
         }
     }
 
@@ -561,6 +796,9 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
         // 1. 获取样本集信息
         SampleSet sampleSet = getById(id);
         if (sampleSet == null) return result;
+        if (!canReadSampleSet(sampleSet)) {
+            throw new RuntimeException("无权访问该样本集溯源");
+        }
 
         // 2. 准备业务 ID 列表 (Task IDs + SampleSet ID)
         String taskIdsStr = sampleSet.getTaskIds().replace("[", "").replace("]", "").replace(" ", "");
@@ -1004,6 +1242,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                 System.err.println("[Seg] 本地图片不存在或不可读: " + task.getLocalImagePath());
                 return 0;
             }
+            validateImageSize(sourceImage);
             imgW = sourceImage.getWidth();
             imgH = sourceImage.getHeight();
             for (Mark mark : marks) {
@@ -1034,6 +1273,9 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
 
             imgH = 2048;
             imgW = (int) Math.ceil(((maxx - minx) / (maxy - miny)) * imgH);
+            if (imgW > maxImageWidth || imgH > maxImageHeight) {
+                throw new IllegalArgumentException("图像尺寸超过限制");
+            }
             String bboxStr = String.format("%f,%f,%f,%f", minx, miny, maxx, maxy);
 
             Path imageDir = outputDir.resolve("images");
@@ -1047,6 +1289,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             }
             sourceImage = ImageIO.read(largeFilePath.toFile());
             if (sourceImage == null) return 0;
+            validateImageSize(sourceImage);
 
             Map<String, Double> tifParams = new HashMap<>();
             tifParams.put("minx", Math.abs(minx));

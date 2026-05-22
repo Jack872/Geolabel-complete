@@ -98,7 +98,7 @@ const TaskManage = () => {
         taskIds: taskIds,
         datasetName: values.datasetName,
         description: values.description,
-        username: initialState.currentState.currentUser,
+        isPublic: values.isPublic || false,
 
         // 2. 新增裁剪参数 (与后端 Map key 对应)
         targetSize: values.targetSize,   // Integer

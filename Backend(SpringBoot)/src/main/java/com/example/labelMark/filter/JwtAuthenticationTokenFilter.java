@@ -21,6 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -45,6 +46,12 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         //获取token，前端header首字母自动大写
         String token = request.getHeader("Token");
+        if (StrUtil.isBlank(token) && isSampleSetPreviewRequest(request)) {
+            token = request.getParameter("token");
+        }
+        if (StrUtil.isBlank(token) && isSampleSetPreviewRequest(request)) {
+            token = getCookieToken(request);
+        }
         if (StrUtil.isBlank(token)) {
             //放行
             filterChain.doFilter(request, response);
@@ -99,5 +106,21 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(authenticationToken);
         //放行
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isSampleSetPreviewRequest(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && (uri.contains("/sampleSet/image/preview") || uri.contains("/sampleSet/mask/preview"));
+    }
+
+    private String getCookieToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) return null;
+        for (Cookie cookie : cookies) {
+            if ("TOKEN".equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 }

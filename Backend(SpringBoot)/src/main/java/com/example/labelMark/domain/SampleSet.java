@@ -68,6 +68,10 @@ public class SampleSet implements Serializable {
     @TableField("crs")
     private String crs;
 
+    @ApiModelProperty("是否公开")
+    @TableField("is_public")
+    private Boolean isPublic;
+
     @ApiModelProperty("创建日期")
     @TableField("create_date")
     private Date createDate; // 类型调整为Date
