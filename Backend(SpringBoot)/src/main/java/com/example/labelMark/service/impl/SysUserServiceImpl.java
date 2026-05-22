@@ -95,15 +95,10 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
     }
 
     @Override
-    public Page<SysUser> getUsersPage(Integer current, Integer pageSize, Integer userid, String username, Integer isAdmin) {
+    public Page<SysUser> getUsersPage(Integer current, Integer pageSize, String userid, String username, Integer isAdmin) {
         Page<SysUser> userPage = new Page<SysUser>().setCurrent(current).setSize(pageSize);
         QueryWrapper<SysUser> SysUserQueryWrapper = new QueryWrapper<>();
-        if (ObjectUtil.isNotNull(userid)) {
-            SysUserQueryWrapper.eq("user_id", userid);  // Changed from "user_id" to "user_id"
-        }
-        if (StrUtil.isNotBlank(username)) {
-            SysUserQueryWrapper.eq("username", username);
-        }
+        applyUserSearchFilters(SysUserQueryWrapper, userid, username);
 //        SysUserQueryWrapper.eq("is_admin", isAdmin);
         SysUserQueryWrapper.orderBy(true, true, "user_id");
         return page(userPage, SysUserQueryWrapper);
@@ -121,23 +116,29 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      * @return 用户分页列表
      */
     @Override
-    public Page<SysUser> getUsersPageByTeamId(Integer current, Integer pageSize, Integer userid, String username,
+    public Page<SysUser> getUsersPageByTeamId(Integer current, Integer pageSize, String userid, String username,
                                           Integer isAdmin, Integer teamId) {
         Page<SysUser> userPage = new Page<SysUser>().setCurrent(current).setSize(pageSize);
         QueryWrapper<SysUser> SysUserQueryWrapper = new QueryWrapper<>();
 
-        if (ObjectUtil.isNotNull(userid)) {
-            SysUserQueryWrapper.eq("user_id", userid);  // Changed from "user_id" to "user_id"
-        }
-        if (StrUtil.isNotBlank(username)) {
-            SysUserQueryWrapper.eq("username", username);
-        }
+        applyUserSearchFilters(SysUserQueryWrapper, userid, username);
 
-        SysUserQueryWrapper.eq("is_admin", isAdmin);
+        if (isAdmin != null) {
+            SysUserQueryWrapper.eq("is_admin", isAdmin);
+        }
         SysUserQueryWrapper.eq("team_id", teamId);
         SysUserQueryWrapper.orderBy(true, true, "user_id");
 
         return page(userPage, SysUserQueryWrapper);
+    }
+
+    private void applyUserSearchFilters(QueryWrapper<SysUser> queryWrapper, String userid, String username) {
+        if (StrUtil.isNotBlank(userid)) {
+            queryWrapper.apply("CAST(user_id AS TEXT) LIKE {0}", "%" + userid.trim() + "%");
+        }
+        if (StrUtil.isNotBlank(username)) {
+            queryWrapper.like("username", username.trim());
+        }
     }
 
     @Override

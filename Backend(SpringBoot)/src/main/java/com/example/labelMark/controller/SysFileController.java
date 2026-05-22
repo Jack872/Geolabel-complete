@@ -288,6 +288,23 @@ public class SysFileController {
         return ResultGenerator.getSuccessResult();
     }
 
+    @PutMapping("/updateFile")
+    public Result updateFile(@RequestBody SysFile sysFile) {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            LoginUser loginUser = (LoginUser) authentication.getPrincipal();
+            Integer userId = loginUser.getSysUser().getUserid();
+            boolean updated = sysfileService.updateFileDetail(sysFile, userId);
+            if (!updated) {
+                return ResultGenerator.getFailResult("影像不存在或无权限修改");
+            }
+            return ResultGenerator.getSuccessResult(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResultGenerator.getFailResult("编辑影像失败：" + e.getMessage());
+        }
+    }
+
     private String renameWithFileId(String fileName, Integer fileId) {
         if (fileName == null || fileId == null) return fileName;
         int dot = fileName.lastIndexOf('.');

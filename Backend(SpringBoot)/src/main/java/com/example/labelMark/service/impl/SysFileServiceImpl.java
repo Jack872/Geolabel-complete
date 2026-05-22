@@ -76,6 +76,66 @@ public class SysFileServiceImpl extends ServiceImpl<SysFileMapper, SysFile> impl
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public boolean updateFileDetail(SysFile sysFile, Integer userId) {
+        if (sysFile == null || sysFile.getFileId() == null || userId == null) {
+            return false;
+        }
+
+        SysFile existing = sysfileMapper.selectById(sysFile.getFileId());
+        if (existing == null || existing.getUserId() == null || !existing.getUserId().equals(userId)) {
+            return false;
+        }
+
+        String nextFileName = trimToNull(sysFile.getFileName());
+        if (existing.getStatus() != null && existing.getStatus() == 1
+                && nextFileName != null
+                && existing.getFileName() != null
+                && !existing.getFileName().equals(nextFileName)) {
+            throw new IllegalStateException("已发布影像不能修改文件名称");
+        }
+
+        SysFile update = new SysFile();
+        update.setFileId(existing.getFileId());
+        if (nextFileName != null) {
+            update.setFileName(nextFileName);
+        }
+        update.setUpdateTime(java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        updateById(update);
+
+        FileMetadata currentMetadata = fileMetadataMapper.selectById(existing.getFileId());
+        FileMetadata metadata = currentMetadata == null ? new FileMetadata() : currentMetadata;
+        metadata.setFileId(existing.getFileId());
+        metadata.setCrsCode(trimToNull(sysFile.getCrsCode()));
+        metadata.setCrsName(trimToNull(sysFile.getCrsName()));
+        metadata.setAcquisitionTimeStart(trimToNull(sysFile.getAcquisitionTimeStart()));
+        metadata.setAcquisitionTimeEnd(trimToNull(sysFile.getAcquisitionTimeEnd()));
+        metadata.setTimePrecision(trimToNull(sysFile.getTimePrecision()));
+        metadata.setTimeZone(trimToNull(sysFile.getTimeZone()));
+        metadata.setSensorPlatform(trimToNull(sysFile.getSensorPlatform()));
+        metadata.setProvider(trimToNull(sysFile.getProvider()));
+        metadata.setBandCount(sysFile.getBandCount());
+        metadata.setBandsJson(normalizeBandsJson(sysFile.getBandsJson()));
+        metadata.setWidthPx(sysFile.getWidthPx());
+        metadata.setHeightPx(sysFile.getHeightPx());
+        metadata.setPixelSizeX(sysFile.getPixelSizeX());
+        metadata.setPixelSizeY(sysFile.getPixelSizeY());
+        metadata.setDataType(trimToNull(sysFile.getDataType()));
+        metadata.setNodataValue(trimToNull(sysFile.getNodataValue()));
+        metadata.setCloudCover(sysFile.getCloudCover());
+        metadata.setProcessingLevel(trimToNull(sysFile.getProcessingLevel()));
+        metadata.setLicense(trimToNull(sysFile.getLicense()));
+        metadata.setUsageScope(trimToNull(sysFile.getUsageScope()));
+        if (sysFile.getUploadDescription() != null) {
+            metadata.setUploadDescription(trimToNull(sysFile.getUploadDescription()));
+        }
+        metadata.setRemark(trimToNull(sysFile.getRemark()));
+        metadata.setExt(trimToNull(sysFile.getExt()));
+        fileMetadataMapper.upsertFileMetadata(metadata);
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void deleteFile(String fileName) {
         QueryWrapper<SysFile> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("file_name", fileName);

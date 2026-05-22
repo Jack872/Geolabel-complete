@@ -95,19 +95,11 @@ public class TeamController {
         }
     }
 
-    @ApiOperation("获取团队列表")
+    @ApiOperation("获取全部团队列表")
     @GetMapping("/list")
     public Result getTeamList() {
         try {
-            LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            Integer teamId = loginUser.getSysUser().getTeamId();
-            List<TeamTable> teams;
-            if (teamId == null) {
-                teams = new ArrayList<>();
-            } else {
-                TeamTable team = teamService.getById(teamId);
-                teams = team == null ? new ArrayList<>() : Collections.singletonList(team);
-            }
+            List<TeamTable> teams = teamService.list();
             return ResultGenerator.getSuccessResult(teams);
         } catch (Exception e) {
             return ResultGenerator.getFailResult("获取团队列表失败：" + e.getMessage());

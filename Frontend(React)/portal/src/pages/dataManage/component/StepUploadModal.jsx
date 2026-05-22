@@ -290,7 +290,7 @@ const StepUploadModal = ({ open, onCancel, onUploadComplete , datasetId, dataset
       fileSize: file.size,
       datasetId,
       coordinateSystem, // 添加坐标系信息
-      description: description || "User manual upload via web portal",
+      description: description && description.trim() ? description.trim() : undefined,
       ...metadataPayload,
     });
   }
