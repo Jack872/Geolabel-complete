@@ -216,9 +216,9 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
     }
 
     @Override
-    public void updateTaskById(int taskId, String taskName, String dateRange, String taskType, String mapServer) {
+    public void updateTaskById(int taskId, String taskName, String dateRange) {
 
-        taskMapper.updateTaskById(taskId, taskName, dateRange, taskType, mapServer);
+        taskMapper.updateTaskById(taskId, taskName, dateRange);
     }
 
     @Override
