@@ -610,7 +610,7 @@ def inference(argv=None):
         conn.close()
         return
 
-    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=resolve_image_path(MAPFILE_PATH))
+    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=MAPFILE_PATH)
     # 获取标签数据
     labels_data = fetch_labels_from_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
     if not labels_data:
