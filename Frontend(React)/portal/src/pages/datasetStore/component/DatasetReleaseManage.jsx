@@ -517,14 +517,14 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                     </div>
                   }
                   description={
-                    <Space direction="vertical" size={2} style={{ width: '100%', fontSize: 12, marginTop: 8 }}>
-                      <div style={{display:'flex', alignItems:'center'}}>
+                    <Space direction="vertical" size={2} style={{ width: '100%', fontSize: 13, marginTop: 8 }}>
+                      <div style={{display:'flex', alignItems:'center', color: '#000'}}>
                         <UserOutlined style={{marginRight: 6}}/> {item.creator || 'System'}
                       </div>
-                      <div style={{display:'flex', alignItems:'center'}}>
+                      <div style={{display:'flex', alignItems:'center', color: '#000'}}>
                         <CalendarOutlined style={{marginRight: 6}}/> {item.createDate ? moment(item.createDate).format('YYYY-MM-DD') : '-'}
                       </div>
-                      <div style={{ marginTop: 4 }}>
+                      <div style={{ marginTop: 4, color: '#000' }}>
                         <NumberOutlined style={{marginRight: 6}}/> 样本量: <b style={{color: '#1890ff'}}>{item.num}</b>
                       </div>
                     </Space>
@@ -553,7 +553,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
           <div>
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="创建人">{currentDataset.creator}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{moment(currentDataset.createDate).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{moment(currentDataset.createDate).format('YYYY-MM-DD')}</Descriptions.Item>
               <Descriptions.Item label="样本总数">{currentDataset.num} 张</Descriptions.Item>
               <Descriptions.Item label="图像尺寸">{currentDataset.width} x {currentDataset.height}</Descriptions.Item>
               <Descriptions.Item label="包含类别" span={2}>
@@ -599,11 +599,6 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                               <div style={{fontSize: 10, color: '#999', textAlign:'center', marginTop: 4,
                                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                                 {slice.fileName}
-                                {slice.annotations?.length > 0 && (
-                                  <Tag color="blue" style={{marginLeft: 4, fontSize: 9, padding: '0 3px'}}>
-                                    {slice.annotations.length}个目标
-                                  </Tag>
-                                )}
                               </div>
                             </>
                           )}

@@ -7,7 +7,7 @@ pydantic
 pyproj
 rasterio
 requests
-samgeo
+segment-geospatial
 shapely
 torch
 transformers

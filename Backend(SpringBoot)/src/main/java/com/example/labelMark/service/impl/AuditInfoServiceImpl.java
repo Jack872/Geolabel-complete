@@ -75,6 +75,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         SysUser currentUser = loginUser.getSysUser();
         Integer resolvedTaskItemId = resolveTaskItemId(taskId, taskItemId);
+        boolean currentItemWasPendingReview = isTaskItemPendingReview(resolvedTaskItemId);
         // 转换反馈列表
         ObjectMapper mapper = new ObjectMapper();
         List<FeedbackDTO> feedbackList = mapper.convertValue(
@@ -116,13 +117,13 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         refreshTaskStatusByItems(taskId);
 
         // 先尝试获取现有记录
-        AuditInfo auditInfo = getOne(new QueryWrapper<AuditInfo>().eq("task_id", taskId));
+        AuditInfo auditInfo = getOrCreateAuditInfo(taskId);
 
-        if (auditInfo == null) {
+        if (auditInfo.getId() == null) {
             // 如果不存在则创建并初始化 audit_num = 1
             AuditInfo newAudit = new AuditInfo();
             newAudit.setTaskId(taskId);                  // 假设实体有 taskId 字段
-            newAudit.setAuditNum(1);
+            newAudit.setAuditNum(0);
             newAudit.setStatus(0);
             // 其它字段可以留空或赋默认值
             save(newAudit);
@@ -130,9 +131,11 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
             // 如果存在：使用原子 SQL 自增，避免并发问题
             UpdateWrapper<AuditInfo> update = new UpdateWrapper<>();
             update.eq("task_id", taskId)
-                    .set("status",0)
-                    .setSql("audit_num = COALESCE(audit_num, 0) + 1");
+                    .set("status",0);
             update(update);
+        }
+        if (currentItemWasPendingReview) {
+            incrementAuditRoundIfCurrentRoundComplete(taskId);
         }
 
         // ======= 新增：记录 PROV 溯源 =======
@@ -175,6 +178,7 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
         Integer taskId = request.getTaskId();
         Integer taskItemId = request.getTaskItemId();
         Integer resolvedTaskItemId = resolveTaskItemId(taskId, taskItemId);
+        boolean currentItemWasPendingReview = isTaskItemPendingReview(resolvedTaskItemId);
         CorrectionsDTO correctionsDTO = request.getCorrections();
 
         Task task = taskService.getById(taskId);
@@ -316,7 +320,6 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
             auditInfo.setBoundaryError((float) avgBoundaryErr);
             auditInfo.setIou((float) avgIou);
             auditInfo.setStatus(1);
-            auditInfo.setAuditNum(auditInfo.getAuditNum()!=null?auditInfo.getAuditNum()+1:1);
             auditInfo.setLabelCoverRation((float) (labeledArea/correctLabelArea[0]));
             saveOrUpdate(auditInfo);
 
@@ -330,6 +333,9 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
                         .set("audit_feedback", null));
             }
             refreshTaskStatusByItems(taskId);
+            if (currentItemWasPendingReview) {
+                incrementAuditRoundIfCurrentRoundComplete(taskId);
+            }
 
             // ======= 新增：记录 PROV 溯源 =======
             try {
@@ -388,6 +394,43 @@ public class AuditInfoServiceImpl extends ServiceImpl<AuditInfoMapper, AuditInfo
     private Integer resolveTaskItemId(Integer taskId, Integer taskItemId) {
         TaskItem taskItem = taskService.resolveTaskItem(taskId, taskItemId);
         return taskItem == null ? null : taskItem.getTaskItemId();
+    }
+
+    private AuditInfo getOrCreateAuditInfo(Integer taskId) {
+        AuditInfo auditInfo = getOne(new QueryWrapper<AuditInfo>().eq("task_id", taskId));
+        if (auditInfo != null) {
+            return auditInfo;
+        }
+        AuditInfo newAudit = new AuditInfo();
+        newAudit.setTaskId(taskId);
+        newAudit.setAuditNum(0);
+        return newAudit;
+    }
+
+    private boolean isTaskItemPendingReview(Integer taskItemId) {
+        if (taskItemId == null) {
+            return false;
+        }
+        TaskItem taskItem = taskItemService.getById(taskItemId);
+        return taskItem != null && Objects.equals(taskItem.getStatus(), 0);
+    }
+
+    private void incrementAuditRoundIfCurrentRoundComplete(Integer taskId) {
+        if (taskId == null) {
+            return;
+        }
+        List<TaskItem> taskItems = taskItemService.listByTaskId(taskId);
+        if (taskItems == null || taskItems.isEmpty()) {
+            return;
+        }
+        boolean hasPendingReview = taskItems.stream().anyMatch(item -> Objects.equals(item.getStatus(), 0));
+        if (hasPendingReview) {
+            return;
+        }
+        UpdateWrapper<AuditInfo> update = new UpdateWrapper<>();
+        update.eq("task_id", taskId)
+                .setSql("audit_num = COALESCE(audit_num, 0) + 1");
+        update(update);
     }
 
     private void refreshTaskStatusByItems(Integer taskId) {

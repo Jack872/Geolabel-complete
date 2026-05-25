@@ -100,6 +100,22 @@ export default function AuditPage() {
     window.location.reload();
   }, [getTaskItemId]);
 
+  useEffect(() => {
+    if (!Array.isArray(taskItems) || taskItems.length === 0) return;
+    if (window.sessionStorage.getItem('auditStartFromFirstPending') !== '1') return;
+    const firstPendingItem = taskItems.find((item) => Number(item?.status) === 0);
+    window.sessionStorage.removeItem('auditStartFromFirstPending');
+    if (!firstPendingItem?.taskItemId) {
+      window.sessionStorage.removeItem('taskItemId');
+      message.info('该任务暂无待审核影像，返回任务管理页面');
+      history.push('/taskmanage');
+      return;
+    }
+    if (Number(firstPendingItem.taskItemId) !== Number(getTaskItemId)) {
+      switchTaskItem(firstPendingItem.taskItemId);
+    }
+  }, [getTaskItemId, switchTaskItem, taskItems]);
+
   const navigateTask = useCallback((direction) => {
     if (!Array.isArray(taskItems) || taskItems.length === 0) return;
     const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
@@ -114,11 +130,20 @@ export default function AuditPage() {
     switchTaskItem(nextTaskItemId);
   }, [getTaskItemId, switchTaskItem, taskItems]);
 
-  const resolveNextTaskItemId = useCallback(() => {
-    if (!Array.isArray(taskItems) || taskItems.length === 0) return null;
-    const idx = taskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
-    if (idx === -1 || idx + 1 >= taskItems.length) return null;
-    return taskItems[idx + 1]?.taskItemId || null;
+  const resolveNextTaskItemId = useCallback((sourceTaskItems = taskItems) => {
+    if (!Array.isArray(sourceTaskItems) || sourceTaskItems.length === 0) return null;
+    const idx = sourceTaskItems.findIndex((item) => Number(item?.taskItemId) === Number(getTaskItemId));
+    const isPendingOtherItem = (item) => (
+      Number(item?.status) === 0
+      && Number(item?.taskItemId) !== Number(getTaskItemId)
+    );
+    const afterCurrent = idx === -1 ? [] : sourceTaskItems.slice(idx + 1);
+    const beforeCurrent = idx === -1 ? sourceTaskItems : sourceTaskItems.slice(0, idx);
+    return (
+      afterCurrent.find(isPendingOtherItem)?.taskItemId
+      || beforeCurrent.find(isPendingOtherItem)?.taskItemId
+      || null
+    );
   }, [getTaskItemId, taskItems]);
 
   // 核心流程变更：审核决策状态
@@ -718,8 +743,9 @@ export default function AuditPage() {
   }, []);
 
   const handlePostSubmitStayInAudit = useCallback(async (successText) => {
-    const nextTaskItemId = resolveNextTaskItemId();
-    await refreshMarkGeoJsonArr?.();
+    const refreshedTaskResult = await refreshMarkGeoJsonArr?.();
+    const latestTaskItems = refreshedTaskResult?.taskItems || taskItems;
+    const nextTaskItemId = resolveNextTaskItemId(latestTaskItems);
     message.success(successText);
     resetToDecision();
     if (nextTaskItemId) {
@@ -730,7 +756,7 @@ export default function AuditPage() {
     window.sessionStorage.removeItem('taskItemId');
     message.info('最后一张影像已审核完成，返回任务管理页面');
     history.push('/taskmanage');
-  }, [refreshMarkGeoJsonArr, resetToDecision, resolveNextTaskItemId, switchTaskItem]);
+  }, [refreshMarkGeoJsonArr, resetToDecision, resolveNextTaskItemId, switchTaskItem, taskItems]);
 
   // 新增：用于切换图层可见性的回调函数
   const toggleLayerVisibility = useCallback((typeId, isVisible) => {

@@ -49,6 +49,7 @@ post_processed_predicted_mask.png
 *.sql
 raw_predicted_mask.png
 *.pt
+*.pth
 __pycache__/
 
 *.tif
