@@ -20,10 +20,52 @@ const CATEGORY_COLORS = [
   '#1890ff','#722ed1','#eb2f96','#f5222d','#fa541c',
 ];
 const getCategoryColor = (name) => {
-  if (!name) return '#1890ff';
+  if (name === undefined || name === null || name === '') return '#1890ff';
+  const value = String(name);
   let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < value.length; i++) hash = value.charCodeAt(i) + ((hash << 5) - hash);
   return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length];
+};
+
+const normalizeConfiguredColor = (color) => {
+  if (color === undefined || color === null) return null;
+  const value = String(color).trim();
+  if (!value) return null;
+  if (/^[0-9a-f]{6}$/i.test(value)) return `#${value}`;
+  if (/^[0-9a-f]{3}$/i.test(value)) return `#${value}`;
+  return value;
+};
+
+const getAnnotationColor = (annotation, fallbackIndex = 0) => {
+  const configuredColor = normalizeConfiguredColor(
+    annotation?.categoryColor || annotation?.typeColor || annotation?.color
+  );
+  if (configuredColor) return configuredColor;
+
+  const categoryKey = annotation?.categoryId !== undefined && annotation?.categoryId !== null
+    ? `${annotation.categoryId}-${annotation.category || ''}`
+    : (annotation?.category || `category-${fallbackIndex}`);
+  return getCategoryColor(categoryKey);
+};
+
+const isSegmentationDataset = (taskType) => ['地物分类', '地表覆盖'].includes(String(taskType || '').trim());
+
+const normalizeSegmentationRings = (segmentation) => {
+  if (!Array.isArray(segmentation) || segmentation.length === 0) return [];
+  if (typeof segmentation[0] === 'number') return [segmentation];
+  return segmentation.filter((ring) => Array.isArray(ring) && ring.length >= 6);
+};
+
+const ringToPoints = (ring) => {
+  const points = [];
+  for (let i = 0; i < ring.length - 1; i += 2) {
+    const x = Number(ring[i]);
+    const y = Number(ring[i + 1]);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      points.push(`${x},${y}`);
+    }
+  }
+  return points.join(' ');
 };
 
 const withPreviewToken = (url) => {
@@ -58,10 +100,11 @@ const AnnotatedSliceImage = ({ src, annotations = [] }) => {
     ctx.clearRect(0, 0, displayW, displayH);
     const scaleX = displayW / (imgNatW || displayW);
     const scaleY = displayH / (imgNatH || displayH);
-    annotations.forEach(({ bbox, category }) => {
+    annotations.forEach((annotation, index) => {
+      const { bbox, category } = annotation;
       if (!bbox || bbox.length < 4) return;
       const [x, y, w, h] = bbox;
-      const color = getCategoryColor(category);
+      const color = getAnnotationColor(annotation, index);
       const rx = x * scaleX, ry = y * scaleY, rw = w * scaleX, rh = h * scaleY;
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
@@ -95,114 +138,120 @@ const AnnotatedSliceImage = ({ src, annotations = [] }) => {
   );
 };
 
-// ── 地物分类封面格子：左半原图 + 右半彩色 mask 叠加 ──────────────────────────
-const SegCoverCell = ({ imgSrc, maskSrc }) => {
-  const canvasRef = React.useRef(null);
+const buildPolygonItems = (annotations = []) => {
+  const items = [];
+  annotations.forEach((annotation, annotationIndex) => {
+    normalizeSegmentationRings(annotation.segmentation).forEach((ring, ringIndex) => {
+      const points = ringToPoints(ring);
+      if (!points) return;
+      items.push({
+        key: `${annotationIndex}-${ringIndex}`,
+        points,
+        category: annotation.category,
+        color: getAnnotationColor(annotation, annotationIndex),
+      });
+    });
+  });
+  return items;
+};
 
-  React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !imgSrc || !maskSrc) return;
-    const ctx = canvas.getContext('2d');
-    const img = new window.Image();
-    const mask = new window.Image();
-    img.crossOrigin = 'anonymous';
-    mask.crossOrigin = 'anonymous';
-
-    img.onload = () => {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-
-      mask.onload = () => {
-        // 将灰度 mask 转为彩色叠加
-        const offscreen = document.createElement('canvas');
-        offscreen.width = mask.naturalWidth;
-        offscreen.height = mask.naturalHeight;
-        const octx = offscreen.getContext('2d');
-        octx.drawImage(mask, 0, 0);
-        const imageData = octx.getImageData(0, 0, offscreen.width, offscreen.height);
-        const d = imageData.data;
-        // 将非零像素映射为彩色（按灰度值选色）
-        for (let i = 0; i < d.length; i += 4) {
-          const gray = d[i];
-          if (gray > 0) {
-            const colorIdx = (gray - 1) % CATEGORY_COLORS.length;
-            const hex = CATEGORY_COLORS[colorIdx];
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = 180; // 半透明
-          } else {
-            d[i+3] = 0; // 背景透明
-          }
-        }
-        octx.putImageData(imageData, 0, 0);
-        // 缩放到 canvas 尺寸后叠加
-        ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
-      };
-      mask.src = maskSrc;
-    };
-    img.src = imgSrc;
-  }, [imgSrc, maskSrc]);
+// ── 地表覆盖/地物分类封面格子：完整切片 + 同预览一致的类别颜色 ───────────────
+const SegCoverCell = ({ imgSrc, annotations = [] }) => {
+  const [imageSize, setImageSize] = React.useState({ width: 1, height: 1 });
+  const polygonItems = React.useMemo(() => buildPolygonItems(annotations), [annotations]);
 
   return (
-    <canvas ref={canvasRef}
-      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-    />
+    <div style={{ width: '100%', height: '100%', background: '#f6f8fb' }}>
+      <svg
+        viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+        preserveAspectRatio="xMidYMid slice"
+        style={{ width: '100%', height: '100%', display: 'block' }}
+      >
+        <image href={imgSrc} x="0" y="0" width={imageSize.width} height={imageSize.height} preserveAspectRatio="none" />
+        {polygonItems.map((item) => (
+          <polygon
+            key={item.key}
+            points={item.points}
+            fill={item.color}
+            fillOpacity="0.42"
+            stroke={item.color}
+            strokeOpacity="0.86"
+            strokeWidth={Math.max(1.5, Math.min(imageSize.width, imageSize.height) / 220)}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      <img
+        src={imgSrc}
+        alt=""
+        style={{ display: 'none' }}
+        onLoad={(event) => {
+          const { naturalWidth, naturalHeight } = event.currentTarget;
+          if (naturalWidth > 0 && naturalHeight > 0) {
+            setImageSize({ width: naturalWidth, height: naturalHeight });
+          }
+        }}
+      />
+    </div>
   );
 };
 
-// ── 地物分类预览格子：上方原图 + 下方彩色 mask ────────────────────────────────
-const SegPreviewCell = ({ imgSrc, maskSrc, fileName, datasetId }) => {
-  const maskCanvasRef = React.useRef(null);
-
-  React.useEffect(() => {
-    const canvas = maskCanvasRef.current;
-    if (!canvas || !maskSrc) return;
-    const mask = new window.Image();
-    mask.crossOrigin = 'anonymous';
-    mask.onload = () => {
-      canvas.width = mask.naturalWidth;
-      canvas.height = mask.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(mask, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imageData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const gray = d[i];
-        if (gray > 0) {
-          const colorIdx = (gray - 1) % CATEGORY_COLORS.length;
-          const hex = CATEGORY_COLORS[colorIdx];
-          d[i]   = parseInt(hex.slice(1, 3), 16);
-          d[i+1] = parseInt(hex.slice(3, 5), 16);
-          d[i+2] = parseInt(hex.slice(5, 7), 16);
-          d[i+3] = 220;
-        } else {
-          d[i+3] = 30; // 背景极淡
-        }
-      }
-      ctx.putImageData(imageData, 0, 0);
-    };
-    mask.src = maskSrc;
-  }, [maskSrc]);
+// ── 地表覆盖/地物分类预览格子：完整切片 + 半透明多边形彩色掩膜 ────────────────
+const SegPreviewCell = ({ imgSrc, fileName, annotations = [] }) => {
+  const [imageSize, setImageSize] = React.useState({ width: 1, height: 1 });
+  const polygonItems = React.useMemo(() => buildPolygonItems(annotations), [annotations]);
 
   return (
-    <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden', background: '#fafafa' }}>
-      {/* 上：原图 */}
-      <div style={{ height: 100, overflow: 'hidden' }}>
-        <img src={imgSrc} alt="原图"
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+    <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden', background: '#f6f8fb' }}>
+      <div style={{ height: 180, padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg
+          viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height: '100%', display: 'block' }}
+        >
+          <image
+            href={imgSrc}
+            x="0"
+            y="0"
+            width={imageSize.width}
+            height={imageSize.height}
+            preserveAspectRatio="none"
+          />
+          {polygonItems.map((item) => (
+            <polygon
+              key={item.key}
+              points={item.points}
+              fill={item.color}
+              fillOpacity="0.42"
+              stroke={item.color}
+              strokeOpacity="0.86"
+              strokeWidth={Math.max(1.5, Math.min(imageSize.width, imageSize.height) / 220)}
+              vectorEffect="non-scaling-stroke"
+            >
+              {item.category ? <title>{item.category}</title> : null}
+            </polygon>
+          ))}
+        </svg>
+        <img
+          src={imgSrc}
+          alt=""
+          style={{ display: 'none' }}
+          onLoad={(event) => {
+            const { naturalWidth, naturalHeight } = event.currentTarget;
+            if (naturalWidth > 0 && naturalHeight > 0) {
+              setImageSize({ width: naturalWidth, height: naturalHeight });
+            }
+          }}
         />
       </div>
-      {/* 下：彩色 mask */}
-      <div style={{ height: 100, overflow: 'hidden', background: '#1a1a2e' }}>
-        <canvas ref={maskCanvasRef}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      </div>
-      <div style={{ fontSize: 10, color: '#999', textAlign: 'center', padding: '3px 4px',
+      <div style={{ fontSize: 10, color: '#777', textAlign: 'center', padding: '4px 4px',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {fileName}
+        {polygonItems.length > 0 && (
+          <Tag color="green" style={{ marginLeft: 4, fontSize: 9, padding: '0 3px' }}>
+            {polygonItems.length}个地物
+          </Tag>
+        )}
       </div>
     </div>
   );
@@ -415,12 +464,8 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 1, width: '100%', height: '100%' }}>
                         {coverSlicesMap[item.id].slice(0, 4).map((slice, idx) => {
                           const imgUrl = withPreviewToken(`/wegismarkapi/sampleSet/image/preview?datasetId=${item.id}&fileName=${encodeURIComponent(slice.fileName)}`);
-                          const maskFileName = toMaskFileName(slice.fileName);
-                          const maskUrl = maskFileName
-                            ? withPreviewToken(`/wegismarkapi/sampleSet/mask/preview?datasetId=${item.id}&fileName=${encodeURIComponent(maskFileName)}`)
-                            : null;
-                          return item.taskType === '地物分类' ? (
-                            <SegCoverCell key={idx} imgSrc={imgUrl} maskSrc={maskUrl} />
+                          return isSegmentationDataset(item.taskType) ? (
+                            <SegCoverCell key={idx} imgSrc={imgUrl} annotations={slice.annotations || []} />
                           ) : (
                             <AnnotatedSliceImage key={idx} src={imgUrl} annotations={slice.annotations || []} />
                           );
@@ -501,7 +546,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
             去下载
           </Button>
         ]}
-        width={currentDataset?.taskType === '地物分类' ? 900 : 700}
+        width={isSegmentationDataset(currentDataset?.taskType) ? 900 : 700}
         centered
       >
         {currentDataset && (
@@ -519,9 +564,9 @@ export default function DatasetReleaseManage({ currentState = {} }) {
 
             <Divider orientation="left" style={{margin: '16px 0'}}>
               切片随机预览 (Top 8)
-              {currentDataset.taskType === '地物分类' && (
+              {isSegmentationDataset(currentDataset.taskType) && (
                 <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>
-                  上：原图 / 下：彩色掩码
+                  完整切片 + 半透明彩色标注掩膜
                 </span>
               )}
             </Divider>
@@ -534,19 +579,14 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                   <Row gutter={[12, 12]}>
                     {previewSlices.map((slice, index) => {
                       const imgUrl = getSliceImageUrl(slice.fileName);
-                      const maskFileName = toMaskFileName(slice.fileName);
-                      const maskUrl = maskFileName
-                        ? withPreviewToken(`/wegismarkapi/sampleSet/mask/preview?datasetId=${currentDataset.id}&fileName=${encodeURIComponent(maskFileName)}`)
-                        : null;
 
                       return (
-                        <Col span={currentDataset.taskType === '地物分类' ? 6 : 6} key={index}>
-                          {currentDataset.taskType === '地物分类' ? (
+                        <Col span={isSegmentationDataset(currentDataset.taskType) ? 6 : 6} key={slice.fileName || index}>
+                          {isSegmentationDataset(currentDataset.taskType) ? (
                             <SegPreviewCell
                               imgSrc={imgUrl}
-                              maskSrc={maskUrl}
                               fileName={slice.fileName}
-                              datasetId={currentDataset.id}
+                              annotations={slice.annotations || []}
                             />
                           ) : (
                             <>

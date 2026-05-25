@@ -44,6 +44,9 @@ public class SampleSetController {
     @Resource
     private SampleSetService sampleSetService;
 
+    @Resource
+    private TypeService typeService;
+
     @Value("${sampleSet.path}")
     private String sampleSetPath;
 
@@ -70,6 +73,21 @@ public class SampleSetController {
             throw new IllegalArgumentException("路径越界");
         }
         return resolved;
+    }
+
+    private String resolveCategoryColor(MetaObject obj, Map<Integer, String> categoryColorCache) {
+        Integer categoryId = obj.getCategoryId();
+        if (categoryId != null && categoryId > 0) {
+            if (!categoryColorCache.containsKey(categoryId)) {
+                categoryColorCache.put(categoryId, typeService.getColorById(categoryId));
+            }
+            String typeColor = categoryColorCache.get(categoryId);
+            if (typeColor != null && !typeColor.trim().isEmpty()) {
+                return typeColor;
+            }
+        }
+        String metaColor = obj.getCategoryColor();
+        return metaColor != null && !metaColor.trim().isEmpty() ? metaColor : null;
     }
 
     /**
@@ -173,6 +191,7 @@ public class SampleSetController {
 
             // 读取 meta.json，构建 sliceFileName -> annotations 映射
             Map<String, List<Map<String, Object>>> annotationMap = new HashMap<>();
+            Map<Integer, String> categoryColorCache = new HashMap<>();
             Path metaFile = normalizeStoredPathUnderSampleBase(sampleSet.getLabelUrl());
             if (Files.exists(metaFile)) {
                 try {
@@ -184,7 +203,13 @@ public class SampleSetController {
                             annotationMap.computeIfAbsent(fn, k -> new ArrayList<>());
                             Map<String, Object> ann = new HashMap<>();
                             ann.put("bbox", obj.getBbox());           // [x, y, w, h]
+                            ann.put("categoryId", obj.getCategoryId());
                             ann.put("category", obj.getCategoryName());
+                            String categoryColor = resolveCategoryColor(obj, categoryColorCache);
+                            if (categoryColor != null) {
+                                ann.put("categoryColor", categoryColor);
+                                ann.put("typeColor", categoryColor);
+                            }
                             if (obj.getSegmentation() != null && !obj.getSegmentation().isEmpty()) {
                                 ann.put("segmentation", obj.getSegmentation());
                             }

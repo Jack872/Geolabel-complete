@@ -10,6 +10,9 @@ import com.example.labelMark.service.QualityEvaluationProgressListener;
 import com.example.labelMark.service.QualityEvaluationService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -48,7 +51,8 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
         save(job);
 
         request.setEvaluationJobId(job.getId());
-        qualityEvaluationExecutor.submit(() -> runJob(job.getId(), request, operator));
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        qualityEvaluationExecutor.submit(() -> runJobWithSecurityContext(job.getId(), request, operator, authentication));
 
         return toStatusMap(job);
     }
@@ -79,6 +83,22 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
                                   Integer totalCount,
                                   String message) {
         updateProgress(jobId, status, stage, progress, processedCount, totalCount, message);
+    }
+
+    private void runJobWithSecurityContext(Long jobId,
+                                           QualityEvaluationRequest request,
+                                           String operator,
+                                           Authentication authentication) {
+        try {
+            if (authentication != null) {
+                SecurityContext context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(authentication);
+                SecurityContextHolder.setContext(context);
+            }
+            runJob(jobId, request, operator);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     private void runJob(Long jobId, QualityEvaluationRequest request, String operator) {

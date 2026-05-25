@@ -109,19 +109,25 @@ const DetailsPanel = ({ detail, className }) => {
 
   const { originType, rawData, agentData } = detail;
   const isActivity = originType === 'ACTIVITY';
+  const isAgent = originType === 'AGENT';
   const provInfo = PROV_MODEL_INFO[originType] || PROV_MODEL_INFO['ENTITY'];
 
   // 获取显示标题
   const getDisplayTitle = () => {
     if (isActivity) {
       return ACTION_TRANSLATIONS[rawData.actType] || rawData.actType;
+    } else if (isAgent) {
+      if (rawData.agentType === 'PERSON') return '用户';
+      if (rawData.agentType === 'SOFTWARE') return '软件系统';
+      if (rawData.agentType === 'ORGANIZATION') return '组织机构';
+      return rawData.agentType || '代理';
     } else {
       return ENTITY_TRANSLATIONS[rawData.entityType] || rawData.entityType;
     }
   };
 
   // 提取扩展属性
-  const extraProps = isActivity ? rawData.parameters : rawData.attributes;
+  const extraProps = isActivity ? rawData.parameters : (isAgent ? null : rawData.attributes);
   const hasExtraProps = extraProps && Object.keys(extraProps).length > 0;
 
   return (
@@ -178,6 +184,18 @@ const DetailsPanel = ({ detail, className }) => {
         {rawData.label && (
           <Descriptions.Item label="标签名称">
             {rawData.label}
+          </Descriptions.Item>
+        )}
+
+        {isAgent && rawData.agentName && (
+          <Descriptions.Item label="代理名称">
+            {rawData.agentName}
+          </Descriptions.Item>
+        )}
+
+        {isAgent && rawData.externalId && (
+          <Descriptions.Item label="外部业务ID">
+            {rawData.externalId}
           </Descriptions.Item>
         )}
         
@@ -243,7 +261,7 @@ const DetailsPanel = ({ detail, className }) => {
         )}
 
         {/* 实体位置信息 */}
-        {!isActivity && rawData.location && (
+        {!isActivity && !isAgent && rawData.location && (
           <Descriptions.Item label="数据位置">
             <code style={{ background: '#f5f5f5', padding: '2px 6px', borderRadius: '3px', fontSize: '11px' }}>
               {rawData.location}
@@ -252,9 +270,15 @@ const DetailsPanel = ({ detail, className }) => {
         )}
 
         {/* 实体类型 */}
-        {!isActivity && rawData.entityType && (
+        {!isActivity && !isAgent && rawData.entityType && (
           <Descriptions.Item label="实体类型">
             <Tag color="purple">{rawData.entityType}</Tag>
+          </Descriptions.Item>
+        )}
+
+        {isAgent && rawData.agentType && (
+          <Descriptions.Item label="代理类型">
+            <Tag color="green">{rawData.agentType}</Tag>
           </Descriptions.Item>
         )}
 

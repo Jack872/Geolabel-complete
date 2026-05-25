@@ -453,6 +453,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                                 obj.setId(globalObjectId++);
                                 obj.setCategoryId(cat.getId());
                                 obj.setCategoryName(cat.getName());
+                                obj.setCategoryColor(cat.getColor());
                                 obj.setSliceFileName(sliceName);
                                 obj.setWidth(finalW);
                                 obj.setHeight(finalH);
@@ -1306,6 +1307,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                 Map<String, Object> ann = new HashMap<>();
                 ann.put("categoryId", seg.get("type_id"));
                 ann.put("categoryName", typeService.getTypeNameById((Integer) seg.get("type_id")));
+                ann.put("categoryColor", seg.get("type_color"));
                 ann.put("segmentation", seg.get("segmentation"));
                 pixelAnnotations.add(ann);
             }
@@ -1319,6 +1321,8 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
                 MetaCategory cat = new MetaCategory();
                 cat.setId(catId);
                 cat.setName(catName);
+                Object catColor = ann.get("categoryColor");
+                cat.setColor(catColor != null ? catColor.toString() : typeService.getColorById(catId));
                 categoryMap.put(catName, cat);
             }
         }
@@ -1390,6 +1394,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
             Map<String, Object> ann = new HashMap<>();
             ann.put("categoryId", mark.getTypeId());
             ann.put("categoryName", typeService.getTypeNameById(mark.getTypeId()));
+            ann.put("categoryColor", typeService.getColorById(mark.getTypeId()));
             ann.put("segmentation", rings);
             return ann;
         } catch (Exception e) {

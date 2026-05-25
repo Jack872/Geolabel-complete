@@ -378,7 +378,29 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
     const edges = [];
     const validNodeIds = new Set();
 
-    // 1. 处理活动 (Activities)
+    // 1. 处理代理 (Agents)
+    raw.agents?.forEach(agent => {
+      if (!agent.id) return;
+      validNodeIds.add(agent.id);
+
+      const agentInfo = PROV_AGENT_INFO[agent.agentType] || { label: agent.agentType || '未知代理', icon: '❓' };
+      nodes.push({
+        id: agent.id,
+        label: `${agentInfo.label}\n${agentInfo.icon} ${agent.agentName || agent.externalId || agent.id.substring(0, 8)}`,
+        originType: 'AGENT',
+        rawData: agent,
+        type: 'rect',
+        size: [150, 56],
+        style: {
+          fill: '#fff2e8',
+          stroke: '#fa8c16',
+          radius: 18,
+          cursor: 'pointer',
+        },
+      });
+    });
+
+    // 2. 处理活动 (Activities)
     raw.activities?.forEach(act => {
       if (!act.id) return;
       validNodeIds.add(act.id);
@@ -393,11 +415,39 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
         label: `${actionText}\n${agentInfo.icon} ${agentName}`,
         originType: 'ACTIVITY',
         rawData: act,
+        agentData: agent,
         style: { fill: '#fff7e6', stroke: '#ffa940', cursor: 'pointer' },
       });
+
+      if (act.agentId) {
+        if (!validNodeIds.has(act.agentId)) {
+          validNodeIds.add(act.agentId);
+          nodes.push({
+            id: act.agentId,
+            label: `未知代理\n${act.agentId.substring(0, 8)}`,
+            originType: 'AGENT',
+            rawData: { id: act.agentId, agentName, agentType: 'UNKNOWN' },
+            type: 'rect',
+            size: [150, 56],
+            style: {
+              fill: '#fff2e8',
+              stroke: '#fa8c16',
+              radius: 18,
+              lineDash: [4, 4],
+              cursor: 'pointer',
+            },
+          });
+        }
+        edges.push({
+          source: act.agentId,
+          target: act.id,
+          label: '执行',
+          style: { stroke: '#fa8c16', lineWidth: 2, lineDash: [4, 4] },
+        });
+      }
     });
 
-    // 2. 处理实体 (Entities)
+    // 3. 处理实体 (Entities)
     raw.entities?.forEach(ent => {
       if (!ent.id) return;
       validNodeIds.add(ent.id);
@@ -414,7 +464,7 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       });
     });
 
-    // 3. 处理关系，并动态补全缺失的节点 (Relations)
+    // 4. 处理关系，并动态补全缺失的节点 (Relations)
     raw.relations?.forEach(rel => {
       let sourceId, targetId, label, style;
 
@@ -640,6 +690,10 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
           <div className="legend-icon entity" />
           <span className="legend-text">实体 (Entity)</span>
         </div>
+        <div className="legend-item">
+          <div className="legend-icon agent" />
+          <span className="legend-text">代理 (Agent)</span>
+        </div>
       </div>
 
       {/* PROV模型说明 */}
@@ -647,6 +701,8 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
         基于PROV-DM数据模型<br/>
         蓝色椭圆：实体(Entity)<br/>
         橙色矩形：活动(Activity)<br/>
+        橙色圆角：代理(Agent)<br/>
+        橙色虚线：执行关系(wasAssociatedWith)<br/>
         绿色线：使用关系(used)<br/>
         蓝色线：生成关系(wasGeneratedBy)
       </div>

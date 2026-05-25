@@ -15,6 +15,7 @@ public class MetaObject {
     private int id; // 全局唯一标注ID
     private int categoryId;
     private String categoryName;
+    private String categoryColor;
 
     // 所有的坐标都是相对于 sliceFileName 这张小图的局部坐标
     private List<Double> bbox; // [x, y, w, h]
