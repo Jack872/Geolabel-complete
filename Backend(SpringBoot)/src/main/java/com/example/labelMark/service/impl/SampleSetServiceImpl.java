@@ -90,6 +90,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     @Resource private MinioClient minioClient;
     @Resource private MinioConfig minioConfig;
     @Resource private MinioFileResolveService minioFileResolveService;
+    @Resource private SysUserMapper sysUserMapper;
 
     private static final Logger logger = LoggerFactory.getLogger(SampleSetServiceImpl.class);
     @Value("${sampleSet.path}")
@@ -144,11 +145,33 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     }
 
     private boolean canReadSampleSet(SampleSet sampleSet) {
-        return currentUserIsAdmin() || isCreator(sampleSet) || Boolean.TRUE.equals(sampleSet.getIsPublic());
+        if (isCreator(sampleSet)) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(sampleSet.getIsPublic())) {
+            Integer currentTeamId = currentLoginUser().getSysUser().getTeamId();
+            if (currentTeamId == null) return false;
+            SysUser creatorUser = sysUserMapper.selectOne(
+                new QueryWrapper<SysUser>().eq("username", sampleSet.getCreator())
+            );
+            return creatorUser != null && currentTeamId.equals(creatorUser.getTeamId());
+        }
+        return false;
     }
 
     private boolean canWriteSampleSet(SampleSet sampleSet) {
-        return currentUserIsAdmin() || isCreator(sampleSet);
+        if (isCreator(sampleSet)) {
+            return true;
+        }
+        if (currentUserIsAdmin()) {
+            Integer currentTeamId = currentLoginUser().getSysUser().getTeamId();
+            if (currentTeamId == null) return false;
+            SysUser creatorUser = sysUserMapper.selectOne(
+                new QueryWrapper<SysUser>().eq("username", sampleSet.getCreator())
+            );
+            return creatorUser != null && currentTeamId.equals(creatorUser.getTeamId());
+        }
+        return false;
     }
 
     private Path sampleSetBaseDir() throws IOException {
@@ -563,17 +586,19 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
         currentLoginUser();
         Page<SampleSet> page = new Page<>(pageNum == null ? 1 : pageNum, pageSize == null ? 10 : pageSize);
         QueryWrapper<SampleSet> wrapper = new QueryWrapper<>();
-        if (!currentUserIsAdmin()) {
-            String username = currentUsername();
-            String userId = currentUserId();
-            wrapper.and(q -> {
-                q.eq("creator", username);
-                if (userId != null) {
-                    q.or().eq("creator", userId);
-                }
-                q.or().eq("is_public", true);
-            });
-        }
+        String username = currentUsername();
+        String userId = currentUserId();
+        Integer teamId = currentLoginUser().getSysUser().getTeamId();
+        wrapper.and(q -> {
+            q.eq("creator", username);
+            if (userId != null) {
+                q.or().eq("creator", userId);
+            }
+            if (teamId != null) {
+                q.or(w -> w.eq("is_public", true)
+                    .inSql("creator", "SELECT username FROM sys_user WHERE team_id = " + teamId));
+            }
+        });
         if (name != null && !name.trim().isEmpty()) {
             wrapper.like("name", name.trim());
         }
