@@ -1310,7 +1310,11 @@ public class SampleUtils {
                     List<List<Double>> segmentation = normalizeSegmentationRings(ann.get("segmentation"));
                     Integer categoryId = (Integer) ann.get("categoryId");
                     String categoryName = (String) ann.get("categoryName");
+                    String categoryColor = ann.get("categoryColor") != null ? ann.get("categoryColor").toString() : null;
                     if (segmentation == null || categoryId == null) continue;
+                    if ((categoryColor == null || categoryColor.trim().isEmpty()) && categoryMap.get(categoryId) != null) {
+                        categoryColor = categoryMap.get(categoryId).getColor();
+                    }
 
                     List<List<Double>> localSeg = clipSegmentationToRect(
                             segmentation, x, y, windowSize, windowSize,
@@ -1323,6 +1327,7 @@ public class SampleUtils {
                     MetaObject obj = new MetaObject();
                     obj.setCategoryId(categoryId);
                     obj.setCategoryName(categoryName);
+                    obj.setCategoryColor(categoryColor);
                     obj.setSliceFileName(imgName);
                     obj.setWidth(windowSize);
                     obj.setHeight(windowSize);
