@@ -566,7 +566,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         TASK_ID = int(params['taskid'])
         TASK_ITEM_ID = params.get('taskItemId')
         raw_path = params['mapfile_path']
-        IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=resolve_image_path(raw_path))
+        IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, TASK_ITEM_ID, fallback_path=raw_path)
         USER_ID = params.get('user_id')
         PROMPT_TYPE = params.get('promptType', 'point')
         INTERACTIVE_COORDS = params.get('coordinates')
@@ -788,7 +788,7 @@ def auto_building_segmentation(params: dict):
     raw_path = params['mapfile_path']
     conn = connect_db()
     try:
-        IMAGE_PATH = ensure_task_image_local(conn, int(params['taskid']), TASK_ITEM_ID, fallback_path=resolve_image_path(raw_path))
+        IMAGE_PATH = ensure_task_image_local(conn, int(params['taskid']), TASK_ITEM_ID, fallback_path=raw_path)
     finally:
         if conn:
             conn.close()
