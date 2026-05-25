@@ -559,11 +559,6 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                               <div style={{fontSize: 10, color: '#999', textAlign:'center', marginTop: 4,
                                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                                 {slice.fileName}
-                                {slice.annotations?.length > 0 && (
-                                  <Tag color="blue" style={{marginLeft: 4, fontSize: 9, padding: '0 3px'}}>
-                                    {slice.annotations.length}个目标
-                                  </Tag>
-                                )}
                               </div>
                             </>
                           )}

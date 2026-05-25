@@ -90,7 +90,7 @@ function useMap() {
           setCurrentTaskItemId(taskResult.currentTaskItemId);
           window.sessionStorage.setItem('taskItemId', String(taskResult.currentTaskItemId));
         }
-        return true;
+        return taskResult;
       }
     } catch (error) {
       console.error('刷新标注数据失败:', error);

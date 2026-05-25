@@ -111,7 +111,7 @@ const TaskManage = () => {
 
       hide();
       if (result.code === 200) {
-        message.success('样本集生成任务已提交，请去样本中心查看进度！');
+        message.success('样本集已生成，请前往样本集管理页面查看！');
         setDatasetModalVisible(false);
         setSelectedRows([]); // 清空选择
         if (actionRef.current) {
@@ -579,6 +579,7 @@ const TaskManage = () => {
                     window.sessionStorage.setItem('auditTaskIds', JSON.stringify([Number(firstTaskId)]));
                   }
                   window.sessionStorage.removeItem('taskItemId');
+                  window.sessionStorage.setItem('auditStartFromFirstPending', '1');
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {
@@ -650,6 +651,7 @@ const TaskManage = () => {
                     window.sessionStorage.setItem('auditTaskIds', JSON.stringify([singleTaskId]));
                   }
                   window.sessionStorage.removeItem('taskItemId');
+                  window.sessionStorage.setItem('auditStartFromFirstPending', '1');
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {

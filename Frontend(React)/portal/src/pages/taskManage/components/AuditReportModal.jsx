@@ -55,8 +55,8 @@ const AuditReportModal = ({ visible, data, onClose }) => {
               {formatPercentage(data.labelCoverRation)}
             </span>
           </Descriptions.Item>
-          <Descriptions.Item label="审核次数">
-            {data.auditNum ? `${data.auditNum} 次` : '0次'}
+          <Descriptions.Item label="审核轮次">
+            {data.auditNum ? `${data.auditNum} 轮` : '0轮'}
           </Descriptions.Item>
           {/* 您可以根据接口返回结果继续添加更多字段 */}
           <Descriptions.Item label="审核员">{data.auditor || '未知'}</Descriptions.Item>

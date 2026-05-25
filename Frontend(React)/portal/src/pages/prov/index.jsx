@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import moment from 'moment';
 import { Row, Col, Card, Tabs, Descriptions, Badge, Empty, Button, Upload, Space, Tag, Typography, List, Spin, message, Tooltip } from 'antd';
 import {
   NodeIndexOutlined,
@@ -218,7 +219,9 @@ const SampleSetProvenance = () => {
                       </div>
                       <Descriptions column={3} size="small" style={{ marginTop: 12 }}>
                         <Descriptions.Item label="创建者">{selectedSet.creator}</Descriptions.Item>
-                        <Descriptions.Item label="创建日期">{selectedSet.createDate}</Descriptions.Item>
+                        <Descriptions.Item label="创建日期">
+                        {selectedSet.createDate ? moment(selectedSet.createDate).format('YYYY-MM-DD') : '-'}
+                      </Descriptions.Item>
                         <Descriptions.Item label="坐标系">{selectedSet.crs}</Descriptions.Item>
                       </Descriptions>
                     </Col>

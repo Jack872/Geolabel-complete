@@ -130,7 +130,7 @@ const Workplace = () => {
   const [createdTaskStatusData, setCreatedTaskStatusData] = useState([]);
   const [assignedTaskStatusData, setAssignedTaskStatusData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('created');
+  const [activeTab, setActiveTab] = useState('assigned');
 
   const getTaskStatusLabel = (task) => {
     const status = parseInt(task?.status, 10);
@@ -271,8 +271,8 @@ const Workplace = () => {
           }
           setAssignedTaskStatusData(assignedChartData);
 
-          // 默认显示创建的任务统计
-          setTaskStatusData(createdChartData);
+          // 默认显示分配给我的任务统计
+          setTaskStatusData(assignedChartData);
         }
       } catch (error) {
         console.error('Error fetching tasks:', error);

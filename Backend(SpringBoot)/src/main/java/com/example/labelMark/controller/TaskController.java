@@ -818,7 +818,15 @@ public class TaskController {
             return errorResponse;
         }
         List<TaskItem> taskItems = taskService.getTaskItems(taskid);
-        TaskItem currentTaskItem = taskService.resolveTaskItem(taskid, taskItemId);
+        TaskItem currentTaskItem;
+        if (taskItemId == null) {
+            currentTaskItem = taskItems == null ? null : taskItems.stream()
+                    .filter(item -> Objects.equals(item.getStatus(), 0))
+                    .findFirst()
+                    .orElse(null);
+        } else {
+            currentTaskItem = taskService.resolveTaskItem(taskid, taskItemId);
+        }
         if (currentTaskItem == null) {
             currentTaskItem = taskService.getDefaultTaskItem(taskid);
         }
