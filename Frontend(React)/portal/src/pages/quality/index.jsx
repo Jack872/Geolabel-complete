@@ -1,7 +1,7 @@
 /*
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { history, useModel } from 'umi';
+import { history, useModel, useIntl } from 'umi';
 import moment from 'moment';
 import {
   Badge,
@@ -800,6 +800,8 @@ const DimensionResultCard = ({ dimension }) => {
 };
 
 const QualityPage = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentState?.currentUser;
   const [templateForm] = Form.useForm();
@@ -856,7 +858,7 @@ const QualityPage = () => {
       const res = await reqGetQualitySampleSets({ pageNum: 1, pageSize: 100 });
       setDatasetList(res.records || []);
     } catch (e) {
-      message.error('获取样本集列表失败');
+      message.error(t('quality.fetch.dataset.failed', '获取样本集列表失败'));
     } finally {
       setLoadingList(false);
     }
@@ -980,7 +982,7 @@ const QualityPage = () => {
       })));
     } catch (e) {
       setModelOptions([]);
-      message.warning('参考模型列表加载失败');
+      message.warning(t('quality.model.load.failed', '参考模型列表加载失败'));
     } finally {
       setLoadingModels(false);
     }
@@ -1226,7 +1228,7 @@ const QualityPage = () => {
     <div className="quality-container">
       <Row gutter={16}>
         <Col span={5}>
-          <Card title={<span><DatabaseOutlined /> 样本集列表<Tooltip title="选择样本集后，在右侧配置模板、维度规则与参考模型"><InfoCircleOutlined style={{ marginLeft: 8, color: '#999' }} /></Tooltip></span>} bordered={false} className="dataset-list">
+          <Card title={<span><DatabaseOutlined /> {t('quality.dataset.list', '样本集列表')}<Tooltip title={t('quality.dataset.tip', '选择样本集后，在右侧配置模板、维度规则与参考模型')}><InfoCircleOutlined style={{ marginLeft: 8, color: '#999' }} /></Tooltip></span>} bordered={false} className="dataset-list">
             <Spin spinning={loadingList}>
               <List
                 dataSource={datasetList}
@@ -1416,7 +1418,7 @@ const QualityPage = () => {
 export default QualityPage;
 */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { history, useModel } from 'umi';
+import { history, useModel, useIntl } from 'umi';
 import moment from 'moment';
 import {
   Badge,
@@ -1943,6 +1945,8 @@ const UnifiedDimensionCard = ({ dimension, onToggle, onRuleChange, onRuleConfigC
 // ================= Main Page Component =================
 
 const QualityPage = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentState?.currentUser;
   const [templateForm] = Form.useForm();
@@ -2159,8 +2163,8 @@ const QualityPage = () => {
   }));
 
   const handleRunReferenceEvaluation = async () => {
-    if (!selectedSet?.id) return message.warning('请先选择样本集');
-    if (!selectedReferenceModels.length) return message.warning('请至少选择一个参考模型数据源');
+    if (!selectedSet?.id) return message.warning(t('quality.select.dataset.warning', '请先选择样本集'));
+    if (!selectedReferenceModels.length) return message.warning(t('quality.select.model.warning', '请至少选择一个参考模型数据源'));
     try {
       const values = await templateForm.validateFields();
       setRunningReference(true);
@@ -2187,14 +2191,14 @@ const QualityPage = () => {
       } else {
         await fetchReferencePreviewList(selectedSet.id, autoReferenceConfig.modelId);
       }
-      if (data?.referenceModel?.suitable === false) message.warning(data?.referenceModel?.reason || '参考评估未通过适配校验');
-      else message.success(data?.message || '参考评估执行完成');
-    } catch (e) { if (!e?.errorFields) message.error('执行参考评估失败'); } finally { setRunningReference(false); }
+      if (data?.referenceModel?.suitable === false) message.warning(data?.referenceModel?.reason || t('quality.reference.unsuitable', '参考评估未通过适配校验'));
+      else message.success(data?.message || t('quality.reference.done', '参考评估执行完成'));
+    } catch (e) { if (!e?.errorFields) message.error(t('quality.reference.failed', '执行参考评估失败')); } finally { setRunningReference(false); }
   };
 
   const handleRunEvaluation = async () => {
-    if (!selectedSet?.id) return message.warning('请先选择样本集');
-    if (isJobRunning) return message.info('当前已有评价任务在执行中');
+    if (!selectedSet?.id) return message.warning(t('quality.select.dataset.warning', '请先选择样本集'));
+    if (isJobRunning) return message.info(t('quality.job.running', '当前已有评价任务在执行中'));
     try {
       const values = await templateForm.validateFields();
       setRunningEvaluation(true);
@@ -2217,8 +2221,8 @@ const QualityPage = () => {
         } : null,
       };
       const res = await reqSubmitQualityEvaluation(payload);
-      setEvaluationJob(res?.data || null); setEvaluationResult(null); message.success('质量评价任务已提交');
-    } catch (e) { if (!e?.errorFields) message.error('质量评价任务提交失败'); } finally { setRunningEvaluation(false); }
+      setEvaluationJob(res?.data || null); setEvaluationResult(null); message.success(t('quality.job.submitted', '质量评价任务已提交'));
+    } catch (e) { if (!e?.errorFields) message.error(t('quality.job.submit.failed', '质量评价任务提交失败')); } finally { setRunningEvaluation(false); }
   };
 
   const handleSaveProfile = async () => {
@@ -2229,9 +2233,9 @@ const QualityPage = () => {
       await reqSaveQualityProfileDraft({
         id: selectedProfileId, name: values.name, taskType: values.taskType || selectedSet?.taskType || '', expectedBands: values.expectedBands || [], expectedExportFormat: values.expectedExportFormat || '', expectedAnnotationFormat: values.expectedAnnotationFormat || '', requiredFields: values.requiredFields || [], topologyRules: values.topologyRules || [], attributeAuditMode: values.attributeAuditMode || 'optional', dimensionConfigs, metricRules, weights: metricRules, isActive: true, version: 1,
       });
-      message.success('模板配置已保存');
+      message.success(t('quality.profile.saved', '模板配置已保存'));
     } catch (e) {
-      if (!e?.errorFields) message.error('模板配置保存失败');
+      if (!e?.errorFields) message.error(t('quality.profile.save.failed', '模板配置保存失败'));
     } finally {
       setSavingProfile(false);
     }
@@ -2303,11 +2307,11 @@ const QualityPage = () => {
               setLatestReport(reportRes?.data || null);
             } catch (e) { setLatestReport(null); }
           }
-          message.success('质量评价已完成');
+          message.success(t('quality.job.done', '质量评价已完成'));
         } else if (nextJob.status === 'FAILED') {
-          message.error(nextJob.message || '质量评价执行失败');
+          message.error(nextJob.message || t('quality.job.failed', '质量评价执行失败'));
         }
-      } catch (e) { if (active) message.warning('质量评价进度获取失败，正在重试'); }
+      } catch (e) { if (active) message.warning(t('quality.job.poll.failed', '质量评价进度获取失败，正在重试')); }
     };
     poll();
     const timer = setInterval(poll, 1500);
@@ -2321,7 +2325,7 @@ const QualityPage = () => {
           <Card title={<span><DatabaseOutlined /> 样本集列表<Tooltip title="选择样本集后，在右侧配置模板、维度规则与参考模型"><InfoCircleOutlined style={{ marginLeft: 8, color: '#999' }} /></Tooltip></span>} bordered={false} className="dataset-list">
             <Spin spinning={loadingList}>
               <List
-                dataSource={datasetList} locale={{ emptyText: '暂无样本集' }}
+                dataSource={datasetList} locale={{ emptyText: t('quality.dataset.empty', '暂无样本集') }}
                 renderItem={(item) => (
                   <List.Item className={`dataset-item ${selectedSet?.id === item.id ? 'selected' : ''}`} onClick={() => handleSelectDataset(item)}>
                     <List.Item.Meta className="dataset-meta" title={<Text strong>{item.name}</Text>} description={`${item.taskType || '-'} | ${item.num || 0} 切片`} />
@@ -2334,7 +2338,7 @@ const QualityPage = () => {
 
         <Col span={19}>
           {!selectedSet ? (
-            <Card className="empty-state" bordered={false}><Empty description="请从左侧选择一个样本集以开始质量评价" /></Card>
+            <Card className="empty-state" bordered={false}><Empty description={t('quality.select.dataset', '请从左侧选择一个样本集以开始质量评价')} /></Card>
           ) : (
             <Spin spinning={loadingDetail}>
               <div className="quality-workspace">
@@ -2343,10 +2347,10 @@ const QualityPage = () => {
                   <div className="card-title-with-action">
                     <div className="workspace-title">当前样本集：{selectedSet.name}</div>
                     <Space wrap>
-                      <Select value={selectedProfileId} style={{ width: 180 }} placeholder="选择评价模板" allowClear onChange={(profileId) => { setSelectedProfileId(profileId); const profile = profileOptions.find((item) => item.id === profileId); if (profile) applyProfileToForm(profile, dimensionConfigs); }} options={profileOptions.map((item) => ({ label: item.name, value: item.id }))} />
-                      <Button icon={<SaveOutlined />} loading={savingProfile} onClick={handleSaveProfile}>保存模板</Button>
+                      <Select value={selectedProfileId} style={{ width: 180 }} placeholder={t('quality.profile.select', '选择评价模板')} allowClear onChange={(profileId) => { setSelectedProfileId(profileId); const profile = profileOptions.find((item) => item.id === profileId); if (profile) applyProfileToForm(profile, dimensionConfigs); }} options={profileOptions.map((item) => ({ label: item.name, value: item.id }))} />
+                      <Button icon={<SaveOutlined />} loading={savingProfile} onClick={handleSaveProfile}>{t('quality.profile.save', '保存模板')}</Button>
                       <Button icon={<PlayCircleOutlined />} loading={runningReference} onClick={handleRunReferenceEvaluation}>执行参考评估</Button>
-                      <Button type="primary" icon={<PlayCircleOutlined />} loading={runningEvaluation} disabled={isJobRunning} onClick={handleRunEvaluation}>{isJobRunning ? '评价进行中' : '执行质量评价'}</Button>
+                      <Button type="primary" icon={<PlayCircleOutlined />} loading={runningEvaluation} disabled={isJobRunning} onClick={handleRunEvaluation}>{isJobRunning ? t('quality.run.running', '评价进行中') : t('quality.run', '执行质量评价')}</Button>
                     </Space>
                   </div>
                 </Card>
@@ -2383,7 +2387,7 @@ const QualityPage = () => {
                                   <Col span={6}><Form.Item label="属性审核模式" name="attributeAuditMode"><Select options={ATTRIBUTE_AUDIT_MODE_OPTIONS} /></Form.Item></Col>
                                   <Col span={12}><Form.Item label="必填字段" name="requiredFields"><Select mode="multiple" options={attributeOptions} /></Form.Item></Col>
                                   <Col span={12}><Form.Item label="拓扑规则" name="topologyRules"><Select mode="multiple" options={TOPOLOGY_RULE_OPTIONS} /></Form.Item></Col>
-                                  <Col span={12}><Form.Item label="参考模型数据源（多选）" name="referenceModelIds"><Select mode="multiple" loading={loadingModels} allowClear options={modelOptions.map((m) => ({ label: m.modelName || m.model_name || m.modelId, value: m.modelId }))} /></Form.Item></Col>
+                                  <Col span={12}><Form.Item label={t('quality.reference.models', '参考模型数据源（多选）')} name="referenceModelIds"><Select mode="multiple" loading={loadingModels} allowClear options={modelOptions.map((m) => ({ label: m.modelName || m.model_name || m.modelId, value: m.modelId }))} /></Form.Item></Col>
                                   <Col span={6}><Form.Item label="模型范围模式" name="scopeMode"><Select options={[{ label: '全量', value: 'all' }, { label: '抽样', value: 'sample' }]} /></Form.Item></Col>
                                   <Col span={3}><Form.Item label="置信度阈值(自动)" name="confidenceThreshold"><InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} disabled /></Form.Item></Col>
                                   <Col span={3}><Form.Item label="IOU阈值(自动)" name="iouThreshold"><InputNumber min={0} max={1} step={0.01} style={{ width: '100%' }} disabled /></Form.Item></Col>
@@ -2421,7 +2425,7 @@ const QualityPage = () => {
                               </Space>
                               <Text type="secondary">说明：推理结果为参考证据，不作为严格真值。</Text>
                             </div>
-                            <Spin spinning={loadingPreviewDetail}>{previewDetail ? <><Row gutter={16}><Col span={12}><div className="preview-block-title">原图</div><PreviewImageWithOverlay imageUrl={previewDetail.originalImageUrl || previewDetail.sourceImageUrl} overlayType={previewDetail.overlayType} overlayData={previewDetail.overlayData} showOverlay={false} /></Col><Col span={12}><div className="preview-block-title">概率真值热力图</div><PreviewImageWithOverlay imageUrl={previewDetail.resultImageUrl || previewDetail.originalImageUrl || previewDetail.sourceImageUrl} overlayType={previewDetail.overlayType} overlayData={previewDetail.overlayData} showOverlay /></Col></Row><Descriptions size="small" column={2} style={{ marginTop: 12 }}><Descriptions.Item label="平均置信度">{previewDetail?.confidenceSummary?.mean ?? '--'}</Descriptions.Item><Descriptions.Item label="类别覆盖率">{previewDetail?.classSummary?.classCoverageRate ?? '--'}%</Descriptions.Item></Descriptions></> : <Empty description="暂无预览样本" />}</Spin>
+                            <Spin spinning={loadingPreviewDetail}>{previewDetail ? <><Row gutter={16}><Col span={12}><div className="preview-block-title">{t('quality.preview.original', '原图')}</div><PreviewImageWithOverlay imageUrl={previewDetail.originalImageUrl || previewDetail.sourceImageUrl} overlayType={previewDetail.overlayType} overlayData={previewDetail.overlayData} showOverlay={false} /></Col><Col span={12}><div className="preview-block-title">{t('quality.preview.heatmap', '概率真值热力图')}</div><PreviewImageWithOverlay imageUrl={previewDetail.resultImageUrl || previewDetail.originalImageUrl || previewDetail.sourceImageUrl} overlayType={previewDetail.overlayType} overlayData={previewDetail.overlayData} showOverlay /></Col></Row><Descriptions size="small" column={2} style={{ marginTop: 12 }}><Descriptions.Item label="平均置信度">{previewDetail?.confidenceSummary?.mean ?? '--'}</Descriptions.Item><Descriptions.Item label="类别覆盖率">{previewDetail?.classSummary?.classCoverageRate ?? '--'}%</Descriptions.Item></Descriptions></> : <Empty description={t('quality.preview.empty', '暂无预览样本')} />}</Spin>
                           </div>
                         )
                       },
@@ -2435,7 +2439,7 @@ const QualityPage = () => {
                                 <div className="job-progress-header">
                                   <div>
                                     <div className="job-stage">{evaluationJob.stage || '等待中'}</div>
-                                    <div className="job-message">{evaluationJob.message || '质量评价任务已提交'}</div>
+                                    <div className="job-message">{evaluationJob.message || t('quality.job.submitted', '质量评价任务已提交')}</div>
                                   </div>
                                   <Tag color={evaluationJob.status === 'SUCCESS' ? 'green' : evaluationJob.status === 'FAILED' ? 'red' : 'blue'}>
                                     {evaluationJob.status || 'UNKNOWN'}
@@ -2460,9 +2464,9 @@ const QualityPage = () => {
 
                             <div className="editor-title" style={{ marginTop: 24, marginBottom: 12 }}>报告输出</div>
                             <Space>
-                              <Button onClick={() => activeReportId ? history.push(`/quality/report/${activeReportId}`) : message.warning('当前暂无可查看的质量报告')}>查看报告详情</Button>
-                              <Button icon={<DownloadOutlined />} onClick={async () => { if (!activeReportId) return message.warning('当前暂无可导出的质量报告'); const res = await reqGetQualityReport(activeReportId); const blob = new Blob([JSON.stringify(res?.data || {}, null, 2)], { type: 'application/json;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `quality-report-${activeReportId}.json`; link.click(); URL.revokeObjectURL(link.href); }}>下载 JSON</Button>
-                              <Button icon={<PrinterOutlined />} onClick={async () => { if (!activeReportId) return message.warning('当前暂无可打印的质量报告'); const html = await reqGetQualityReportHtml(activeReportId); setReportPreviewHtml(html); setReportPreviewVisible(true); }}>预览 / 打印 HTML</Button>
+                              <Button onClick={() => activeReportId ? history.push(`/quality/report/${activeReportId}`) : message.warning(t('quality.report.none.view', '当前暂无可查看的质量报告'))}>{t('quality.report.view', '查看报告详情')}</Button>
+                              <Button icon={<DownloadOutlined />} onClick={async () => { if (!activeReportId) return message.warning(t('quality.report.none.export', '当前暂无可导出的质量报告')); const res = await reqGetQualityReport(activeReportId); const blob = new Blob([JSON.stringify(res?.data || {}, null, 2)], { type: 'application/json;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `quality-report-${activeReportId}.json`; link.click(); URL.revokeObjectURL(link.href); }}>{t('quality.report.downloadJson', '下载 JSON')}</Button>
+                              <Button icon={<PrinterOutlined />} onClick={async () => { if (!activeReportId) return message.warning(t('quality.report.none.print', '当前暂无可打印的质量报告')); const html = await reqGetQualityReportHtml(activeReportId); setReportPreviewHtml(html); setReportPreviewVisible(true); }}>{t('quality.report.previewHtml', '预览 / 打印 HTML')}</Button>
                             </Space>
                           </>
                         )
@@ -2475,7 +2479,7 @@ const QualityPage = () => {
           )}
         </Col>
       </Row>
-      <Modal open={reportPreviewVisible} title="质量评价 HTML 报告预览" width={1080} onCancel={() => setReportPreviewVisible(false)} footer={[<Button key="close" onClick={() => setReportPreviewVisible(false)}>关闭</Button>, <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => { const win = window.open('', '_blank', 'width=1200,height=900'); if (!win) return; win.document.write(reportPreviewHtml); win.document.close(); win.focus(); win.print(); }}>打印</Button>]}><iframe title="quality-report-preview" className="report-preview-frame" srcDoc={reportPreviewHtml} /></Modal>
+      <Modal open={reportPreviewVisible} title={t('quality.report.previewTitle', '质量评价 HTML 报告预览')} width={1080} onCancel={() => setReportPreviewVisible(false)} footer={[<Button key="close" onClick={() => setReportPreviewVisible(false)}>{t('quality.close', '关闭')}</Button>, <Button key="print" type="primary" icon={<PrinterOutlined />} onClick={() => { const win = window.open('', '_blank', 'width=1200,height=900'); if (!win) return; win.document.write(reportPreviewHtml); win.document.close(); win.focus(); win.print(); }}>{t('quality.print', '打印')}</Button>]}><iframe title="quality-report-preview" className="report-preview-frame" srcDoc={reportPreviewHtml} /></Modal>
     </div>
   );
 };

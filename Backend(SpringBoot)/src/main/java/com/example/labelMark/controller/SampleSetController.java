@@ -58,19 +58,19 @@ public class SampleSetController {
         Path base = sampleSetBaseDir();
         Path path = Paths.get(storedPath).toAbsolutePath().normalize();
         if (!path.startsWith(base)) {
-            throw new IllegalArgumentException("样本集路径越界");
+            throw new IllegalArgumentException(I18n.msg("sample.path.invalid"));
         }
         return path;
     }
 
     private Path resolveUnderBaseDir(Path baseDir, String fileName) {
         if (fileName == null || fileName.contains("..") || fileName.matches(".*[\\\\/:*?\"<>|\\p{Cntrl}].*")) {
-            throw new IllegalArgumentException("文件名非法");
+            throw new IllegalArgumentException(I18n.msg("sample.fileName.invalid"));
         }
         Path base = baseDir.toAbsolutePath().normalize();
         Path resolved = base.resolve(fileName).normalize();
         if (!resolved.startsWith(base)) {
-            throw new IllegalArgumentException("路径越界");
+            throw new IllegalArgumentException(I18n.msg("sample.path.traversal"));
         }
         return resolved;
     }
@@ -102,18 +102,18 @@ public class SampleSetController {
             String datasetName = (String) params.get("datasetName");
 
             // 校验
-            if (taskIds == null || taskIds.isEmpty()) return ResultGenerator.getFailResult("任务ID不能为空");
-            if (datasetName == null || datasetName.trim().isEmpty()) return ResultGenerator.getFailResult("数据集名称不能为空");
+            if (taskIds == null || taskIds.isEmpty()) return ResultGenerator.getFailResultByCode("sample.taskIds.required");
+            if (datasetName == null || datasetName.trim().isEmpty()) return ResultGenerator.getFailResultByCode("sample.datasetName.required");
 
             // 调用 Service (包含事务)
             int count = sampleSetService.createMergedDataset(taskIds, datasetName, params);
 
-            return ResultGenerator.getSuccessResult("资源生成完毕，元数据已保存。共生成 " + count + " 张切片");
+            return ResultGenerator.getSuccessResultByCode("sample.generate.success", count);
 
         } catch (Exception e) {
             e.printStackTrace();
             // 此时文件已删除，数据库已回滚
-            return ResultGenerator.getFailResult("生成失败: " + e.getMessage());
+            return ResultGenerator.getFailResultByCode("sample.generate.failed", e.getMessage());
         }
     }
 
@@ -122,10 +122,10 @@ public class SampleSetController {
     public Result delete(@RequestBody List<Integer> ids) {
         try {
             sampleSetService.deleteSampleSets(ids);
-            return ResultGenerator.getSuccessResult("删除成功");
+            return ResultGenerator.getSuccessResultByCode("sample.delete.success");
         } catch (Exception e) {
             e.printStackTrace();
-            return ResultGenerator.getFailResult("删除失败: " + e.getMessage());
+            return ResultGenerator.getFailResultByCode("sample.delete.failed", e.getMessage());
         }
     }
 
@@ -163,7 +163,7 @@ public class SampleSetController {
             return ResultGenerator.getSuccessResult(sampleSetService.exportSampleSet(id, format, exportOptions));
         } catch (Exception e) {
             e.printStackTrace();
-            return ResultGenerator.getFailResult("导出失败: " + e.getMessage());
+            return ResultGenerator.getFailResultByCode("sample.export.failed", e.getMessage());
         }
     }
     // 4. 获取切片预览列表 (返回文件名 + 标注框数据)
@@ -171,7 +171,7 @@ public class SampleSetController {
     public Result getPreviewList(@RequestParam Integer id, @RequestParam(defaultValue = "8") Integer limit) {
         try {
             SampleSet sampleSet = sampleSetService.getById(id);
-            if (sampleSet == null) return ResultGenerator.getFailResult("数据集不存在");
+            if (sampleSet == null) return ResultGenerator.getFailResultByCode("sample.dataset.notFound");
             sampleSet = sampleSetService.getReadableSampleSet(id);
 
             Path slicesDir = normalizeStoredPathUnderSampleBase(sampleSet.getImageUrl());
@@ -233,7 +233,7 @@ public class SampleSetController {
             return ResultGenerator.getSuccessResult(result);
         } catch (Exception e) {
             e.printStackTrace();
-            return ResultGenerator.getFailResult("读取文件列表失败: " + e.getMessage());
+            return ResultGenerator.getFailResultByCode("sample.preview.list.failed", e.getMessage());
         }
     }
 

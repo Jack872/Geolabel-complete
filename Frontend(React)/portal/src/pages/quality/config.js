@@ -1,3 +1,8 @@
+import { getLocale } from 'umi';
+
+const isEn = () => String(getLocale() || '').startsWith('en');
+const label = (zh, en) => (isEn() ? en : zh);
+
 /**
  * @typedef {'rule' | 'audit' | 'model' | 'manual' | 'prov' | 'metadata'} QualitySourceType
  */
@@ -82,12 +87,12 @@
  */
 
 export const QUALITY_SOURCE_LABELS = {
-  rule: '规则校验',
-  audit: '审核统计',
-  model: '模型参考',
-  manual: '人工抽检',
-  prov: '溯源',
-  metadata: '元数据',
+  rule: label('规则校验', 'Rule Check'),
+  audit: label('审核统计', 'Audit Statistics'),
+  model: label('模型参考', 'Model Reference'),
+  manual: label('人工抽检', 'Manual Sampling'),
+  prov: label('溯源', 'Provenance'),
+  metadata: label('元数据', 'Metadata'),
 };
 
 export const QUALITY_SOURCE_COLORS = {
@@ -102,72 +107,72 @@ export const QUALITY_SOURCE_COLORS = {
 export const DEFAULT_QUALITY_DIMENSIONS = [
   {
     key: 'completeness',
-    label: '完整性',
+    label: label('完整性', 'Completeness'),
     enabled: true,
     indicators: [
-      { key: 'requiredAttributeMissingRate', label: '必填属性缺失率', sources: ['rule'], thresholdRule: '<= 5% 通过，5%-20% 预警，>20% 失败' },
-      { key: 'categoryAttributeCompletionRate', label: '类别属性完整率', sources: ['rule'], thresholdRule: '>= 90% 通过，70%-90% 预警，<70% 失败' },
-      { key: 'referenceFeatureMissingRate', label: '参考要素漏检率(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
-      { key: 'referenceFeatureRedundancyRate', label: '参考要素冗余率(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
+      { key: 'requiredAttributeMissingRate', label: label('必填属性缺失率', 'Required Attribute Missing Rate'), sources: ['rule'], thresholdRule: label('<= 5% 通过，5%-20% 预警，>20% 失败', '<= 5% pass, 5%-20% warning, >20% fail') },
+      { key: 'categoryAttributeCompletionRate', label: label('类别属性完整率', 'Category Attribute Completion Rate'), sources: ['rule'], thresholdRule: label('>= 90% 通过，70%-90% 预警，<70% 失败', '>= 90% pass, 70%-90% warning, <70% fail') },
+      { key: 'referenceFeatureMissingRate', label: label('参考要素漏检率(可选)', 'Reference Feature Missing Rate (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
+      { key: 'referenceFeatureRedundancyRate', label: label('参考要素冗余率(可选)', 'Reference Feature Redundancy Rate (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
     ],
   },
   {
     key: 'logicConsistency',
-    label: '逻辑一致性',
+    label: label('逻辑一致性', 'Logical Consistency'),
     enabled: true,
     indicators: [
-      { key: 'bandConsistencyRate', label: '波段一致性', sources: ['rule'], thresholdRule: '>= 90% 通过，70%-90% 预警，<70% 失败' },
-      { key: 'crsCompletenessRate', label: '坐标系完整率', sources: ['metadata'], thresholdRule: '坐标系元数据非空比例' },
-      { key: 'crsConsistencyRate', label: '坐标系一致率', sources: ['rule'], thresholdRule: '一致率越高越好' },
-      { key: 'imageFormatConsistencyRate', label: '影像格式一致率', sources: ['metadata'], thresholdRule: '主格式一致率' },
-      { key: 'annotationFormatMatch', label: '标注格式匹配', sources: ['rule'], thresholdRule: '与模板期望一致' },
-      { key: 'exportFormatMatch', label: '导出格式匹配', sources: ['rule'], thresholdRule: '与模板期望一致' },
-      { key: 'topologyPassRate', label: '拓扑规则通过率', sources: ['rule'], thresholdRule: '按拓扑规则校验通过比例' },
+      { key: 'bandConsistencyRate', label: label('波段一致性', 'Band Consistency'), sources: ['rule'], thresholdRule: label('>= 90% 通过，70%-90% 预警，<70% 失败', '>= 90% pass, 70%-90% warning, <70% fail') },
+      { key: 'crsCompletenessRate', label: label('坐标系完整率', 'CRS Completeness Rate'), sources: ['metadata'], thresholdRule: label('坐标系元数据非空比例', 'Non-empty CRS metadata ratio') },
+      { key: 'crsConsistencyRate', label: label('坐标系一致率', 'CRS Consistency Rate'), sources: ['rule'], thresholdRule: label('一致率越高越好', 'Higher consistency is better') },
+      { key: 'imageFormatConsistencyRate', label: label('影像格式一致率', 'Image Format Consistency Rate'), sources: ['metadata'], thresholdRule: label('主格式一致率', 'Dominant format consistency') },
+      { key: 'annotationFormatMatch', label: label('标注格式匹配', 'Annotation Format Match'), sources: ['rule'], thresholdRule: label('与模板期望一致', 'Matches template expectation') },
+      { key: 'exportFormatMatch', label: label('导出格式匹配', 'Export Format Match'), sources: ['rule'], thresholdRule: label('与模板期望一致', 'Matches template expectation') },
+      { key: 'topologyPassRate', label: label('拓扑规则通过率', 'Topology Rule Pass Rate'), sources: ['rule'], thresholdRule: label('按拓扑规则校验通过比例', 'Pass ratio by topology rules') },
     ],
   },
   {
     key: 'attributeAccuracy',
-    label: '属性精度',
+    label: label('属性精度', 'Attribute Accuracy'),
     enabled: true,
     indicators: [
-      { key: 'attributeValueValidityRate', label: '属性值合法率', sources: ['rule'], thresholdRule: '按属性类型校验合法性' },
-      { key: 'manualAttributeAuditAccuracyRate', label: '人工属性审核准确率', sources: ['manual'], thresholdRule: '无人工抽检时 pending' },
-      { key: 'referenceClassificationAccuracy', label: '参考分类准确率(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
+      { key: 'attributeValueValidityRate', label: label('属性值合法率', 'Attribute Value Validity Rate'), sources: ['rule'], thresholdRule: label('按属性类型校验合法性', 'Validate by attribute type') },
+      { key: 'manualAttributeAuditAccuracyRate', label: label('人工属性审核准确率', 'Manual Attribute Audit Accuracy'), sources: ['manual'], thresholdRule: label('无人工抽检时 pending', 'Pending when no manual sampling exists') },
+      { key: 'referenceClassificationAccuracy', label: label('参考分类准确率(可选)', 'Reference Classification Accuracy (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
     ],
   },
   {
     key: 'positionalAccuracy',
-    label: '位置精度',
+    label: label('位置精度', 'Positional Accuracy'),
     enabled: true,
     indicators: [
-      { key: 'referenceObjectOverlap', label: '参考对象重叠度(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
-      { key: 'referenceBoundaryDeviation', label: '参考边界偏差(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
-      { key: 'referenceBoundaryPassRate', label: '参考边界通过率(可选)', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
+      { key: 'referenceObjectOverlap', label: label('参考对象重叠度(可选)', 'Reference Object Overlap (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
+      { key: 'referenceBoundaryDeviation', label: label('参考边界偏差(可选)', 'Reference Boundary Deviation (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
+      { key: 'referenceBoundaryPassRate', label: label('参考边界通过率(可选)', 'Reference Boundary Pass Rate (Optional)'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
     ],
   },
   {
     key: 'temporalQuality',
-    label: '时间质量',
+    label: label('时间质量', 'Temporal Quality'),
     enabled: true,
     indicators: [
-      { key: 'acquisitionTimeCompletenessRate', label: '采集时间完整率', sources: ['metadata'], thresholdRule: '采集时间起止字段完整率' },
-      { key: 'timePrecisionCompletenessRate', label: '时间精度字段完整率', sources: ['metadata'], thresholdRule: 'time_precision 非空比例' },
-      { key: 'timePrecisionIndex', label: '时间精度指数', sources: ['rule'], thresholdRule: 'second > minute > hour > day' },
-      { key: 'timeValidityRate', label: '时间有效率', sources: ['rule'], thresholdRule: '起止时间可解析且时间关系有效' },
+      { key: 'acquisitionTimeCompletenessRate', label: label('采集时间完整率', 'Acquisition Time Completeness'), sources: ['metadata'], thresholdRule: label('采集时间起止字段完整率', 'Start/end acquisition time completeness') },
+      { key: 'timePrecisionCompletenessRate', label: label('时间精度字段完整率', 'Time Precision Completeness'), sources: ['metadata'], thresholdRule: label('time_precision 非空比例', 'Non-empty time_precision ratio') },
+      { key: 'timePrecisionIndex', label: label('时间精度指数', 'Time Precision Index'), sources: ['rule'], thresholdRule: 'second > minute > hour > day' },
+      { key: 'timeValidityRate', label: label('时间有效率', 'Time Validity Rate'), sources: ['rule'], thresholdRule: label('起止时间可解析且时间关系有效', 'Time range can be parsed and is valid') },
     ],
   },
   {
     key: 'usabilityQuality',
-    label: '使用质量',
+    label: label('使用质量', 'Usability Quality'),
     enabled: true,
     indicators: [
-      { key: 'classBalanceRate', label: '类别平衡度', sources: ['rule'], thresholdRule: '熵归一化，越高越均衡' },
-      { key: 'provenanceCompletenessRate', label: '溯源完整度', sources: ['prov'], thresholdRule: '活动/实体/关系/代理完整性' },
-      { key: 'auditCoverageRate', label: '审核覆盖率', sources: ['audit'], thresholdRule: '有审核记录任务占比' },
-      { key: 'auditRecordCompletenessRate', label: '审核记录完整率', sources: ['audit'], thresholdRule: '审核关键字段完整率' },
-      { key: 'auditClosureRate', label: '审核闭环率', sources: ['audit'], thresholdRule: '已闭环审核占比' },
-      { key: 'auditIssueDiscoveryRate', label: '审核问题发现率(信号)', sources: ['audit'], thresholdRule: '仅作为过程信号' },
-      { key: 'referenceReliabilityLevel', label: '参考评估可靠性等级', sources: ['model'], thresholdRule: '参考模型启用时可计算' },
+      { key: 'classBalanceRate', label: label('类别平衡度', 'Class Balance'), sources: ['rule'], thresholdRule: label('熵归一化，越高越均衡', 'Normalized entropy; higher is more balanced') },
+      { key: 'provenanceCompletenessRate', label: label('溯源完整度', 'Provenance Completeness'), sources: ['prov'], thresholdRule: label('活动/实体/关系/代理完整性', 'Activity/entity/relation/agent completeness') },
+      { key: 'auditCoverageRate', label: label('审核覆盖率', 'Audit Coverage'), sources: ['audit'], thresholdRule: label('有审核记录任务占比', 'Ratio of tasks with audit records') },
+      { key: 'auditRecordCompletenessRate', label: label('审核记录完整率', 'Audit Record Completeness'), sources: ['audit'], thresholdRule: label('审核关键字段完整率', 'Completeness of key audit fields') },
+      { key: 'auditClosureRate', label: label('审核闭环率', 'Audit Closure Rate'), sources: ['audit'], thresholdRule: label('已闭环审核占比', 'Closed audit ratio') },
+      { key: 'auditIssueDiscoveryRate', label: label('审核问题发现率(信号)', 'Audit Issue Discovery Rate (Signal)'), sources: ['audit'], thresholdRule: label('仅作为过程信号', 'Process signal only') },
+      { key: 'referenceReliabilityLevel', label: label('参考评估可靠性等级', 'Reference Reliability Level'), sources: ['model'], thresholdRule: label('参考模型启用时可计算', 'Calculated when reference model is enabled') },
     ],
   },
 ];
@@ -175,7 +180,7 @@ export const DEFAULT_QUALITY_DIMENSIONS = [
 export const DEFAULT_QUALITY_PROFILES = [
   {
     id: 'general-rs-v1',
-    name: '通用遥感样本模板',
+    name: label('通用遥感样本模板', 'General Remote Sensing Sample Template'),
     expectedBands: [],
     expectedExportFormat: '',
     expectedAnnotationFormat: '',
@@ -185,7 +190,7 @@ export const DEFAULT_QUALITY_PROFILES = [
   },
   {
     id: 'building-extract-v1',
-    name: '建筑物提取模板',
+    name: label('建筑物提取模板', 'Building Extraction Template'),
     expectedBands: ['R', 'G', 'B'],
     expectedExportFormat: 'COCO',
     expectedAnnotationFormat: 'Polygon',
@@ -195,39 +200,39 @@ export const DEFAULT_QUALITY_PROFILES = [
   },
 ];
 
-export const EXPORT_FORMAT_OPTIONS = ['未记录', 'COCO', 'YOLO', 'VOC', 'TDML'];
-export const ANNOTATION_FORMAT_OPTIONS = ['未记录', 'Polygon', 'BBox', 'Mask', 'Polyline'];
+export const EXPORT_FORMAT_OPTIONS = [label('未记录', 'Unrecorded'), 'COCO', 'YOLO', 'VOC', 'TDML'];
+export const ANNOTATION_FORMAT_OPTIONS = [label('未记录', 'Unrecorded'), 'Polygon', 'BBox', 'Mask', 'Polyline'];
 export const ATTRIBUTE_AUDIT_MODE_OPTIONS = [
-  { label: '不检查', value: 'disabled' },
-  { label: '可选人工审核', value: 'optional' },
-  { label: '人工审核', value: 'manual' },
+  { label: label('不检查', 'Disabled'), value: 'disabled' },
+  { label: label('可选人工审核', 'Optional Manual Audit'), value: 'optional' },
+  { label: label('人工审核', 'Manual Audit'), value: 'manual' },
 ];
 export const TOPOLOGY_RULE_OPTIONS = [
-  { label: '面要素不得自相交', value: 'polygon_no_self_intersection' },
-  { label: '面要素不得重复', value: 'polygon_no_duplicate' },
-  { label: '面要素不得空洞异常', value: 'polygon_valid_holes' },
-  { label: '道路线要素保持连通', value: 'road_should_connect' },
+  { label: label('面要素不得自相交', 'Polygons must not self-intersect'), value: 'polygon_no_self_intersection' },
+  { label: label('面要素不得重复', 'Polygons must not be duplicated'), value: 'polygon_no_duplicate' },
+  { label: label('面要素不得空洞异常', 'Polygons must not have invalid holes'), value: 'polygon_valid_holes' },
+  { label: label('道路线要素保持连通', 'Road line features should stay connected'), value: 'road_should_connect' },
 ];
 
 export const DIMENSION_STATUS_LABELS = {
-  pass: '满足要求',
-  good: '满足要求',
-  warning: '需复核',
-  fail: '不满足要求',
-  risk: '不满足要求',
-  signal_only: '需复核',
-  pending: '未评价',
-  not_applicable: '未评价',
-  disabled: '未评价',
+  pass: label('满足要求', 'Pass'),
+  good: label('满足要求', 'Pass'),
+  warning: label('需复核', 'Review Required'),
+  fail: label('不满足要求', 'Fail'),
+  risk: label('不满足要求', 'Fail'),
+  signal_only: label('需复核', 'Review Required'),
+  pending: label('未评价', 'Pending'),
+  not_applicable: label('未评价', 'Pending'),
+  disabled: label('未评价', 'Pending'),
 };
 
 export const METRIC_STATUS_LABELS = {
-  pass: '通过',
-  good: '通过',
-  warning: '预警',
-  fail: '失败',
-  risk: '失败',
-  pending: '未评价',
-  not_applicable: '未评价',
-  disabled: '未评价',
+  pass: label('通过', 'Pass'),
+  good: label('通过', 'Pass'),
+  warning: label('预警', 'Warning'),
+  fail: label('失败', 'Fail'),
+  risk: label('失败', 'Fail'),
+  pending: label('未评价', 'Pending'),
+  not_applicable: label('未评价', 'Pending'),
+  disabled: label('未评价', 'Pending'),
 };

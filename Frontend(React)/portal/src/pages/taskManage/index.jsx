@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-layout';
 import { ProTable, TableDropdown } from '@ant-design/pro-table';
-import { useModel, history } from 'umi';
+import { useModel, history, useIntl } from 'umi';
 console.log('umi models:', Object.keys(window.g_umi?.models || {}));
 import { Button, message, Popconfirm, Select, Tag } from 'antd';
 import { useRef, useState, useEffect } from 'react';
@@ -35,6 +35,8 @@ import {reqGenerateMergedDataset } from '@/services/sampleSet/api'
 // #region
 
 const TaskManage = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const actionRef = useRef();
   const searchFormRef = useRef();
   const searchTimerRef = useRef();
@@ -74,21 +76,21 @@ const TaskManage = () => {
   const getTaskStatusMeta = (record) => {
     switch (record?.status) {
       case 0:
-        return { text: '审核中', color: 'processing', icon: <ClockCircleOutlined /> };
+        return { text: t('task.status.audit', '审核中'), color: 'processing', icon: <ClockCircleOutlined /> };
       case 1:
-        return { text: '审核通过', color: 'success', icon: <CheckCircleOutlined /> };
+        return { text: t('task.status.pass', '审核通过'), color: 'success', icon: <CheckCircleOutlined /> };
       case 2:
-        return { text: '审核未通过', color: 'error', icon: <CloseCircleOutlined /> };
+        return { text: t('task.status.reject', '审核未通过'), color: 'error', icon: <CloseCircleOutlined /> };
       case 3:
-        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+        return { text: t('task.status.unsubmitted', '未提交'), color: '#BDBDBD', icon: <MinusCircleOutlined /> };
       default:
-        return { text: '未提交', color: '#BDBDBD', icon: <MinusCircleOutlined /> };
+        return { text: t('task.status.unsubmitted', '未提交'), color: '#BDBDBD', icon: <MinusCircleOutlined /> };
     }
   };
 
   // 处理生成请求
   const handleGenerateDataset = async (values) => {
-    const hide = message.loading('正在后台生成数据集，请稍候...', 0);
+    const hide = message.loading(t('task.batch.loading', '正在后台生成数据集，请稍候...'), 0);
     try {
       // 提取选中的 taskIds
       const taskIds = selectedRowsState.map(row => row.taskid);
@@ -111,18 +113,18 @@ const TaskManage = () => {
 
       hide();
       if (result.code === 200) {
-        message.success('样本集生成任务已提交，请去样本中心查看进度！');
+        message.success(t('task.dataset.submitted', '样本集生成任务已提交，请去样本中心查看进度！'));
         setDatasetModalVisible(false);
         setSelectedRows([]); // 清空选择
         if (actionRef.current) {
           actionRef.current.clearSelected(); // 清除 UI 选中状态
         }
       } else {
-        message.error(result.message || '生成失败');
+        message.error(result.message || t('task.generate.failed', '生成失败'));
       }
     } catch (error) {
       hide();
-      message.error('请求发生错误');
+      message.error(t('task.request.error', '请求发生错误'));
       console.error(error);
     }
   };
@@ -138,11 +140,11 @@ const TaskManage = () => {
         setSelectableImageOptions(result.data);
       } else {
         setSelectableImageOptions([]);
-        message.warning(result?.message || '获取影像名称列表失败');
+        message.warning(result?.message || t('task.image.list.fetch.failed', '获取影像名称列表失败'));
       }
     } catch (error) {
       setSelectableImageOptions([]);
-      message.error('获取影像名称列表失败');
+      message.error(t('task.image.list.fetch.failed', '获取影像名称列表失败'));
     }
   };
 
@@ -222,7 +224,7 @@ const TaskManage = () => {
 
     // 编辑模式：只更新任务名称和任务期限
     if (taskid && !type && !mapSelectMode) {
-      const hide = message.loading('正在更新任务');
+      const hide = message.loading(t('task.update.loading', '正在更新任务'));
       try {
         const dateMap = daterange.map((item) => item.format('YYYY-MM-DD'));
         const result = await reqEditTask({
@@ -234,15 +236,15 @@ const TaskManage = () => {
         if (result.code === 200) {
           setVisible(false);
           setDefaultValue({});
-          message.success('任务更新成功！');
+          message.success(t('task.update.success', '任务更新成功！'));
           actionRef.current.reload();
         } else {
-          message.error(result.message || '任务更新失败');
+          message.error(result.message || t('task.update.failed', '任务更新失败'));
         }
       } catch (error) {
         hide();
-        console.error('编辑任务失败！', error);
-        message.error('编辑任务失败！');
+        console.error(t('task.update.edit.failed', '编辑任务失败！'), error);
+        message.error(t('task.update.edit.failed', '编辑任务失败！'));
       }
       return;
     }
@@ -254,13 +256,13 @@ const TaskManage = () => {
     if (mapSelectMode === 'bySetName') {
       const setNames = values.setNames || [];
       if (setNames.length === 0) {
-        message.error('请至少选择一个影像集');
+        message.error(t('task.imageSet.required', '必须选择影像集！'));
         return;
       }
 
       // 确保score是数字
       score = typeof score === 'number' ? score : Number(score) || 0;
-      const hide = message.loading(`正在按影像集创建任务...`);
+      const hide = message.loading(t('task.create.loading', '正在添加任务'));
       try {
         const map = daterange.map(item => item.format('YYYY-MM-DD'));
         const requestValues = {
@@ -284,17 +286,17 @@ const TaskManage = () => {
         const result = await reqPublishTaskBySet(requestValues);
         hide();
         if (result.code === 200) {
-          message.success(result.message || '批量任务创建成功');
+          message.success(result.message || t('task.create.success', '成功创建 1 个多影像任务（{count} 张）', { count: setNames.length }));
           setVisible(false);
           setDefaultValue({});
           actionRef.current.reload();
         } else {
-          message.error(result.message || '批量任务创建失败');
+          message.error(result.message || t('task.create.failed', '任务创建失败'));
         }
       } catch (error) {
         hide();
         console.error(error);
-        message.error('按影像集创建任务失败');
+        message.error(t('task.create.failed', '任务创建失败'));
       }
       return;
     }
@@ -304,7 +306,7 @@ const TaskManage = () => {
 
     const selectedImages = [].concat(mapserver || []).filter(Boolean);
     if (selectedImages.length === 0) {
-      message.error('请至少选择一个影像');
+      message.error(t('task.image.required', '必须选择影像！'));
       return;
     }
 
@@ -327,24 +329,24 @@ const TaskManage = () => {
     });
 
     if (taskid && localImages.length > 0) {
-      message.error('编辑任务暂不支持切换为本地影像，请新建任务');
+      message.error(t('task.create.failed', '任务创建失败'));
       return;
     }
 
     // 如果是非团队任务且设置了积分，进行积分检查
     if (isNonTeamTaskLogic && score > 0) {
       if (currentUserScore < score) {
-        message.error(`积分不足！您需要 ${score} 积分来发布该任务，但您只有 ${currentUserScore} 积分。`);
+        message.error(t('task.points.insufficient', '积分不足！您需要 {score} 积分来发布该任务，但您只有 {currentUserScore} 积分。', { score, currentUserScore }));
         return; // 终止操作
       }
     }
 
     if (taskid && selectedImages.length > 1) {
-      message.error('编辑任务暂不支持一次修改多张影像，请新建任务');
+      message.error(t('task.create.failed', '任务创建失败'));
       return;
     }
 
-    const hide = message.loading('正在添加任务');
+    const hide = message.loading(t('task.create.loading', '正在添加任务'));
     try {
       const taskItems = [
         ...serviceImages.map((item) => ({
@@ -377,19 +379,19 @@ const TaskManage = () => {
 
       hide();
       if (result.code !== 200) {
-        message.error(result.message || '任务创建失败');
+        message.error(result.message || t('task.create.failed', '任务创建失败'));
         return false;
       }
       setVisible(false);
       setDefaultValue({});
-      message.success(taskid ? '任务更新成功！' : `成功创建 1 个多影像任务（${taskItems.length} 张）`);
+      message.success(taskid ? t('task.update.success', '任务更新成功！') : t('task.create.success', '成功创建 1 个多影像任务（{count} 张）', { count: taskItems.length }));
 
       // 重新加载任务列表
       actionRef.current.reload();
     } catch (error) {
       hide();
-      console.error('操作失败！', error);
-      message.error('操作失败！');
+      console.error(t('task.create.failed', '任务创建失败'), error);
+      message.error(t('task.create.failed', '任务创建失败'));
       return false;
     }
   };
@@ -409,9 +411,9 @@ const TaskManage = () => {
     try {
       await reqDeleteTask(id);
       actionRef.current.reloadAndRest();
-      message.success('删除成功！');
+      message.success(t('task.delete.success', '删除成功！'));
     } catch (error) {
-      message.error('删除失败！');
+      message.error(t('task.delete.failed', '删除失败！'));
     }
   };
   // 新建任务获取机构下拉框
@@ -431,7 +433,7 @@ const TaskManage = () => {
   });
   const columns = [
     {
-      title: '序号',
+      title: t('common.index', '序号'),
       dataIndex: 'index',
       key: 'indexBorder',
       width: '5%',
@@ -442,7 +444,7 @@ const TaskManage = () => {
     },
     {
       disable: true,
-      title: '任务名称',
+      title: t('task.name', '任务名称'),
       dataIndex: 'taskname',
       key: 'taskname',
       ellipsis: false,
@@ -452,13 +454,13 @@ const TaskManage = () => {
         rules: [
           {
             required: true,
-            message: '此项为必填项',
+            message: t('common.required', '此项为必填项'),
           },
         ],
       },
     },
     {
-      title: '标注类型',
+      title: t('task.type', '标注类型'),
       dataIndex: 'type',
       valueType: 'select',
       key: 'type',
@@ -469,18 +471,18 @@ const TaskManage = () => {
         rules: [
           {
             required: true,
-            message: '此项为必填项',
+            message: t('common.required', '此项为必填项'),
           },
         ],
       },
       fieldProps: {
         options: [
           {
-            label: '目标检测',
+            label: t('task.type.detect', '目标检测'),
             value: '目标检测',
           },
           {
-            label: '地物分类',
+            label: t('task.type.landcover', '地物分类'),
             value: '地物分类',
           },
         ],
@@ -490,7 +492,7 @@ const TaskManage = () => {
       disable: true,
       // width: '20%',
       align: 'center',
-      title: '底图服务',
+      title: t('task.baseMap.service', '底图服务'),
       ellipsis: false,
       dataIndex: 'mapserver',
       key: 'mapserver',
@@ -504,7 +506,7 @@ const TaskManage = () => {
     {
       width: '10%',
       align: 'center',
-      title: '任务期限区间',
+      title: t('task.deadline.range', '任务期限区间'),
       dataIndex: 'daterange',
       key: 'daterange',
       ellipsis: false,
@@ -514,7 +516,7 @@ const TaskManage = () => {
         rules: [
           {
             required: true,
-            message: '此项为必填项',
+            message: t('common.required', '此项为必填项'),
           },
         ],
       },
@@ -523,7 +525,7 @@ const TaskManage = () => {
 },
     {
       align: 'center',
-      title: '状态',
+      title: t('task.status', '状态'),
       width: 120,
       editable: false,
       search: true,
@@ -532,18 +534,18 @@ const TaskManage = () => {
       sorter: true,
       valueType: 'select',
       valueEnum: {
-        0: { text: '审核中' },
-        1: { text: '审核通过' },
-        2: { text: '审核未通过' },
-        3: { text: '未提交' },
+        0: { text: t('task.status.audit', '审核中') },
+        1: { text: t('task.status.pass', '审核通过') },
+        2: { text: t('task.status.reject', '审核未通过') },
+        3: { text: t('task.status.unsubmitted', '未提交') },
       },
       fieldProps: {
-        placeholder: '请选择状态',
+        placeholder: t('task.status.placeholder', '请选择状态'),
         allowClear: true,
       },
       render: (_, record) => {
         const { color, text, icon } = getTaskStatusMeta(record);
-        const content = record?.auditfeedback && text === '审核未通过'
+        const content = record?.auditfeedback && Number(record?.status) === 2
           ? <Tag color={color} icon={icon}><span title={record.auditfeedback}>{text}</span></Tag>
           : <Tag color={color} icon={icon}>{text}</Tag>;
         return (
@@ -552,7 +554,7 @@ const TaskManage = () => {
       },
     },
     {
-      title: '操作',
+      title: t('common.operation', '操作'),
       width: '15%',
       align: 'center',
       // dataIndex: 'unitid',
@@ -582,11 +584,11 @@ const TaskManage = () => {
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {
-                  message.error('底图服务加载失败或不存在');
+                  message.error(t('task.request.error', '请求发生错误'));
                 }
               }}
             >
-              <ExpandOutlined /> 开始审核
+              <ExpandOutlined /> {t('task.startAudit', '开始审核')}
             </Button>,
           ];
         }
@@ -599,18 +601,18 @@ const TaskManage = () => {
               newOrEditTask();
             }}
           >
-            编辑
+            {t('common.edit', '编辑')}
           </a>,
           <Popconfirm
-            title="你确定要删除吗?"
+            title={t('task.delete.confirm', '你确定要删除吗?')}
             onConfirm={() => {
               confirm(record.taskid);
             }}
-            okText="是"
-            cancelText="否"
+            okText={t('common.yes', '是')}
+            cancelText={t('common.no', '否')}
             key={'confirm'}
           >
-            <a key="delete">删除</a>
+            <a key="delete">{t('common.delete', '删除')}</a>
           </Popconfirm>,
           record.status == 1 ? (
             <Button
@@ -619,7 +621,7 @@ const TaskManage = () => {
               loading={loadingTaskId === record.taskid}
               onClick={async () => {
                 setLoadingTaskId(record.taskid);
-                const hide = message.loading('后台生成报告中...', 0);
+                const hide = message.loading(t('task.report.loading', '后台生成报告中...'), 0);
                 try {
                   const { taskid } = record;
                   const result = await getAuditInfo(taskid);
@@ -627,18 +629,18 @@ const TaskManage = () => {
                     setAuditReportData(result.data);
                     setIsReportModalVisible(true);
                   } else {
-                    message.error(result.message || '获取报告失败！');
+                    message.error(result.message || t('task.request.error', '请求发生错误'));
                   }
                 } catch (error) {
-                  console.error('报告生成失败:', error);
-                  message.error('报告生成失败，请联系管理员！');
+                  console.error(t('task.report.failed', '报告生成失败'), error);
+                  message.error(t('task.request.error', '请求发生错误'));
                 } finally {
                   hide();
                   setLoadingTaskId(null);
                 }
               }}
             >
-              查看审核报告
+              {t('task.auditReport', '查看审核报告')}
             </Button>
           ) : (
             <Button
@@ -653,14 +655,14 @@ const TaskManage = () => {
                   window.sessionStorage.setItem('taskId', taskId);
                   history.push('/auditPage');
                 } catch (error) {
-                  message.error('底图服务加载失败或不存在');
+                  message.error(t('task.request.error', '请求发生错误'));
                 }
               }}
               key="startAudit"
               type="primary"
               disabled={record.status > 1}
             >
-              <ExpandOutlined /> 开始审核
+              <ExpandOutlined /> {t('task.startAudit', '开始审核')}
             </Button>
           ),
         ];
@@ -676,11 +678,11 @@ const TaskManage = () => {
       try {
         let result = await reqEditTask(row);
         if (result) {
-          message.success('修改成功！');
+          message.success(t('common.success.edit', '修改成功！'));
           actionRef.current.reload();
         }
       } catch (error) {
-        message.error('修改失败,请检查数据是否存在！');
+        message.error(t('common.error.edit', '修改失败！'));
         actionRef.current.reload();
         return false;
       }
@@ -690,10 +692,10 @@ const TaskManage = () => {
       try {
         let result = await reqDeleteTask(row.taskid);
         actionRef.current.reloadAndRest();
-        message.success('删除成功！');
+        message.success(t('task.delete.success', '删除成功！'));
         console.log(actionRef.current);
       } catch (error) {
-        message.error('删除失败！');
+        message.error(t('task.delete.failed', '删除失败！'));
       }
     },
   };
@@ -767,8 +769,8 @@ const TaskManage = () => {
                 grouped.push({
                   ...first,
                   _rowKey: `batch-${batchId}`,
-                  taskname: `${first.taskname?.replace(/_\d+$/, '') || '批次任务'}（${sortedItems.length}）`,
-                  mapserver: '批次折叠',
+                  taskname: `${first.taskname?.replace(/_\d+$/, '') || t('task.batch.name', '批次任务')} (${sortedItems.length})`,
+                  mapserver: t('task.batch.collapsed', '批次折叠'),
                   isBatchGroup: true,
                   children: sortedItems.map((t) => ({ ...t, _rowKey: `task-${t.taskid}` })),
                 });
@@ -793,7 +795,7 @@ const TaskManage = () => {
           defaultPageSize: 10,
           showSizeChanger: true,
         }}
-        headerTitle="任务管理"
+        headerTitle={t('task.manage.title', '任务管理')}
         // 添加防抖和缓存配置
         debounceTime={300}
         revalidateOnFocus={false} // 防止页面获得焦点时重新请求
@@ -806,10 +808,10 @@ const TaskManage = () => {
             disabled={selectedRowsState.length === 0}
             onClick={() => setDatasetModalVisible(true)}
           >
-            生成样本集 ({selectedRowsState.length})
+            {t('task.generate.dataset', '生成样本集 ({count})', { count: selectedRowsState.length })}
           </Button>,
           <Button key="button" icon={<PlusOutlined />} type="primary" onClick={newOrEditTask}>
-            新建
+            {t('task.new', '新建')}
           </Button>,
         ]}
       />

@@ -294,6 +294,7 @@ export default ProvenanceGraph;*/
 
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { useIntl } from 'umi';
 import G6 from '@antv/g6';
 
 // 操作类型中英文映射
@@ -317,6 +318,28 @@ const ACTION_TRANSLATIONS = {
   'AUDIT_LOG': '审计日志',
   'USER_OPERATION': '用户操作',
   'SYSTEM_OPERATION': '系统操作'
+};
+
+const ACTION_TRANSLATIONS_EN = {
+  'UPLOAD': 'File Upload',
+  'ANNOTATE': 'Annotation',
+  'AUDIT_PASS': 'Audit Passed',
+  'AUDIT_REJECT': 'Audit Rejected',
+  'DATASET_GENERATE': 'Dataset Generation',
+  'DATASET_EXPORT': 'Dataset Export',
+  'PUBLISH_SERVICE': 'Publish Service',
+  'DATASET_IMPORT': 'Dataset Import',
+  'DATASET_CREATE': 'Dataset Creation',
+  'DATASET_UPDATE': 'Dataset Update',
+  'DATASET_DELETE': 'Dataset Deletion',
+  'MODEL_TRAIN': 'Model Training',
+  'MODEL_INFERENCE': 'Model Inference',
+  'DATA_VALIDATION': 'Data Validation',
+  'DATA_PREPROCESSING': 'Data Preprocessing',
+  'QUALITY_CHECK': 'Quality Check',
+  'AUDIT_LOG': 'Audit Log',
+  'USER_OPERATION': 'User Operation',
+  'SYSTEM_OPERATION': 'System Operation'
 };
 
 // PROV模型实体类型映射
@@ -344,6 +367,9 @@ const PROV_AGENT_INFO = {
 };
 
 const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
+  const isEn = String(intl.locale || '').startsWith('en');
   const containerRef = useRef(null);
   const graphRef = useRef(null);
 
@@ -383,10 +409,13 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       if (!agent.id) return;
       validNodeIds.add(agent.id);
 
-      const agentInfo = PROV_AGENT_INFO[agent.agentType] || { label: agent.agentType || '未知代理', icon: '❓' };
+      const agentInfo = PROV_AGENT_INFO[agent.agentType] || { label: agent.agentType || (isEn ? 'Unknown Agent' : '未知代理'), icon: '❓' };
+      const agentLabel = isEn
+        ? ({ PERSON: 'User', SOFTWARE: 'Software System', ORGANIZATION: 'Organization' }[agent.agentType] || agentInfo.label)
+        : agentInfo.label;
       nodes.push({
         id: agent.id,
-        label: `${agentInfo.label}\n${agentInfo.icon} ${agent.agentName || agent.externalId || agent.id.substring(0, 8)}`,
+        label: `${agentLabel}\n${agentInfo.icon} ${agent.agentName || agent.externalId || agent.id.substring(0, 8)}`,
         originType: 'AGENT',
         rawData: agent,
         type: 'rect',
@@ -405,10 +434,10 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       if (!act.id) return;
       validNodeIds.add(act.id);
 
-      const actionText = ACTION_TRANSLATIONS[act.actType] || act.actType;
+      const actionText = (isEn ? ACTION_TRANSLATIONS_EN : ACTION_TRANSLATIONS)[act.actType] || act.actType;
       const agent = raw.agents?.find(a => a.id === act.agentId);
-      const agentInfo = agent ? PROV_AGENT_INFO[agent.agentType] || { label: '未知', icon: '❓' } : { label: '系统', icon: '🤖' };
-      const agentName = agent ? agent.agentName : (act.agentId || '系统');
+      const agentInfo = agent ? PROV_AGENT_INFO[agent.agentType] || { label: isEn ? 'Unknown' : '未知', icon: '❓' } : { label: isEn ? 'System' : '系统', icon: '🤖' };
+      const agentName = agent ? agent.agentName : (act.agentId || (isEn ? 'System' : '系统'));
 
       nodes.push({
         id: act.id,
@@ -424,7 +453,7 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
           validNodeIds.add(act.agentId);
           nodes.push({
             id: act.agentId,
-            label: `未知代理\n${act.agentId.substring(0, 8)}`,
+            label: `${isEn ? 'Unknown Agent' : '未知代理'}\n${act.agentId.substring(0, 8)}`,
             originType: 'AGENT',
             rawData: { id: act.agentId, agentName, agentType: 'UNKNOWN' },
             type: 'rect',
@@ -441,7 +470,7 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
         edges.push({
           source: act.agentId,
           target: act.id,
-          label: '执行',
+          label: isEn ? 'associated with' : '执行',
           style: { stroke: '#fa8c16', lineWidth: 2, lineDash: [4, 4] },
         });
       }
@@ -453,9 +482,26 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       validNodeIds.add(ent.id);
 
       const entityInfo = PROV_ENTITY_INFO[ent.entityType] || { label: ent.entityType, color: '#1890ff' };
+      const entityLabel = isEn
+        ? ({
+            TASK: 'Annotation Task',
+            RAW_IMAGE: 'Raw Image',
+            SAMPLE_SET: 'Sample Set',
+            ANNOTATION_REVISION: 'Annotation Revision',
+            AUDIT_REJECT: 'Audit Record',
+            DATASET: 'Dataset',
+            MODEL: 'Model',
+            ANNOTATION: 'Annotation',
+            IMAGE: 'Image File',
+            LABEL: 'Label File',
+            CONFIG: 'Config File',
+            LOG: 'Log File',
+            RESULT: 'Result File',
+          }[ent.entityType] || entityInfo.label)
+        : entityInfo.label;
       nodes.push({
         id: ent.id,
-        label: `${entityInfo.label}\n${ent.label || ent.businessId || ent.id.substring(0, 8)}`,
+        label: `${entityLabel}\n${ent.label || ent.businessId || ent.id.substring(0, 8)}`,
         originType: 'ENTITY',
         rawData: ent,
         type: 'ellipse',
@@ -471,17 +517,17 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       if (rel.relType === 'USED') {
         sourceId = rel.entityId;
         targetId = rel.activityId;
-        label = '被使用';
+        label = isEn ? 'used' : '被使用';
         style = { stroke: '#52c41a', lineWidth: 2 };
       } else if (rel.relType === 'GENERATED') {
         sourceId = rel.activityId;
         targetId = rel.entityId;
-        label = '生成';
+        label = isEn ? 'generated' : '生成';
         style = { stroke: '#1890ff', lineWidth: 2 };
       } else if (rel.relType === 'DERIVED') {
         sourceId = rel.sourceEntityId;
         targetId = rel.targetEntityId;
-        label = '派生';
+        label = isEn ? 'derived' : '派生';
         style = { stroke: '#722ed1', lineWidth: 2, lineDash: [5, 5] };
       }
 
@@ -493,7 +539,7 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
             validNodeIds.add(nodeId);
             nodes.push({
               id: nodeId,
-              label: `未知数据实体\n(后端未返回详情)`,
+              label: `${isEn ? 'Unknown Data Entity' : '未知数据实体'}\n${isEn ? '(details missing)' : '(后端未返回详情)'}`,
               type: 'ellipse',
               size: [160, 60],
               style: {
@@ -512,7 +558,7 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
     });
 
     return { nodes, edges };
-  }, []);
+  }, [isEn]);
 
   // 挂载时初始化图表 (彻底解决拖影，绝对只执行一次)
   useEffect(() => {
@@ -684,27 +730,27 @@ const ProvenanceGraph = ({ data, onNodeClick, focusedNodeId }) => {
       <div className="graph-legend">
         <div className="legend-item">
           <div className="legend-icon activity" />
-          <span className="legend-text">活动 (Activity)</span>
+          <span className="legend-text">{t('prov.model.activity', '活动 (Activity)')}</span>
         </div>
         <div className="legend-item">
           <div className="legend-icon entity" />
-          <span className="legend-text">实体 (Entity)</span>
+          <span className="legend-text">{t('prov.model.entity', '实体 (Entity)')}</span>
         </div>
         <div className="legend-item">
           <div className="legend-icon agent" />
-          <span className="legend-text">代理 (Agent)</span>
+          <span className="legend-text">{t('prov.model.agent', '代理 (Agent)')}</span>
         </div>
       </div>
 
       {/* PROV模型说明 */}
       <div className="prov-model-info">
-        基于PROV-DM数据模型<br/>
-        蓝色椭圆：实体(Entity)<br/>
-        橙色矩形：活动(Activity)<br/>
-        橙色圆角：代理(Agent)<br/>
-        橙色虚线：执行关系(wasAssociatedWith)<br/>
-        绿色线：使用关系(used)<br/>
-        蓝色线：生成关系(wasGeneratedBy)
+        {isEn ? 'Based on the PROV-DM data model' : '基于PROV-DM数据模型'}<br/>
+        {isEn ? 'Blue ellipse: Entity' : '蓝色椭圆：实体(Entity)'}<br/>
+        {isEn ? 'Orange rectangle: Activity' : '橙色矩形：活动(Activity)'}<br/>
+        {isEn ? 'Orange rounded rectangle: Agent' : '橙色圆角：代理(Agent)'}<br/>
+        {isEn ? 'Orange dashed line: wasAssociatedWith' : '橙色虚线：执行关系(wasAssociatedWith)'}<br/>
+        {isEn ? 'Green line: used' : '绿色线：使用关系(used)'}<br/>
+        {isEn ? 'Blue line: wasGeneratedBy' : '蓝色线：生成关系(wasGeneratedBy)'}
       </div>
     </div>
   );

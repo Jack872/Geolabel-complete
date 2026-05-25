@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useIntl } from 'umi';
 import { Row, Col, Card, Tabs, Descriptions, Badge, Empty, Button, Upload, Space, Tag, Typography, List, Spin, message, Tooltip } from 'antd';
 import {
   NodeIndexOutlined,
@@ -56,6 +57,8 @@ const findFocusedTaskNode = (provData, focusEntityType, focusEntityId) => {
 };
 
 const SampleSetProvenance = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const routeContext = getRouteFocusContext();
   const [activeTab, setActiveTab] = useState('graph');
   const [loadingList, setLoadingList] = useState(false);
@@ -79,7 +82,7 @@ const SampleSetProvenance = () => {
         setDatasetList(list);
       }
     } catch (e) {
-      message.error("获取样本集列表失败");
+      message.error(t('prov.fetch.failed', '获取样本集列表失败'));
     } finally {
       setLoadingList(false);
     }
@@ -96,10 +99,10 @@ const SampleSetProvenance = () => {
         setProvData(res.data);
       } else {
         setProvData(null);
-        message.info("该样本集暂无溯源记录");
+        message.info(t('prov.empty.record', '该样本集暂无溯源记录'));
       }
     } catch (e) {
-      message.error("同步溯源信息失败");
+      message.error(t('prov.sync.failed', '同步溯源信息失败'));
     } finally {
       setLoadingProv(false);
     }
@@ -113,9 +116,9 @@ const SampleSetProvenance = () => {
         const jsonData = JSON.parse(e.target.result);
         setProvData(jsonData);
         setSelectedNode(null);
-        message.success("离线文件识别成功");
+        message.success(t('prov.import.success', '离线文件识别成功'));
       } catch (err) {
-        message.error("无效的 JSON 文件");
+        message.error(t('prov.import.invalid', '无效的 JSON 文件'));
       }
     };
     reader.readAsText(file);
@@ -151,7 +154,7 @@ const SampleSetProvenance = () => {
         return;
       }
       setRouteFocusActive(false);
-      message.info('已打开样本集溯源图，但未找到报告指定的任务节点');
+      message.info(t('prov.focus.missing', '已打开样本集溯源图，但未找到报告指定的任务节点'));
     }
   }, [provData, routeContext.focusEntityId, routeContext.focusEntityType, routeFocusActive]);
 
@@ -163,8 +166,8 @@ const SampleSetProvenance = () => {
           <Card
             title={
               <span>
-                <DatabaseOutlined /> 样本集列表
-                <Tooltip title="选择要查看溯源信息的数据集">
+                <DatabaseOutlined /> {t('prov.dataset.list', '样本集列表')}
+                <Tooltip title={t('prov.dataset.tip', '选择要查看溯源信息的数据集')}>
                   <InfoCircleOutlined style={{ marginLeft: 8, color: '#999' }} />
                 </Tooltip>
               </span>
@@ -186,7 +189,7 @@ const SampleSetProvenance = () => {
                     <List.Item.Meta
                       className="dataset-meta"
                       title={<Text strong>{item.name}</Text>}
-                      description={`${item.taskType} | ${item.num}切片`}
+                      description={`${item.taskType} | ${item.num}${t('prov.slice', '切片')}`}
                     />
                   </List.Item>
                 )}
@@ -206,29 +209,29 @@ const SampleSetProvenance = () => {
                     <Col span={18}>
                       <div className="prov-title">
                         <HistoryOutlined />
-                        {selectedSet.name} 数据溯源档案
-                        <Tooltip title="基于PROV-DM模型的数据血缘追踪">
+                        {t('prov.archive', '{name} 数据溯源档案', { name: selectedSet.name })}
+                        <Tooltip title={t('prov.model.tip', '基于PROV-DM模型的数据血缘追踪')}>
                           <Tag color="blue" style={{ marginLeft: 8, fontSize: '10px' }}>PROV-DM</Tag>
                         </Tooltip>
                         {routeContext.fromReportId ? (
                           <Tag color="gold" style={{ marginLeft: 8, fontSize: '10px' }}>
-                            来自质量报告 #{routeContext.fromReportId}
+                            {t('prov.fromReport', '来自质量报告 #{id}', { id: routeContext.fromReportId })}
                           </Tag>
                         ) : null}
                       </div>
                       <Descriptions column={3} size="small" style={{ marginTop: 12 }}>
-                        <Descriptions.Item label="创建者">{selectedSet.creator}</Descriptions.Item>
-                        <Descriptions.Item label="创建日期">{selectedSet.createDate}</Descriptions.Item>
-                        <Descriptions.Item label="坐标系">{selectedSet.crs}</Descriptions.Item>
+                        <Descriptions.Item label={t('prov.creator', '创建者')}>{selectedSet.creator}</Descriptions.Item>
+                        <Descriptions.Item label={t('prov.createDate', '创建日期')}>{selectedSet.createDate}</Descriptions.Item>
+                        <Descriptions.Item label={t('prov.crs', '坐标系')}>{selectedSet.crs}</Descriptions.Item>
                       </Descriptions>
                     </Col>
                     <Col span={6} style={{ textAlign: 'right' }}>
                       <Space className="prov-actions">
                         <Upload beforeUpload={handleImportJson} showUploadList={false}>
-                          <Button icon={<UploadOutlined />}>导入离线文件</Button>
+                          <Button icon={<UploadOutlined />}>{t('prov.import', '导入离线文件')}</Button>
                         </Upload>
                         <Button type="primary" ghost onClick={() => fetchProvenance(selectedSet.id)}>
-                          刷新溯源
+                          {t('prov.refresh', '刷新溯源')}
                         </Button>
                       </Space>
                     </Col>
@@ -246,8 +249,8 @@ const SampleSetProvenance = () => {
                           key: 'graph', 
                           tab: (
                             <span>
-                              <NodeIndexOutlined /> 关系图谱
-                              <Tooltip title="显示实体(Entity)和活动(Activity)之间的依赖关系">
+                              <NodeIndexOutlined /> {t('prov.graph', '关系图谱')}
+                              <Tooltip title={t('prov.graph.tip', '显示实体(Entity)、活动(Activity)、代理(Agent)之间的依赖关系')}>
                                 <InfoCircleOutlined style={{ marginLeft: 4, fontSize: '12px' }} />
                               </Tooltip>
                             </span>
@@ -257,8 +260,8 @@ const SampleSetProvenance = () => {
                           key: 'timeline', 
                           tab: (
                             <span>
-                              <FileSearchOutlined /> 时间轴视图
-                              <Tooltip title="按时间顺序展示所有溯源活动">
+                              <FileSearchOutlined /> {t('prov.timeline', '时间轴视图')}
+                              <Tooltip title={t('prov.timeline.tip', '按时间顺序展示所有溯源活动')}>
                                 <InfoCircleOutlined style={{ marginLeft: 4, fontSize: '12px' }} />
                               </Tooltip>
                             </span>
@@ -282,7 +285,7 @@ const SampleSetProvenance = () => {
                           ) : (
                             <ProvTimeline data={provData} onNodeClick={setSelectedNode} />
                           )
-                        ) : <Empty style={{ marginTop: 100 }} description="暂无溯源数据" />}
+                        ) : <Empty style={{ marginTop: 100 }} description={t('prov.empty.data', '暂无溯源数据')} />}
                       </Spin>
                     </Card>
                   </Col>
@@ -293,7 +296,7 @@ const SampleSetProvenance = () => {
               </>
             ) : (
               <Card className="empty-state">
-                <Empty description="请从左侧选择一个样本集以查看其全链路溯源信息" />
+                <Empty description={t('prov.empty.select', '请从左侧选择一个样本集以查看其全链路溯源信息')} />
               </Card>
             )}
           </div>

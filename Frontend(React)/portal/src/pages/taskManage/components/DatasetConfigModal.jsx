@@ -1,16 +1,19 @@
 import React from 'react';
 import { Modal, Form, Input, InputNumber, Switch, Row, Col, Select, Tooltip } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
+import { useIntl } from 'umi';
 
 const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const [form] = Form.useForm();
 
   return (
     <Modal
       open={visible}
-      title="生成综合样本集"
-      okText="开始生成"
-      cancelText="取消"
+      title={t('task.dataset.modal.title', '生成综合样本集')}
+      okText={t('task.dataset.modal.start', '开始生成')}
+      cancelText={t('common.cancel', '取消')}
       width={600} // 稍微加宽一点以便展示参数
       onCancel={() => {
         form.resetFields(); // 关闭时重置表单
@@ -37,19 +40,19 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
         }}
       >
         <div style={{ marginBottom: 16, color: '#666', background: '#f5f5f5', padding: '8px 12px', borderRadius: '4px' }}>
-          已选择 <b>{selectedRows.length}</b> 个任务影像作为数据源。
+          {t('task.dataset.selected', '已选择 {count} 个任务影像作为数据源。', { count: selectedRows.length })}
         </div>
 
         <Row gutter={16}>
           <Col span={24}>
             <Form.Item
               name="datasetName"
-              label="数据集名称"
+              label={t('task.dataset.name', '数据集名称')}
               rules={[
-                { required: true, message: '请输入数据集名称' }
+                { required: true, message: t('task.dataset.name.required', '请输入数据集名称') }
               ]}
             >
-              <Input placeholder="例如: 车辆训练集_20231027" />
+              <Input placeholder={t('task.dataset.name.placeholder', '例如: 车辆训练集_20231027')} />
             </Form.Item>
           </Col>
         </Row>
@@ -58,9 +61,9 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
           <Col span={24}>
             <Form.Item
               name="description"
-              label="描述备注"
+              label={t('task.dataset.description', '描述备注')}
             >
-              <Input.TextArea rows={2} placeholder="请输入数据集描述..." />
+              <Input.TextArea rows={2} placeholder={t('task.dataset.description.placeholder', '请输入数据集描述...')} />
             </Form.Item>
           </Col>
         </Row>
@@ -71,22 +74,22 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
               name="isPublic"
               label={
                 <span>
-                  公开样本集&nbsp;
-                  <Tooltip title="公开后，所有登录用户都可以查看、预览和导出该样本集，但只有创建者和管理员可以删除。">
+                  {t('task.dataset.public', '公开样本集')}&nbsp;
+                  <Tooltip title={t('task.dataset.public.tooltip', '公开后，所有登录用户都可以查看、预览和导出该样本集，但只有创建者和管理员可以删除。')}>
                     <QuestionCircleOutlined style={{ color: '#999' }} />
                   </Tooltip>
                 </span>
               }
               valuePropName="checked"
             >
-              <Switch checkedChildren="公开" unCheckedChildren="私有" />
+              <Switch checkedChildren={t('task.dataset.public.on', '公开')} unCheckedChildren={t('task.dataset.public.off', '私有')} />
             </Form.Item>
           </Col>
         </Row>
 
         {/* --- 新增的高级参数区域 --- */}
         <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 16, marginTop: 8 }}>
-          <span style={{ fontWeight: 'bold', display: 'block', marginBottom: 12 }}>裁剪参数配置</span>
+          <span style={{ fontWeight: 'bold', display: 'block', marginBottom: 12 }}>{t('task.dataset.crop.config', '裁剪参数配置')}</span>
 
           <Row gutter={16}>
             <Col span={8}>
@@ -94,14 +97,14 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
                 name="targetSize"
                 label={
                   <span>
-                    切片尺寸 (px)&nbsp;
-                    <Tooltip title="最终生成的图片宽高，深度学习通常使用 256, 512 或 640">
+                    {t('task.dataset.targetSize', '切片尺寸 (px)')}&nbsp;
+                    <Tooltip title={t('task.dataset.targetSize.tooltip', '最终生成的图片宽高，深度学习通常使用 256, 512 或 640')}>
                       <QuestionCircleOutlined style={{ color: '#999' }} />
                     </Tooltip>
                   </span>
                 }
               >
-                <Select placeholder="选择尺寸">
+                <Select placeholder={t('task.dataset.targetSize.placeholder', '选择尺寸')}>
                   <Select.Option value={256}>256 x 256</Select.Option>
                   <Select.Option value={512}>512 x 512</Select.Option>
                   <Select.Option value={640}>640 x 640</Select.Option>
@@ -116,8 +119,8 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
                 name="expandRatio"
                 label={
                   <span>
-                    外扩比例&nbsp;
-                    <Tooltip title="标注框向外扩展的比例。0.1 表示长宽各增加 10% 的背景环境">
+                    {t('task.dataset.expandRatio', '外扩比例')}&nbsp;
+                    <Tooltip title={t('task.dataset.expandRatio.tooltip', '标注框向外扩展的比例。0.1 表示长宽各增加 10% 的背景环境')}>
                       <QuestionCircleOutlined style={{ color: '#999' }} />
                     </Tooltip>
                   </span>
@@ -138,15 +141,15 @@ const DatasetConfigModal = ({ visible, onCancel, onCreate, selectedRows }) => {
                 name="forceSquare"
                 label={
                   <span>
-                    强制正方形&nbsp;
-                    <Tooltip title="开启后，若裁剪区域为长方形，将自动用黑色背景填充为正方形，防止物体变形">
+                    {t('task.dataset.forceSquare', '强制正方形')}&nbsp;
+                    <Tooltip title={t('task.dataset.forceSquare.tooltip', '开启后，若裁剪区域为长方形，将自动用黑色背景填充为正方形，防止物体变形')}>
                       <QuestionCircleOutlined style={{ color: '#999' }} />
                     </Tooltip>
                   </span>
                 }
                 valuePropName="checked"
               >
-                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                <Switch checkedChildren={t('task.dataset.switch.on', '开启')} unCheckedChildren={t('task.dataset.switch.off', '关闭')} />
               </Form.Item>
             </Col>
           </Row>

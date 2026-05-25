@@ -2,7 +2,7 @@ import { Modal, Form, Input, Select, DatePicker, message, Radio, InputNumber, Bu
 import moment from 'moment';
 import UserTransfer from './UserTransfer';
 import { useEffect, useMemo, useState } from 'react';
-import { useModel } from 'umi';
+import { useModel, useIntl } from 'umi';
 import { reqGetDatasetList } from '@/services/dataset/api';
 import { reqGetAttributeDefs } from '@/services/taskManage/api';
 const { RangePicker } = DatePicker;
@@ -18,6 +18,8 @@ export default ({
   defaultValue,
   renderTypeList,
 }) => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const [form] = Form.useForm();
   const [userList, setUserList] = useState([]);
   const [typeList, setTypeList] = useState(renderTypeList);
@@ -209,7 +211,7 @@ export default ({
     ]));
     return mergedSetNames.map(setName => (
       <Select.Option key={setName} value={setName}>
-        {setName}{datasetSetTypeMap[setName] === 'local' ? '（本地）' : '（服务）'}
+        {setName} ({datasetSetTypeMap[setName] === 'local' ? t('task.imageSet.local', '本地') : t('task.imageSet.service', '服务')})
       </Select.Option>
     ));
   };
@@ -300,9 +302,9 @@ export default ({
   return (
     <Modal
       open={open}
-      title={isEdit ? '编辑任务' : '新建任务'}
-      okText="提交"
-      cancelText="取消"
+      title={isEdit ? t('task.edit', '编辑任务') : t('task.create', '新建任务')}
+      okText={t('common.submit', '提交')}
+      cancelText={t('common.cancel', '取消')}
       onCancel={onCancel}
       width={800}
       onOk={() => {
@@ -385,62 +387,62 @@ export default ({
       >
         {taskid && (
           <Form.Item
-            label="任务id"
+            label="ID"
             name="taskid"
             hidden={true}
             initialValue={taskid}
-            rules={[{ required: true, message: '必须输入任务id！' }]}
+            rules={[{ required: true, message: 'ID required' }]}
           >
             <Input disabled={true} />
           </Form.Item>
         )}
         <Form.Item
-          label="任务名称"
+          label={t('task.name', '任务名称')}
           name="taskname"
           initialValue={taskname}
-          rules={[{ required: true, message: '必须输入任务名称！' }]}
+          rules={[{ required: true, message: t('task.name.required', '必须输入任务名称！') }]}
         >
-          <Input placeholder="请输入任务名称" />
+          <Input placeholder={t('task.name.placeholder', '请输入任务名称')} />
         </Form.Item>
         <Form.Item
-          label="标注类型"
+          label={t('task.type', '标注类型')}
           name="type"
           initialValue={type}
-          rules={[{ required: !isEdit, message: '必须选择标注类型！' }]}
+          rules={[{ required: !isEdit, message: t('task.type.required', '必须选择标注类型！') }]}
         >
-          <Select placeholder="请选择标注类型" optionFilterProp="children" onChange={onChange} disabled={isEdit}>
+          <Select placeholder={t('task.type.placeholder', '请选择标注类型')} optionFilterProp="children" onChange={onChange} disabled={isEdit}>
             <Select.Option value="目标检测" key="1">
-              目标检测
+              {t('task.type.detect', '目标检测')}
             </Select.Option>
             <Select.Option value="地物分类" key="2">
-              地物分类
+              {t('task.type.landcover', '地物分类')}
             </Select.Option>
           </Select>
         </Form.Item>
 
         <Form.Item
-          label="底图选择方式"
+          label={t('task.map.mode', '底图选择方式')}
           name="mapSelectMode"
           initialValue="byName"
         >
           <Radio.Group onChange={handleMapSelectModeChange} disabled={isEdit}>
-            <Radio value="byName">按影像名称选择</Radio>
-            <Radio value="bySetName">按影像集名称选择</Radio>
+            <Radio value="byName">{t('task.map.byImage', '按影像名称选择')}</Radio>
+            <Radio value="bySetName">{t('task.map.bySet', '按影像集名称选择')}</Radio>
           </Radio.Group>
         </Form.Item>
 
         {mapSelectMode === 'byName' ? (
           <Form.Item
-            label="影像名称"
+            label={t('task.image.name', '影像名称')}
             name="mapserver"
             initialValue={taskid ? [mapserver] : []}
-            rules={[{ required: !isEdit, message: '必须选择影像！' }]}
-            tooltip="支持同时选择服务影像和本地影像，系统会按所选影像逐一创建任务"
+            rules={[{ required: !isEdit, message: t('task.image.required', '必须选择影像！') }]}
+            tooltip={t('task.image.tooltip', '支持同时选择服务影像和本地影像，系统会按所选影像逐一创建任务')}
           >
             <Select
               mode="multiple"
               showSearch
-              placeholder="请选择影像名称"
+              placeholder={t('task.image.placeholder', '请选择影像名称')}
               optionFilterProp="label"
               onChange={onChange}
               onSearch={onSearch}
@@ -455,15 +457,15 @@ export default ({
         ) : (
           <>
             <Form.Item
-              label="影像集名称"
+              label={t('task.imageSet.name', '影像集名称')}
               name="setNames"
-              rules={[{ required: !isEdit, message: '必须选择影像集！' }]}
-              tooltip="支持服务影像集和本地影像集，系统会自动按影像逐一创建任务"
+              rules={[{ required: !isEdit, message: t('task.imageSet.required', '必须选择影像集！') }]}
+              tooltip={t('task.imageSet.tooltip', '支持服务影像集和本地影像集，系统会自动按影像逐一创建任务')}
             >
               <Select
                 mode="multiple"
                 showSearch
-                placeholder="请选择影像集"
+                placeholder={t('task.imageSet.placeholder', '请选择影像集')}
                 optionFilterProp="children"
                 onChange={handleSetNameChange}
                 disabled={isEdit}
@@ -476,25 +478,25 @@ export default ({
             </Form.Item>
 
             <Form.Item
-              label="底图服务"
+              label={t('task.baseMap.service', '底图服务')}
               name="mapserver"
-              rules={areAllSelectedSetsLocal() ? [] : [{ required: true, message: '必须选择底图服务！' }]}
-              tooltip={areAllSelectedSetsLocal() ? "本地影像集不经过GeoServer，无需底图服务" : "根据所选影像集自动选择的底图"}
+              rules={areAllSelectedSetsLocal() ? [] : [{ required: true, message: t('task.baseMap.required', '必须选择底图服务！') }]}
+              tooltip={areAllSelectedSetsLocal() ? t('task.baseMap.local.tooltip', '本地影像集不经过GeoServer，无需底图服务') : t('task.baseMap.auto.tooltip', '根据所选影像集自动选择的底图')}
             >
               <Select
                 mode="multiple"
                 disabled
-                placeholder={areAllSelectedSetsLocal() ? "本地影像集无需底图服务" : "底图服务（由影像集自动选择）"}
+                placeholder={areAllSelectedSetsLocal() ? t('task.baseMap.local.placeholder', '本地影像集无需底图服务') : t('task.baseMap.auto.placeholder', '底图服务（由影像集自动选择）')}
               />
             </Form.Item>
           </>
         )}
 
         <Form.Item
-          label="任务期限"
+          label={t('task.deadline', '任务期限')}
           name="daterange"
           initialValue={[daterange?.startValue, daterange?.endValue]}
-          rules={[{ required: true, message: '必须输入任务期限！' }]}
+          rules={[{ required: true, message: t('task.deadline.required', '必须输入任务期限！') }]}
         >
           <RangePicker
             onChange={(date, dateString) => {
@@ -505,24 +507,24 @@ export default ({
 
         {/* 目标用户类型选择 */}
         <Form.Item
-          label="目标用户类型"
+          label={t('task.targetUserType', '目标用户类型')}
           name="targetUserType"
           initialValue={isAdmin ? targetUserType : 'allNonAdminUsers'}
-          rules={[{ required: !isEdit, message: '必须选择目标用户类型！' }]}
+          rules={[{ required: !isEdit, message: t('task.targetUserType.required', '必须选择目标用户类型！') }]}
         >
           <Select
-            placeholder="请选择目标用户类型"
+            placeholder={t('task.targetUserType.placeholder', '请选择目标用户类型')}
             onChange={handleTargetUserTypeChange}
             disabled={isEdit || !isAdmin} // 普通用户不能更改，编辑模式冻结
           >
             {isAdmin ? (
               <>
-                <Select.Option value="allTeamMembers">所有团队成员</Select.Option>
-                <Select.Option value="specificTeamUsers">指定团队用户</Select.Option>
-                <Select.Option value="allNonTeamUsers">所有非团队用户</Select.Option>
+                <Select.Option value="allTeamMembers">{t('task.target.allTeam', '所有团队成员')}</Select.Option>
+                <Select.Option value="specificTeamUsers">{t('task.target.specificTeam', '指定团队用户')}</Select.Option>
+                <Select.Option value="allNonTeamUsers">{t('task.target.allNonTeam', '所有非团队用户')}</Select.Option>
               </>
             ) : (
-              <Select.Option value="allNonAdminUsers">所有非管理员用户</Select.Option>
+              <Select.Option value="allNonAdminUsers">{t('task.target.allNonAdmin', '所有非管理员用户')}</Select.Option>
             )}
           </Select>
         </Form.Item>
@@ -530,31 +532,31 @@ export default ({
         {/* 根据shouldShowScoreInput()函数判断是否显示积分输入框 */}
         {!isEdit && shouldShowScoreInput() && (
           <Form.Item
-            label="每张影像积分"
+            label={t('task.score.perImage', '每张影像积分')}
             name="score"
             rules={[
-              { required: true, message: '请输入每张影像的积分!' },
-              { type: 'number', min: 0, message: '积分不能为负数!' }
+              { required: true, message: t('task.score.required', '请输入每张影像的积分!') },
+              { type: 'number', min: 0, message: t('task.score.nonnegative', '积分不能为负数!') }
             ]}
-            tooltip="发布非团队任务时，设置标注每张影像完成后，标注者获得的积分。"
+            tooltip={t('task.score.tooltip', '发布非团队任务时，设置标注每张影像完成后，标注者获得的积分。')}
           >
-            <InputNumber style={{ width: '100%' }} placeholder="请输入积分" />
+            <InputNumber style={{ width: '100%' }} placeholder={t('task.score.placeholder', '请输入积分')} />
           </Form.Item>
         )}
 
         {/* 统一样本类型选择（当目标用户类型不是"指定团队用户"时显示） */}
         {targetUserType !== 'specificTeamUsers' && (
           <Form.Item
-            label="样本类型"
+            label={t('task.sampleType', '样本类型')}
             name="uniformSampleTypes"
-            rules={[{ required: !isEdit, message: '必须选择样本类型！' }]}
+            rules={[{ required: !isEdit, message: t('task.sampleType.placeholder', '请选择样本类型') }]}
           >
             <Select
               mode="multiple"
               showArrow
               allowClear
               disabled={isEdit}
-              placeholder="请选择样本类型"
+              placeholder={t('task.sampleType.placeholder', '请选择样本类型')}
               options={filteredOptions.map((item) => ({
                 value: item.typeId,
                 label: item.typeName,
@@ -567,10 +569,10 @@ export default ({
         {targetUserType === 'specificTeamUsers' && isAdmin && (
           <>
             <Form.Item
-              label="任务受理人"
+              label={t('task.assignee', '任务受理人')}
               name="userArr"
-              tooltip="多人协同模式下，各成员分配的标签不可重复"
-              rules={[{ required: !isEdit, message: '必须选择任务受理人！' }]}
+              tooltip={t('task.target.specific.tooltip', '多人协同模式下，各成员分配的标签不可重复')}
+              rules={[{ required: !isEdit, message: t('task.assignee.required', '必须选择任务受理人！') }]}
             >
               <Select
                 showSearch
@@ -578,7 +580,7 @@ export default ({
                 showArrow
                 allowClear
                 disabled={isEdit}
-                placeholder="请选择任务受理人"
+              placeholder={t('task.assignee.placeholder', '请选择任务受理人')}
                 optionFilterProp="children"
                 onChange={(value) => {
                   setUserList(
@@ -603,7 +605,7 @@ export default ({
                   label={userName}
                   name={userName}
                   initialValue={typestring}
-                  rules={[{ required: !isEdit, message: '必须指定标签！' }]}
+                  rules={[{ required: !isEdit, message: t('task.tag.required', '必须指定标签！') }]}
                 >
                   <Select
                     mode="multiple"
@@ -627,14 +629,14 @@ export default ({
 
         {!isEdit && (<>
         <Form.Item
-          label="属性配置类别"
+          label={t('task.attribute.category', '属性配置类别')}
           name="attributeTypeIds"
-          tooltip="选择需要在标注时填写属性的类别（类别来自类别表）"
+          tooltip={t('task.attribute.category.tooltip', '选择需要在标注时填写属性的类别（类别来自类别表）')}
         >
           <Select
             mode="multiple"
             allowClear
-            placeholder="请选择需要配置属性的类别"
+            placeholder={t('task.attribute.category.placeholder', '请选择需要配置属性的类别')}
             options={safeTypeList.map((item) => ({
               value: item.typeId,
               label: item.typeName,
@@ -653,8 +655,8 @@ export default ({
             const selectedTypeIds = getFieldValue('attributeTypeIds') || [];
             if (selectedTypeIds.length === 0) {
               return (
-                <Form.Item label="属性项配置">
-                  <div style={{ color: '#999' }}>请选择至少一个类别后配置属性项</div>
+                <Form.Item label={t('task.attribute.items', '属性项配置')}>
+                  <div style={{ color: '#999' }}>{t('task.attribute.empty', '请选择至少一个类别后配置属性项')}</div>
                 </Form.Item>
               );
             }
@@ -664,14 +666,14 @@ export default ({
               return (
                 <div key={typeKey} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 12, marginBottom: 12 }}>
                   <Form.Item
-                    label={`${typeNameById[typeKey] || typeKey}属性项`}
+                    label={`${typeNameById[typeKey] || typeKey}${t('task.attribute.item.suffix', '属性项')}`}
                     name={['typeAttrSelections', typeKey]}
-                    tooltip="选择该类别在本任务中需要填写的属性"
+                    tooltip={t('task.attribute.item.tooltip', '选择该类别在本任务中需要填写的属性')}
                   >
                     <Select
                       mode="multiple"
                       allowClear
-                      placeholder="请选择属性项"
+                      placeholder={t('task.attribute.item.placeholder', '请选择属性项')}
                       options={(attributeDefs || []).map((attr) => ({
                         value: attr.attrId ?? attr.attr_id,
                         label: `${attr.attrName ?? attr.attr_name} (${attr.attrKey ?? attr.attr_key})`,
@@ -702,16 +704,16 @@ export default ({
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '120px 120px 1fr 1fr', gap: 8 }}>
                           <Form.Item name={['typeAttrMeta', metaKey, 'isRequired']} valuePropName="checked" style={{ marginBottom: 0 }}>
-                            <Checkbox>必填</Checkbox>
+                            <Checkbox>{t('task.attribute.required', '必填')}</Checkbox>
                           </Form.Item>
                           <Form.Item name={['typeAttrMeta', metaKey, 'displayOrder']} initialValue={index + 1} style={{ marginBottom: 0 }}>
-                            <InputNumber min={1} style={{ width: '100%' }} placeholder="排序" />
+                            <InputNumber min={1} style={{ width: '100%' }} placeholder={t('task.attribute.order', '排序')} />
                           </Form.Item>
                           <Form.Item name={['typeAttrMeta', metaKey, 'placeholder']} style={{ marginBottom: 0 }}>
-                            <Input placeholder="输入提示（可选）" />
+                            <Input placeholder={t('task.attribute.placeholder', '输入提示（可选）')} />
                           </Form.Item>
                           <Form.Item name={['typeAttrMeta', metaKey, 'remark']} style={{ marginBottom: 0 }}>
-                            <Input placeholder="填写说明（可选）" />
+                            <Input placeholder={t('task.attribute.remark', '填写说明（可选）')} />
                           </Form.Item>
                         </div>
                       </div>

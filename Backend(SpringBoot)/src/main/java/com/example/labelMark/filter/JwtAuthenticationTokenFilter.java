@@ -6,6 +6,7 @@ import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
 import com.example.labelMark.utils.JwtUtil;
+import com.example.labelMark.utils.I18n;
 import com.example.labelMark.utils.RedisCache;
 import com.example.labelMark.vo.LoginUser;
 import io.jsonwebtoken.Claims;
@@ -97,7 +98,7 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
         String redisKey = "login:" + userid;
         LoginUser loginUser = redisCache.getCacheObject(redisKey);
         if (ObjectUtil.isNull(loginUser)) {
-            throw new RuntimeException("用户未登录");
+            throw new RuntimeException(I18n.msg("common.unauthorized"));
         }
         //存入SecurityContextHolder
         //TODO 获取权限信息封装到Authentication中

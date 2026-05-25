@@ -118,7 +118,7 @@ public class SampleSetServiceImpl extends ServiceImpl<SampleSetMapper, SampleSet
     private LoginUser currentLoginUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof LoginUser)) {
-            throw new RuntimeException("用户未登录");
+            throw new RuntimeException(I18n.msg("common.unauthorized"));
         }
         return (LoginUser) authentication.getPrincipal();
     }

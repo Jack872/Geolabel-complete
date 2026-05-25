@@ -10,7 +10,7 @@ public class ResultGenerator {
     public static Result getSuccessResult() {
         return new Result()
                 .setCode(StatusEnum.SUCCESS)
-                .setMessage(DEFAULT_SUCCESS_MESSAGE);
+                .setMessage(I18n.msg("common.success"));
     }
     // 返回特定信息状态
     public static Result getSuccessResult(String message) {
@@ -23,8 +23,12 @@ public class ResultGenerator {
     public static Result getSuccessResult(Object data) {
         return new Result()
                 .setCode(StatusEnum.SUCCESS)
-                .setMessage(DEFAULT_SUCCESS_MESSAGE)
+                .setMessage(I18n.msg("common.success"))
                 .setData(data);
+    }
+
+    public static Result getSuccessResultByCode(String code, Object... args) {
+        return getSuccessResult(I18n.msg(code, args));
     }
 
     // 成功返回数据
@@ -40,6 +44,10 @@ public class ResultGenerator {
         return new Result()
                 .setCode(StatusEnum.FAIL)
                 .setMessage(message);
+    }
+
+    public static Result getFailResultByCode(String code, Object... args) {
+        return getFailResult(I18n.msg(code, args));
     }
 
     //特定请求失败，返回状态码

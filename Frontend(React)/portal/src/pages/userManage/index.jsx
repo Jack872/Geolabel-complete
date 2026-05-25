@@ -2,7 +2,7 @@ import { Tabs, Card, Button, message, Avatar, Select, Popconfirm, Input, Tooltip
 // 引入头像icon
 import { DeleteOutlined, EditOutlined, RedoOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useModel, useAccess } from 'umi';
+import { useModel, useAccess, useIntl } from 'umi';
 import { PageContainer } from '@ant-design/pro-layout';
 import { ProCard, ProTable } from '@ant-design/pro-components';
 import styles from './style.css';
@@ -18,6 +18,8 @@ import CollectionCreateForm from './components/index.jsx';
 import CreateTeamForm from './components/CreateTeamForm.jsx';
 
 const App = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const actionRef = useRef();
   const [visible, setVisible] = useState(false);
   const [teamFormVisible, setTeamFormVisible] = useState(false);
@@ -74,7 +76,7 @@ const App = () => {
   }, [getMyTeamCode, getTeamList]);
 
   const onCreate = async (values) => {
-    const hide = message.loading('正在修改');
+    const hide = message.loading(t('common.loading.edit', '正在修改'));
     setVisible(false);
     try {
       const payload = {
@@ -84,15 +86,15 @@ const App = () => {
       let result = await reqEditUser(payload);
       hide();
       if (result.code == 200) {
-        message.success('修改成功！');
+        message.success(t('common.success.edit', '修改成功！'));
         // 刷新并清空,页码也会重置，不包括表单
         actionRef.current.reload();
       } else {
-        message.error('用户名重复！');
+        message.error(t('user.duplicate', '用户名重复！'));
       }
     } catch (error) {
       hide();
-      message.error('服务器异常，修改失败！');
+      message.error(t('common.error.server', '服务器异常，请稍后重试！'));
       setVisible(false);
       return;
     }
@@ -100,21 +102,21 @@ const App = () => {
 
   // 创建团队处理
   const handleCreateTeam = async (values) => {
-    const hide = message.loading('正在创建团队');
+    const hide = message.loading(t('user.team.create', '创建团队'));
     setTeamFormVisible(false);
     try {
       const result = await reqCreateTeam(values);
       hide();
       if (result.code == 200) {
-        message.success('团队创建成功！');
+        message.success(t('user.team.create.success', '团队创建成功！'));
         setTeamCode(result.data.teamCode);
         getTeamList();
       } else {
-        message.error(result.message || '创建失败！');
+        message.error(result.message || t('user.team.create.failed', '创建失败！'));
       }
     } catch (error) {
       hide();
-      message.error('服务器异常，创建失败！');
+      message.error(t('common.error.server', '服务器异常，请稍后重试！'));
       return;
     }
   };
@@ -148,7 +150,7 @@ const App = () => {
           {access.canAdmin && (
             <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <Tooltip title={teamCode ? "已创建团队" : null}>
+                <Tooltip title={teamCode ? t('user.team.created', '已创建团队') : null}>
                   <Button
                     type="primary"
                     icon={<TeamOutlined />}
@@ -156,18 +158,18 @@ const App = () => {
                     disabled={!!teamCode}
                     style={{ marginRight: 16 }}
                   >
-                    创建团队
+                    {t('user.team.create', '创建团队')}
                   </Button>
                 </Tooltip>
                 {teamCode && (
                   <div style={{ marginLeft: 16 }}>
-                    <strong>团队码:</strong> {teamCode}
+                    <strong>{t('user.team.code', '团队码:')}</strong> {teamCode}
                   </div>
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Select
-                  placeholder="所属团队"
+                  placeholder={t('user.team', '所属团队')}
                   value={searchTeamId}
                   onChange={(val) => setSearchTeamId(val)}
                   style={{ width: 150 }}
@@ -175,14 +177,14 @@ const App = () => {
                   options={teamOptions.map((t) => ({ label: t.name, value: t.teamId }))}
                 />
                 <Input
-                  placeholder="用户编号"
+                  placeholder={t('user.search.id', '用户编号')}
                   value={searchUserid}
                   onChange={(e) => setSearchUserid(e.target.value)}
                   style={{ width: 150 }}
                   allowClear
                 />
                 <Input
-                  placeholder="用户名"
+                  placeholder={t('user.search.name', '用户名')}
                   value={searchUsername}
                   onChange={(e) => setSearchUsername(e.target.value)}
                   style={{ width: 150 }}
@@ -215,42 +217,44 @@ const App = () => {
 
 
 const UserTable = (props) => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const { setVisible, setInitialValue, actionRef, teamOptions, searchUserid, searchUsername, searchTeamId } = props;
 
   const getTeamName = (teamId) => {
     const team = teamOptions.find((item) => item.teamId === teamId);
-    return team ? team.name : '未分配';
+    return team ? team.name : t('user.team.unassigned', '未分配');
   };
 
   const confirm = async (id) => {
     let res = await reqDeleteUser(id);
     if (res.code == 200) {
-      message.success('删除成功');
+      message.success(t('common.success.delete', '删除成功！'));
       actionRef.current.reload();
     } else {
-      message.error('删除失败，请联系管理员');
+      message.error(t('user.delete.failed.admin', '删除失败，请联系管理员'));
     }
   };
 
   const resetpwd = async (userid) => {
     let res = await reqResetPassword({ userid });
     if (res.code) {
-      message.success('重置密码成功');
+      message.success(t('user.reset.success', '重置密码成功'));
     } else {
-      message.error('重置密码失败，请联系开发人员');
+      message.error(t('user.reset.failed', '重置密码失败，请联系开发人员'));
     }
   };
 
   const columns = [
     {
-      title: '用户编号',
+      title: t('user.id', '用户编号'),
       dataIndex: 'userid',
       align: 'center',
       key: 'userid',
       valueType: 'text',
     },
     {
-      title: '用户名',
+      title: t('user.name', '用户名'),
       dataIndex: 'username',
       key: 'username',
       align: 'center',
@@ -274,15 +278,15 @@ const UserTable = (props) => {
     //   // ellipsis: false,
     // },
     {
-      title: '权限',
+      title: t('user.role', '权限'),
       dataIndex: 'isadmin',
       key: 'isadmin',
-      valueEnum: { 1: '管理员', 0: '普通用户' },
+      valueEnum: { 1: t('user.role.admin', '管理员'), 0: t('user.role.normal', '普通用户') },
       search: false,
       align: 'center',
     },
     {
-      title: '所属团队',
+      title: t('user.team', '所属团队'),
       dataIndex: 'teamId',
       key: 'teamId',
       search: false,
@@ -290,7 +294,7 @@ const UserTable = (props) => {
       render: (_, record) => getTeamName(record.teamId),
     },
     {
-      title: '操作',
+      title: t('common.operation', '操作'),
       dataIndex: 'operate',
       search: false,
       align: 'center',
@@ -300,7 +304,7 @@ const UserTable = (props) => {
           <React.Fragment>
             <EditOutlined
               style={{ color: 'green', marginRight: '10px' }}
-              title="修改"
+              title={t('common.edit', '编辑')}
               key="update"
               onClick={async () => {
                 setInitialValue({
@@ -313,29 +317,29 @@ const UserTable = (props) => {
               }}
             />
             <Popconfirm
-              title="你确定要删除吗?"
+              title={t('user.delete.confirm', '你确定要删除吗?')}
               onConfirm={() => {
                 confirm(record.userid);
               }}
-              okText="是"
-              cancelText="否"
+              okText={t('common.yes', '是')}
+              cancelText={t('common.no', '否')}
             >
               <DeleteOutlined
                 key="delete"
                 style={{ color: 'red', marginRight: '10px' }}
-                title="删除"
+                title={t('common.delete', '删除')}
               />
             </Popconfirm>
             <Popconfirm
-              title="你确定要重置密码吗?"
+              title={t('user.reset.confirm', '你确定要重置密码吗?')}
               key="confirmReset"
               onConfirm={() => {
                 resetpwd(record.userid);
               }}
-              okText="是"
-              cancelText="否"
+              okText={t('common.yes', '是')}
+              cancelText={t('common.no', '否')}
             >
-              <RedoOutlined style={{ color: '#1890ff' }} title="重置密码" key="reset" />
+              <RedoOutlined style={{ color: '#1890ff' }} title={t('user.reset.password', '重置密码')} key="reset" />
             </Popconfirm>
           </React.Fragment>
         );

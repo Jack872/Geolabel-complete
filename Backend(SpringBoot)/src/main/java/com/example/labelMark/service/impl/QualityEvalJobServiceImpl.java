@@ -8,8 +8,10 @@ import com.example.labelMark.mapper.QualityEvalJobMapper;
 import com.example.labelMark.service.QualityEvalJobService;
 import com.example.labelMark.service.QualityEvaluationProgressListener;
 import com.example.labelMark.service.QualityEvaluationService;
+import com.example.labelMark.utils.I18n;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -39,11 +42,11 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
         job.setQualityProfileId(request.getQualityProfileId());
         job.setReferenceModelId(request.getReferenceModel() == null ? null : request.getReferenceModel().getModelId());
         job.setStatus("QUEUED");
-        job.setStage("排队中");
+        job.setStage(I18n.msg("quality.job.stage.queued"));
         job.setProgress(0);
         job.setProcessedCount(0);
         job.setTotalCount(0);
-        job.setMessage("质量评价任务已提交，等待执行");
+        job.setMessage(I18n.msg("quality.job.queued"));
         job.setCreator(operator);
         job.setCreatedTime(new Date());
         job.setUpdatedTime(new Date());
@@ -52,7 +55,8 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
 
         request.setEvaluationJobId(job.getId());
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        qualityEvaluationExecutor.submit(() -> runJobWithSecurityContext(job.getId(), request, operator, authentication));
+        Locale locale = LocaleContextHolder.getLocale();
+        qualityEvaluationExecutor.submit(() -> runJobWithSecurityContext(job.getId(), request, operator, authentication, locale));
 
         return toStatusMap(job);
     }
@@ -88,8 +92,10 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
     private void runJobWithSecurityContext(Long jobId,
                                            QualityEvaluationRequest request,
                                            String operator,
-                                           Authentication authentication) {
+                                           Authentication authentication,
+                                           Locale locale) {
         try {
+            LocaleContextHolder.setLocale(locale);
             if (authentication != null) {
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
@@ -98,11 +104,12 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
             runJob(jobId, request, operator);
         } finally {
             SecurityContextHolder.clearContext();
+            LocaleContextHolder.resetLocaleContext();
         }
     }
 
     private void runJob(Long jobId, QualityEvaluationRequest request, String operator) {
-        updateProgress(jobId, "RUNNING", "初始化评价", 5, 0, 0, "任务已开始执行");
+        updateProgress(jobId, "RUNNING", I18n.msg("quality.job.stage.init"), 5, 0, 0, I18n.msg("quality.job.started"));
         try {
             QualityEvaluationResultDTO result = qualityEvaluationService.evaluate(
                     request,
@@ -115,9 +122,9 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
                 return;
             }
             job.setStatus("SUCCESS");
-            job.setStage("已完成");
+            job.setStage(I18n.msg("quality.job.stage.completed"));
             job.setProgress(100);
-            job.setMessage("质量评价已完成");
+            job.setMessage(I18n.msg("quality.job.completed"));
             job.setResultJson(writeJson(result));
             job.setReportId(result.getReportId());
             job.setEndTime(new Date());
@@ -129,7 +136,7 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
                 return;
             }
             job.setStatus("FAILED");
-            job.setStage("执行失败");
+            job.setStage(I18n.msg("quality.job.stage.failed"));
             job.setMessage(e.getMessage());
             job.setEndTime(new Date());
             job.setUpdatedTime(new Date());
@@ -191,7 +198,7 @@ public class QualityEvalJobServiceImpl extends ServiceImpl<QualityEvalJobMapper,
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
-            throw new IllegalStateException("质量评价任务序列化失败", e);
+            throw new IllegalStateException(I18n.msg("quality.job.serialize.failed"), e);
         }
     }
 

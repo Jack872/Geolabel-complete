@@ -3,7 +3,7 @@ import { Button, Input, message, Select, Badge } from 'antd';
 import { UpOutlined, DownOutlined, MessageOutlined, ClearOutlined } from '@ant-design/icons';
 import { reqGetModelList, reqAssistFunction, reqInferenceFunction } from '@/services/map/api.js';
 import { reqBatchTrainTasks, reqBatchInferenceTasks } from '@/services/taskManage/api.js';
-import { useModel } from 'umi';
+import { useIntl, useModel } from 'umi';
 import { currentState as getCurrentState } from '@/services/login/api';
 import './ModelToolPanel.less';
 
@@ -11,6 +11,8 @@ const { TextArea } = Input;
 const { Option } = Select;
 
 const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceComplete }) => {
+  const intl = useIntl();
+  const t = useCallback((id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values), [intl]);
   const [expanded, setExpanded] = useState(false);
 
   // 模型工具状态
@@ -95,11 +97,6 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
     }
   }, [fetchUserInfo, isUserInfoLoaded]);
 
-  // 组件初始化时添加欢迎消息
-  useEffect(() => {
-    addMessage('系统', '🎉 AI辅助工具已加载，准备就绪', 'info');
-  }, [addMessage]);
-
   // 获取用户ID
   const getUserId = useCallback(() => {
     if (!currentUserInfo || selectedTasks.length === 0) {
@@ -137,6 +134,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
       return updatedMessages.slice(0, maxMessages);
     });
   }, [maxMessages]);
+
+  // 组件初始化时添加欢迎消息
+  useEffect(() => {
+    addMessage(t('model.tool.system', '系统'), t('model.tool.loaded', 'AI辅助工具已加载，准备就绪'), 'info');
+  }, [addMessage, t]);
 
   // 清空消息
   const clearMessages = useCallback(() => {
@@ -179,7 +181,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
           console.log('WebSocket连接已建立');
           setIsWebSocketConnected(true);
           setWebsocket(ws);
-          addMessage('系统', '🔗 WebSocket连接已建立，可以接收实时通知', 'success');
+          addMessage(t('model.tool.system', '系统'), t('model.tool.ws.connected', 'WebSocket连接已建立，可以接收实时通知'), 'success');
 
           // 清除重连定时器
           if (reconnectTimer) {
@@ -197,11 +199,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
             switch (notification.type) {
               case 'BATCH_TRAIN_COMPLETE':
                 if (notification.success) {
-                  message.success(`批量训练完成: ${notification.message}`);
-                  addMessage('批量训练', `✅ ${notification.message}`, 'success');
+                  message.success(t('model.tool.batchTrain.complete', '批量训练完成: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.batchTrain', '批量训练'), notification.message, 'success');
                 } else {
-                  message.error(`批量训练失败: ${notification.message}`);
-                  addMessage('批量训练', `❌ ${notification.message}`, 'error');
+                  message.error(t('model.tool.batchTrain.failed', '批量训练失败: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.batchTrain', '批量训练'), notification.message, 'error');
                 }
                 if (onBatchTrainComplete) {
                   onBatchTrainComplete(notification);
@@ -210,11 +212,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
 
               case 'BATCH_INFERENCE_COMPLETE':
                 if (notification.success) {
-                  message.success(`批量推理完成: ${notification.message}`);
-                  addMessage('批量推理', `✅ ${notification.message}`, 'success');
+                  message.success(t('model.tool.batchInference.complete', '批量推理完成: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.batchInference', '批量推理'), notification.message, 'success');
                 } else {
-                  message.error(`批量推理失败: ${notification.message}`);
-                  addMessage('批量推理', `❌ ${notification.message}`, 'error');
+                  message.error(t('model.tool.batchInference.failed', '批量推理失败: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.batchInference', '批量推理'), notification.message, 'error');
                 }
                 if (onBatchInferenceComplete) {
                   onBatchInferenceComplete(notification);
@@ -223,27 +225,27 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
 
               case 'TRAIN_COMPLETE':
                 if (notification.success) {
-                  message.success(`训练完成: ${notification.message}`);
-                  addMessage('训练', `✅ ${notification.message}`, 'success');
+                  message.success(t('model.tool.train.complete', '训练完成: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.train', '训练'), notification.message, 'success');
                 } else {
-                  message.error(`训练失败: ${notification.message}`);
-                  addMessage('训练', `❌ ${notification.message}`, 'error');
+                  message.error(t('model.tool.train.failed', '训练失败: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.train', '训练'), notification.message, 'error');
                 }
                 break;
 
               case 'INFERENCE_COMPLETE':
                 if (notification.success) {
-                  message.success(`推理完成: ${notification.message}`);
-                  addMessage('推理', `✅ ${notification.message}`, 'success');
+                  message.success(t('model.tool.inference.complete', '推理完成: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.inference', '推理'), notification.message, 'success');
                 } else {
-                  message.error(`推理失败: ${notification.message}`);
-                  addMessage('推理', `❌ ${notification.message}`, 'error');
+                  message.error(t('model.tool.inference.failed', '推理失败: {message}', { message: notification.message }));
+                  addMessage(t('model.tool.inference', '推理'), notification.message, 'error');
                 }
                 break;
 
               case 'TASK_PROGRESS':
-                message.info(`任务进度: ${notification.progress}% - ${notification.message}`);
-                addMessage('进度', `🔄 ${notification.progress}% - ${notification.message}`, 'info');
+                message.info(t('model.tool.progress.message', '任务进度: {progress}% - {message}', { progress: notification.progress, message: notification.message }));
+                addMessage(t('model.tool.progress', '进度'), `${notification.progress}% - ${notification.message}`, 'info');
                 break;
 
               default:
@@ -258,12 +260,12 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
           console.log('WebSocket连接已关闭, 代码:', event.code, '原因:', event.reason);
           setIsWebSocketConnected(false);
           setWebsocket(null);
-          addMessage('系统', '🔌 WebSocket连接已断开', 'warning');
+          addMessage(t('model.tool.system', '系统'), t('model.tool.ws.disconnected', 'WebSocket连接已断开'), 'warning');
 
           // 只有在非正常关闭时才重连
           if (event.code !== 1000 && currentUserInfo && getUserId()) {
             console.log('尝试重新连接WebSocket...');
-            addMessage('系统', '🔄 正在尝试重新连接...', 'info');
+            addMessage(t('model.tool.system', '系统'), t('model.tool.ws.reconnecting', '正在尝试重新连接...'), 'info');
             reconnectTimer = setTimeout(() => {
               connectWebSocket();
             }, 5000);
@@ -294,7 +296,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
       setWebsocket(null);
       setIsWebSocketConnected(false);
     };
-  }, [isUserInfoLoaded, currentUserInfo, getUserId, onBatchTrainComplete, onBatchInferenceComplete]);
+  }, [isUserInfoLoaded, currentUserInfo, getUserId, onBatchTrainComplete, onBatchInferenceComplete, addMessage, t]);
 
   // 获取模型列表
   useEffect(() => {
@@ -347,13 +349,13 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
             console.warn('模型数据格式不正确:', response.data);
           }
         } else {
-          message.error('获取模型列表失败: ' + (response.message || '未知错误'));
+          message.error(t('model.tool.model.fetch.failed', '获取模型列表失败: {message}', { message: response.message || t('model.unknown.error', '未知错误') }));
           setModelResults({});
           setModelList([]);
         }
       } catch (error) {
         console.error('获取模型列表异常:', error);
-        message.error('获取模型列表失败：' + error.message);
+        message.error(t('model.tool.model.fetch.failedWithColon', '获取模型列表失败：{message}', { message: error.message }));
         setModelResults({});
         setModelList([]);
       }
@@ -367,29 +369,29 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
       setModelList([]);
       setSelectedModel('');
     }
-  }, [selectedTasks, isUserInfoLoaded, currentUserInfo, getUserId, getTaskType]);
+  }, [selectedTasks, isUserInfoLoaded, currentUserInfo, getUserId, getTaskType, t]);
 
   // 批量训练（调用辅助）
   const handleBatchAssistClick = async () => {
     if (selectedTasks.length === 0) {
-      message.error('请先选择要训练的任务！');
+      message.error(t('model.tool.selectTrainTask', '请先选择要训练的任务！'));
       return;
     }
 
     if (!assistFunction || assistFunction === 'none') {
-      message.error('请先选择一个模型！');
+      message.error(t('model.tool.selectModel', '请先选择一个模型！'));
       return;
     }
 
     // 确保用户信息已加载
     if (!isUserInfoLoaded || !currentUserInfo) {
-      message.error('用户信息未加载，请稍后重试');
+      message.error(t('model.tool.user.loading', '用户信息未加载，请稍后重试'));
       return;
     }
 
     const userId = getUserId();
     if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
+      message.error(t('model.tool.user.id.missing', '无法获取用户 ID，请检查用户信息'));
       return;
     }
 
@@ -418,7 +420,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
     }
 
     try {
-      const hide = message.loading('正在提交批量训练任务...');
+      const hide = message.loading(t('model.tool.batchTrain.loading', '正在提交批量训练任务...'));
 
       // 构造批量训练请求
       const taskIds = selectedTasks.map(task => task.taskid.toString());
@@ -446,42 +448,42 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
 
       hide();
       if (result.code === 200) {
-        message.success(`${selectedTasks.length}个训练任务已提交`);
-        addMessage('批量训练', `🚀 已提交${selectedTasks.length}个训练任务，正在后台处理中...`, 'info');
+        message.success(t('model.tool.batchTrain.submitted', '{count}个训练任务已提交', { count: selectedTasks.length }));
+        addMessage(t('model.tool.batchTrain', '批量训练'), t('model.tool.batchTrain.submitted.detail', '已提交{count}个训练任务，正在后台处理中...', { count: selectedTasks.length }), 'info');
         if (onBatchTrainComplete) {
           onBatchTrainComplete(result);
         }
       } else {
-        message.error(result.message || '批量训练任务提交失败');
-        addMessage('批量训练', `❌ 任务提交失败: ${result.message || '未知错误'}`, 'error');
+        message.error(result.message || t('model.tool.batchTrain.submit.failed', '批量训练任务提交失败'));
+        addMessage(t('model.tool.batchTrain', '批量训练'), t('model.tool.batchTrain.submit.failedDetail', '任务提交失败: {message}', { message: result.message || t('model.unknown.error', '未知错误') }), 'error');
       }
     } catch (error) {
-      message.error('批量训练任务提交失败：' + error.message);
-      addMessage('批量训练', `❌ 任务提交异常: ${error.message}`, 'error');
+      message.error(t('model.tool.batchTrain.submit.exception', '批量训练任务提交失败：{message}', { message: error.message }));
+      addMessage(t('model.tool.batchTrain', '批量训练'), t('model.tool.batchSubmit.exceptionDetail', '任务提交异常: {message}', { message: error.message }), 'error');
     }
   };
 
   // 批量推理
   const handleBatchInferenceClick = async () => {
     if (selectedTasks.length === 0) {
-      message.error('请先选择要推理的任务！');
+      message.error(t('model.tool.selectInferenceTask', '请先选择要推理的任务！'));
       return;
     }
 
     if (!selectedModel) {
-      message.error('请先选择一个推理模型！');
+      message.error(t('model.tool.selectInferenceModel', '请先选择一个推理模型！'));
       return;
     }
 
     // 确保用户信息已加载
     if (!isUserInfoLoaded || !currentUserInfo) {
-      message.error('用户信息未加载，请稍后重试');
+      message.error(t('model.tool.user.loading', '用户信息未加载，请稍后重试'));
       return;
     }
 
     const userId = getUserId();
     if (!userId) {
-      message.error('无法获取用户 ID，请检查用户信息');
+      message.error(t('model.tool.user.id.missing', '无法获取用户 ID，请检查用户信息'));
       return;
     }
 
@@ -510,7 +512,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
     }
 
     try {
-      const hide = message.loading('正在提交批量推理任务...');
+      const hide = message.loading(t('model.tool.batchInference.loading', '正在提交批量推理任务...'));
 
       // 构造批量推理请求
       const taskIds = selectedTasks.map(task => task.taskid.toString());
@@ -532,18 +534,18 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
 
       hide();
       if (result.code === 200) {
-        message.success(`${selectedTasks.length}个推理任务已提交`);
-        addMessage('批量推理', `🚀 已提交${selectedTasks.length}个推理任务，正在后台处理中...`, 'info');
+        message.success(t('model.tool.batchInference.submitted', '{count}个推理任务已提交', { count: selectedTasks.length }));
+        addMessage(t('model.tool.batchInference', '批量推理'), t('model.tool.batchInference.submitted.detail', '已提交{count}个推理任务，正在后台处理中...', { count: selectedTasks.length }), 'info');
         if (onBatchInferenceComplete) {
           onBatchInferenceComplete(result);
         }
       } else {
-        message.error(result.message || '批量推理任务提交失败');
-        addMessage('批量推理', `❌ 任务提交失败: ${result.message || '未知错误'}`, 'error');
+        message.error(result.message || t('model.tool.batchInference.submit.failed', '批量推理任务提交失败'));
+        addMessage(t('model.tool.batchInference', '批量推理'), t('model.tool.batchTrain.submit.failedDetail', '任务提交失败: {message}', { message: result.message || t('model.unknown.error', '未知错误') }), 'error');
       }
     } catch (error) {
-      message.error('批量推理任务提交失败：' + error.message);
-      addMessage('批量推理', `❌ 任务提交异常: ${error.message}`, 'error');
+      message.error(t('model.tool.batchInference.submit.exception', '批量推理任务提交失败：{message}', { message: error.message }));
+      addMessage(t('model.tool.batchInference', '批量推理'), t('model.tool.batchSubmit.exceptionDetail', '任务提交异常: {message}', { message: error.message }), 'error');
     }
   };
 
@@ -559,11 +561,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
       const parsed = JSON.parse(categoryMapping);
       const formatted = JSON.stringify(parsed, null, 2);
       setCategoryMapping(formatted);
-      message.success('JSON格式化成功');
+      message.success(t('model.tool.json.format.success', 'JSON格式化成功'));
     } catch (error) {
-      message.error('JSON格式无效，请检查语法');
+      message.error(t('model.tool.json.format.invalid', 'JSON格式无效，请检查语法'));
     }
-  }, [categoryMapping]);
+  }, [categoryMapping, t]);
 
   // 定义模型选项
   const objectDetectionModels = [
@@ -579,7 +581,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
   return (
     <div className="model-tool-panel expanded">
       <div className="model-tool-header">
-        <span>AI辅助工具</span>
+        <span>{t('model.tool.title', 'AI辅助工具')}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {isUserInfoLoaded && currentUserInfo && (
             <span style={{
@@ -596,7 +598,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                 backgroundColor: isWebSocketConnected ? '#52c41a' : '#ff4d4f',
                 display: 'inline-block'
               }} />
-              {isWebSocketConnected ? '实时通知已连接' : '实时通知未连接'}
+              {isWebSocketConnected ? t('model.tool.realtime.connected', '实时通知已连接') : t('model.tool.realtime.disconnected', '实时通知未连接')}
             </span>
           )}
           <Badge count={messages.length} size="small" overflowCount={99}>
@@ -605,7 +607,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
               size="small"
               icon={<MessageOutlined />}
               onClick={toggleMessageWindow}
-              title="查看消息记录"
+              title={t('model.tool.messages.view', '查看消息记录')}
             />
           </Badge>
         </div>
@@ -629,21 +631,21 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
               alignItems: 'center',
               backgroundColor: '#f5f5f5'
             }}>
-              <span style={{ fontSize: '14px', fontWeight: '500' }}>任务消息记录</span>
+              <span style={{ fontSize: '14px', fontWeight: '500' }}>{t('model.tool.messages.title', '任务消息记录')}</span>
               <div>
                 <Button
                   type="text"
                   size="small"
                   icon={<ClearOutlined />}
                   onClick={clearMessages}
-                  title="清空消息"
+                  title={t('model.tool.messages.clear', '清空消息')}
                   style={{ marginRight: 4 }}
                 />
                 <Button
                   type="text"
                   size="small"
                   onClick={toggleMessageWindow}
-                  title="关闭窗口"
+                  title={t('model.tool.messages.close', '关闭窗口')}
                 >
                   ×
                 </Button>
@@ -661,7 +663,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                   padding: '20px',
                   fontSize: '12px'
                 }}>
-                  暂无消息记录
+                  {t('model.tool.messages.empty', '暂无消息记录')}
                 </div>
               ) : (
                 messages.map(msg => (
@@ -705,12 +707,12 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
         <div className="assist-function-section">
           <div className="assist-function-select">
             <div style={{ marginBottom: 8 }}>
-              <span>模型选择：</span>
+              <span>{t('model.tool.model.select', '模型选择：')}</span>
               <Select
                 style={{ width: 200, marginLeft: 8 }}
                 value={assistFunction}
                 onChange={(value) => setAssistFunction(value)}
-                placeholder="请选择模型"
+                placeholder={t('model.tool.model.placeholder', '请选择模型')}
               >
                 {isObjectDetection
                   ? objectDetectionModels.map((model) => (
@@ -729,7 +731,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
             <div style={{ marginBottom: 8 }}>
               <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={{ fontSize: '12px', color: '#666' }}>训练次数：</span>
+                  <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.epochs', '训练次数：')}</span>
                   <Input
                     value={assistInput}
                     onChange={(e) => setAssistInput(e.target.value)}
@@ -737,7 +739,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={{ fontSize: '12px', color: '#666' }}>模型名称：</span>
+                  <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.modelName', '模型名称：')}</span>
                   <Input
                     value={modelName}
                     onChange={(e) => setModelName(e.target.value)}
@@ -745,14 +747,14 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                   />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: '140px' }}>
-                  <span style={{ fontSize: '12px', color: 'transparent' }}>操作：</span>
+                  <span style={{ fontSize: '12px', color: 'transparent' }}>{t('model.tool.action', '操作：')}</span>
                   <Button
                     type="primary"
                     onClick={handleBatchAssistClick}
                     disabled={selectedTasks.length === 0}
                     style={{ width: '100%' }}
                   >
-                    批量训练 ({selectedTasks.length})
+                    {t('model.tool.batchTrain.button', '批量训练 ({count})', { count: selectedTasks.length })}
                   </Button>
                 </div>
               </div>
@@ -765,11 +767,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                 <>
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ marginBottom: 4 }}>
-                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>模型参数设置：</span>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>{t('model.tool.params', '模型参数设置：')}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>最小物体大小：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.minObjectSize', '最小物体大小：')}</span>
                         <Input
                           value={param1}
                           onChange={(e) => setParam1(e.target.value)}
@@ -777,7 +779,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>最大孔洞大小：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.maxHoleSize', '最大孔洞大小：')}</span>
                         <Input
                           value={param2}
                           onChange={(e) => setParam2(e.target.value)}
@@ -785,7 +787,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>边界平滑程度：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.boundarySmoothing', '边界平滑程度：')}</span>
                         <Input
                           value={param3}
                           onChange={(e) => setParam3(e.target.value)}
@@ -800,11 +802,11 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                 <>
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ marginBottom: 4 }}>
-                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>模型参数设置：</span>
+                      <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>{t('model.tool.params', '模型参数设置：')}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>置信度阈值：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.confidenceThreshold', '置信度阈值：')}</span>
                         <Input
                           value={param1}
                           onChange={(e) => setParam1(e.target.value)}
@@ -812,7 +814,7 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ fontSize: '12px', color: '#666' }}>输入图像尺寸：</span>
+                        <span style={{ fontSize: '12px', color: '#666' }}>{t('model.tool.inputImageSize', '输入图像尺寸：')}</span>
                         <Input
                           value={param2}
                           onChange={(e) => setParam2(e.target.value)}
@@ -826,13 +828,13 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
 
               <div style={{ marginTop: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>类别映射配置：</span>
+                  <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>{t('model.tool.categoryMapping', '类别映射配置：')}</span>
                   <Button
                     size="small"
                     onClick={formatCategoryMapping}
                     type="dashed"
                   >
-                    格式化JSON
+                    {t('model.tool.formatJson', '格式化JSON')}
                   </Button>
                 </div>
                 <TextArea
@@ -842,14 +844,14 @@ const ModelToolPanel = ({ selectedTasks, onBatchTrainComplete, onBatchInferenceC
                   style={{ width: '100%' }}
                 />
                 <div style={{ fontSize: '12px', color: '#999', marginTop: 6, lineHeight: '1.4' }}>
-                  <div>格式示例：{"{"}"0": "类别一ID", "1": "类别二ID"{"}"}</div>
-                  <div>提示：键为数字字符串，值为对应的类别ID</div>
+                  <div>{t('model.tool.mapping.example', '格式示例：{"0": "类别一ID", "1": "类别二ID"}')}</div>
+                  <div>{t('model.tool.mapping.tip', '提示：键为数字字符串，值为对应的类别ID')}</div>
                 </div>
               </div>
 
               <div style={{ marginTop: 16 }}>
                 <div style={{ marginBottom: 8 }}>
-                  <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>模型信息：</span>
+                  <span style={{ fontSize: '13px', fontWeight: '500', color: '#333' }}>{t('model.tool.info', '模型信息：')}</span>
                 </div>
                 <TextArea
                   value={modelResults.selectedValue || JSON.stringify(modelResults, null, 2)}

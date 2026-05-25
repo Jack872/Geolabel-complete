@@ -3,6 +3,7 @@ import { PageContainer } from '@ant-design/pro-layout';
 import { ProTable } from '@ant-design/pro-table';
 import { Button, Tag, message } from 'antd';
 import { useRef, useState } from 'react';
+import { formatMessage } from 'umi';
 import {
   reqGetCategoryList,
   reqNewCategory,
@@ -12,9 +13,10 @@ import {
 // 引入封装模态框表单
 import CollectionCreateForm from '@/components/CollectionCreateForm';
 import formItemList from './formItemList/index';
+const t = (id, defaultMessage, values) => formatMessage({ id, defaultMessage }, values);
 const columns = [
   {
-    title: '类别编码',
+    title: t('category.id', '类别编码'),
     dataIndex: 'typeId',
     key: 'typeId',
     width: '5%',
@@ -38,13 +40,13 @@ const columns = [
   // },
   {
     disable: true,
-    title: '类别名称',
+    title: t('category.name', '类别名称'),
     dataIndex: 'typeName',
     width: '25%',
     align: 'center',
   },
   {
-    title: '颜色',
+    title: t('category.color', '颜色'),
     dataIndex: 'typeColor',
     width: '15%',
     align: 'center',
@@ -56,7 +58,7 @@ const columns = [
     ],
   },
   {
-    title: '操作',
+    title: t('common.operation', '操作'),
     valueType: 'option',
     width: '10%',
     key: 'option',
@@ -72,7 +74,7 @@ const columns = [
             : _a.call(action, record.typeId);
         }}
       >
-        编辑
+        {t('common.edit', '编辑')}
       </EditTwoTone>,
     ],
   },
@@ -92,19 +94,19 @@ const Category = () => {
   // 新建类别参数收集
   const onCreate = async (values) => {
     console.log('得到新建类别参数: ', values);
-    const hide = message.loading('正在添加');
+    const hide = message.loading(t('common.loading.add', '正在添加'));
     try {
       setVisible(false);
       let result = await reqNewCategory(values);
       hide();
       console.log(result);
       if (result) {
-        message.success('添加成功！');
+        message.success(t('common.success.add', '添加成功！'));
         actionRef.current.reload();
       }
     } catch (error) {
       hide();
-      message.error('添加失败！');
+      message.error(t('common.error.add', '添加失败！'));
       setVisible(false);
       return false;
     }
@@ -127,11 +129,11 @@ const Category = () => {
               console.log(row)
               let result = await reqEditCategory(row);
               if (result) {
-                message.success('修改成功！');
+                message.success(t('common.success.edit', '修改成功！'));
                 actionRef.current.reload();
               }
             } catch (error) {
-              message.error('修改失败！');
+              message.error(t('common.error.edit', '修改失败！'));
               return;
             }
           },
@@ -139,10 +141,10 @@ const Category = () => {
             try {
               let result = await reqDeleteCategory(row.typeId);
               actionRef.current.reloadAndRest();
-              message.success('删除成功！');
+              message.success(t('common.success.delete', '删除成功！'));
               console.log(actionRef.current);
             } catch (error) {
-              message.error('删除失败！');
+              message.error(t('common.error.delete', '删除失败！'));
             }
           },
         }}
@@ -159,7 +161,7 @@ const Category = () => {
           defaultPageSize: 10,
           showSizeChanger: true,
         }}
-        headerTitle="类别配置"
+        headerTitle={t('category.config', '类别配置')}
         toolBarRender={() => [
           <Button
             key="button"
@@ -169,10 +171,11 @@ const Category = () => {
               setVisible(true);
             }}
           >
-            新增类别
+            {t('category.new', '新增类别')}
           </Button>,
           <CollectionCreateForm
-            title={'新建标注类别'}
+            key="create-form"
+            title={t('category.new.title', '新建标注类别')}
             open={visible}
             onCreate={onCreate}
             onCancel={() => {

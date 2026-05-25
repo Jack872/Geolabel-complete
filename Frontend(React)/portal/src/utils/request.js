@@ -5,27 +5,30 @@
  */
 import { extend } from 'umi-request';
 import { notification, message } from 'antd';
+import { getLocale, formatMessage } from 'umi';
 import { getCookie,setCookie,removeCookie } from '@/utils/cookie'
 import {boolean} from "mockjs/src/mock/random/basic";
 
 const codeMessage = {
-  200: '服务器成功返回请求的数据。',
-  201: '新建或修改数据成功。',
-  202: '一个请求已经进入后台排队（异步任务）。',
-  204: '删除数据成功。',
-  400: '发出的请求有错误，服务器没有进行新建或修改数据的操作。',
-  401: '用户没有权限（令牌、用户名、密码错误）。',
-  403: '用户得到授权，但是访问是被禁止的。',
-  404: '发出的请求针对的是不存在的记录，服务器没有进行操作。',
-  405: '请求方法不被允许。',
-  406: '请求的格式不可得。',
-  410: '请求的资源被永久删除，且不会再得到的。',
-  422: '当创建一个对象时，发生一个验证错误。',
-  500: '服务器发生错误，请检查服务器。',
-  502: '网关错误。',
-  503: '服务不可用，服务器暂时过载或维护。',
-  504: '网关超时。',
+  200: 'app.request.error.200',
+  201: 'app.request.error.201',
+  202: 'app.request.error.202',
+  204: 'app.request.error.204',
+  400: 'app.request.error.400',
+  401: 'app.request.error.401',
+  403: 'app.request.error.403',
+  404: 'app.request.error.404',
+  405: 'app.request.error.405',
+  406: 'app.request.error.406',
+  410: 'app.request.error.410',
+  422: 'app.request.error.422',
+  500: 'app.request.error.500',
+  502: 'app.request.error.502',
+  503: 'app.request.error.503',
+  504: 'app.request.error.504',
 };
+
+const t = (id, values) => formatMessage({ id, defaultMessage: id }, values);
 
 /**
  * 异常处理程序
@@ -38,10 +41,10 @@ const errorHandler = error => {
     if (response.url && response.url.includes('/user/currentState')) {
       return response;
     }
-    const errorText = codeMessage[response.status] || response.statusText;
+    const errorText = codeMessage[response.status] ? t(codeMessage[response.status]) : response.statusText;
     const { status, url } = response;
     notification.error({
-      message: `请求错误 ${status}: ${url}`,
+      message: t('app.request.error.title', { status, url }),
       description: errorText,
     });
   }
@@ -58,21 +61,26 @@ const request = extend({
 // 请求拦截器
 request.interceptors.request.use((url, options) => {
   try {
+    const localeHeader = getLocale() || 'zh-CN';
+    const withLanguage = {
+      ...(options.headers || {}),
+      'Accept-Language': localeHeader,
+    };
     // 如果接口是登录和注册放行
     if (url === '/wegismarkapi/user/login'||url === '/wegismarkapi/user/register') {
       return {
         url: `${url}`,
-        options: { ...options, interceptors: true },
+        options: { ...options, headers: withLanguage, interceptors: true },
       };
     } else {
       if (getCookie('TOKEN') == '' || getCookie('TOKEN') == null) {
         // 鉴权探测接口无 token 属正常，静默放行
         if (!url.includes('/user/currentState')) {
-          message.error("TOKEN 丢失，请重新登录");
+          message.error(t('app.request.token.missing'));
         }
         return {
           url: `${url}`,
-          options: { ...options, interceptors: true },
+          options: { ...options, headers: withLanguage, interceptors: true },
         };
       } else {
         //请求geoserver服务，header不需要token，避免被覆盖
@@ -80,7 +88,7 @@ request.interceptors.request.use((url, options) => {
           return (
             {
               url: `${url}`,
-              options: { ...options,  interceptors: true },
+              options: { ...options, headers: withLanguage, interceptors: true },
             }
           );
         }
@@ -88,6 +96,7 @@ request.interceptors.request.use((url, options) => {
         let TOKEN = getCookie('TOKEN');
 
         let headers = {
+          ...withLanguage,
           'token': TOKEN
         };
         return (

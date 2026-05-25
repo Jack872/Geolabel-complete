@@ -9,10 +9,13 @@ import {
 } from '@ant-design/icons';
 import { reqGetSampleSetList, reqDeleteSampleSet, reqExportSampleSet, reqGetSampleSliceList } from '@/services/sampleSet/api';
 import { getCookie } from '@/utils/cookie';
+import { useIntl, formatMessage } from 'umi';
 import moment from 'moment';
 
 const { Meta } = Card;
 const { Text, Title } = Typography;
+
+const tr = (id, defaultMessage, values) => formatMessage({ id, defaultMessage }, values);
 
 // 类别颜色池
 const CATEGORY_COLORS = [
@@ -249,7 +252,7 @@ const SegPreviewCell = ({ imgSrc, fileName, annotations = [] }) => {
         {fileName}
         {polygonItems.length > 0 && (
           <Tag color="green" style={{ marginLeft: 4, fontSize: 9, padding: '0 3px' }}>
-            {polygonItems.length}个地物
+            {tr('dataset.preview.featureCount', '{count}个地物', { count: polygonItems.length })}
           </Tag>
         )}
       </div>
@@ -258,6 +261,8 @@ const SegPreviewCell = ({ imgSrc, fileName, annotations = [] }) => {
 };
 
 export default function DatasetReleaseManage({ currentState = {} }) {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   // ... (原有的状态保持不变) ...
   const [loading, setLoading] = useState(false);
   const [datasetList, setDatasetList] = useState([]);
@@ -321,7 +326,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
       }
     } catch (error) {
       console.error(error);
-      message.error('获取样本集列表失败');
+      message.error(t('dataset.fetch.failed', '获取样本集列表失败'));
     } finally {
       setLoading(false);
     }
@@ -332,13 +337,13 @@ export default function DatasetReleaseManage({ currentState = {} }) {
     try {
       const res = await reqDeleteSampleSet([id]);
       if (res.code === 200) {
-        message.success('样本集已删除');
+        message.success(t('dataset.deleted', '样本集已删除'));
         fetchDatasets(currentPage);
       } else {
-        message.error(res.message || '删除失败');
+        message.error(res.message || t('dataset.delete.failed', '删除失败'));
       }
     } catch (error) {
-      message.error('删除请求出错');
+      message.error(t('dataset.delete.requestFailed', '删除请求出错'));
     }
   };
 
@@ -353,7 +358,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
   const handleDownload = async () => {
     if (!currentDataset) return;
     setDownloading(true);
-    const hide = message.loading(`正在打包 ${exportFormat} 格式，请稍候...`, 0);
+    const hide = message.loading(t('dataset.packaging', '正在打包 {format} 格式，请稍候...', { format: exportFormat }), 0);
 
     try {
       const res = await reqExportSampleSet({
@@ -362,15 +367,15 @@ export default function DatasetReleaseManage({ currentState = {} }) {
       });
       const payload = res?.data || res;
       if (!payload?.downloadUrl) {
-        message.error(res?.message || '下载失败');
+        message.error(res?.message || t('dataset.download.failed', '下载失败'));
       } else {
         window.open(payload.downloadUrl, '_blank', 'noopener,noreferrer');
-        message.success('下载成功');
+        message.success(t('dataset.download.success', '下载成功'));
         setDownloadModalVisible(false);
       }
     } catch (error) {
       console.error(error);
-      message.error('下载请求失败');
+      message.error(t('dataset.download.requestFailed', '下载请求失败'));
     } finally {
       hide();
       setDownloading(false);
@@ -412,12 +417,12 @@ export default function DatasetReleaseManage({ currentState = {} }) {
         {/* ... */}
         <Row justify="space-between" align="middle">
           <Col>
-            <Title level={4} style={{ margin: 0 }}>样本集仓库</Title>
+            <Title level={4} style={{ margin: 0 }}>{t('dataset.repo.title', '样本集仓库')}</Title>
           </Col>
           <Col>
             <Space>
               <Input
-                placeholder="搜索数据集名称"
+                placeholder={t('dataset.search.placeholder', '搜索数据集名称')}
                 allowClear
                 prefix={<SearchOutlined />}
                 value={searchText}
@@ -481,20 +486,20 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                 }
                 // [修改 2] 优化按钮：使用 Tooltip + Icon，解决重叠问题
                 actions={[
-                  <Tooltip title="预览详情">
+                  <Tooltip title={t('dataset.preview.tooltip', '预览详情')}>
                     <div onClick={() => openPreviewModal(item)} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                       <EyeOutlined key="view" style={{ fontSize: 16 }} />
                     </div>
                   </Tooltip>,
 
-                  <Tooltip title="导出下载">
+                  <Tooltip title={t('dataset.export.tooltip', '导出下载')}>
                     <div onClick={() => openDownloadModal(item)} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                       <DownloadOutlined key="download" style={{ fontSize: 16 }} />
                     </div>
                   </Tooltip>,
 
-                  <Popconfirm title="确认删除此数据集？" onConfirm={() => handleDelete(item.id)}>
-                    <Tooltip title="删除">
+                  <Popconfirm title={t('dataset.delete.confirm', '确认删除此数据集？')} onConfirm={() => handleDelete(item.id)}>
+                    <Tooltip title={t('dataset.delete.tooltip', '删除')}>
                       <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
                         <DeleteOutlined key="delete" style={{ color: '#ff4d4f', fontSize: 16 }} />
                       </div>
@@ -510,7 +515,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                       </span>
                       <Space size={4}>
                         <Tag color={item.isPublic ? 'green' : 'default'} style={{ marginRight: 0 }}>
-                          {item.isPublic ? '公开' : '私有'}
+                          {item.isPublic ? t('dataset.public', '公开') : t('dataset.private', '私有')}
                         </Tag>
                         <Tag color="blue" style={{ marginRight: 0 }}>{item.taskType || 'DET'}</Tag>
                       </Space>
@@ -525,7 +530,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                         <CalendarOutlined style={{marginRight: 6}}/> {item.createDate ? moment(item.createDate).format('YYYY-MM-DD') : '-'}
                       </div>
                       <div style={{ marginTop: 4 }}>
-                        <NumberOutlined style={{marginRight: 6}}/> 样本量: <b style={{color: '#1890ff'}}>{item.num}</b>
+                        <NumberOutlined style={{marginRight: 6}}/> {t('dataset.sampleCount', '样本量')}: <b style={{color: '#1890ff'}}>{item.num}</b>
                       </div>
                     </Space>
                   }
@@ -537,13 +542,13 @@ export default function DatasetReleaseManage({ currentState = {} }) {
       </div>
 
       <Modal
-        title={currentDataset ? `详情: ${currentDataset.name}` : '数据集详情'}
+        title={currentDataset ? t('dataset.detail', '详情: {name}', { name: currentDataset.name }) : t('dataset.detail.title', '数据集详情')}
         open={previewModalVisible}
         onCancel={() => setPreviewModalVisible(false)}
         footer={[
-          <Button key="close" onClick={() => setPreviewModalVisible(false)}>关闭</Button>,
+          <Button key="close" onClick={() => setPreviewModalVisible(false)}>{t('dataset.close', '关闭')}</Button>,
           <Button key="download" type="primary" icon={<DownloadOutlined />} onClick={() => { setPreviewModalVisible(false); openDownloadModal(currentDataset); }}>
-            去下载
+            {t('dataset.goDownload', '去下载')}
           </Button>
         ]}
         width={isSegmentationDataset(currentDataset?.taskType) ? 900 : 700}
@@ -552,28 +557,28 @@ export default function DatasetReleaseManage({ currentState = {} }) {
         {currentDataset && (
           <div>
             <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="创建人">{currentDataset.creator}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{moment(currentDataset.createDate).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
-              <Descriptions.Item label="样本总数">{currentDataset.num} 张</Descriptions.Item>
-              <Descriptions.Item label="图像尺寸">{currentDataset.width} x {currentDataset.height}</Descriptions.Item>
-              <Descriptions.Item label="包含类别" span={2}>
-                {currentDataset.type ? currentDataset.type.split(',').map(t => <Tag key={t}>{t}</Tag>) : '无'}
+              <Descriptions.Item label={t('dataset.creator', '创建人')}>{currentDataset.creator}</Descriptions.Item>
+              <Descriptions.Item label={t('dataset.createTime', '创建时间')}>{moment(currentDataset.createDate).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label={t('dataset.totalSamples', '样本总数')}>{currentDataset.num} 张</Descriptions.Item>
+              <Descriptions.Item label={t('dataset.imageSize', '图像尺寸')}>{currentDataset.width} x {currentDataset.height}</Descriptions.Item>
+              <Descriptions.Item label={t('dataset.categories', '包含类别')} span={2}>
+                {currentDataset.type ? currentDataset.type.split(',').map(item => <Tag key={item}>{item}</Tag>) : t('dataset.none', '无')}
               </Descriptions.Item>
-              <Descriptions.Item label="描述备注" span={2}>{currentDataset.description || '无'}</Descriptions.Item>
+              <Descriptions.Item label={t('dataset.description', '描述备注')} span={2}>{currentDataset.description || t('dataset.none', '无')}</Descriptions.Item>
             </Descriptions>
 
             <Divider orientation="left" style={{margin: '16px 0'}}>
-              切片随机预览 (Top 8)
+              {t('dataset.preview.random', '切片随机预览 (Top 8)')}
               {isSegmentationDataset(currentDataset.taskType) && (
                 <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>
-                  完整切片 + 半透明彩色标注掩膜
+                  {t('dataset.preview.segHint', '完整切片 + 半透明彩色标注掩膜')}
                 </span>
               )}
             </Divider>
 
             <div style={{ minHeight: 120 }}>
               {previewLoading ? (
-                <div style={{textAlign:'center', padding: 30}}>加载中...</div>
+                <div style={{textAlign:'center', padding: 30}}>{t('dataset.loading', '加载中...')}</div>
               ) : (
                 previewSlices.length > 0 ? (
                   <Row gutter={[12, 12]}>
@@ -601,7 +606,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                                 {slice.fileName}
                                 {slice.annotations?.length > 0 && (
                                   <Tag color="blue" style={{marginLeft: 4, fontSize: 9, padding: '0 3px'}}>
-                                    {slice.annotations.length}个目标
+                                    {t('dataset.preview.objectCount', '{count}个目标', { count: slice.annotations.length })}
                                   </Tag>
                                 )}
                               </div>
@@ -612,7 +617,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
                     })}
                   </Row>
                 ) : (
-                  <Empty description="暂无预览图片" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description={t('dataset.preview.empty', '暂无预览图片')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 )
               )}
             </div>
@@ -622,27 +627,27 @@ export default function DatasetReleaseManage({ currentState = {} }) {
 
       {/* 下载 Modal */}
       <Modal
-        title={<span><FileZipOutlined /> 数据集导出配置</span>}
+        title={<span><FileZipOutlined /> {t('dataset.export.config', '数据集导出配置')}</span>}
         open={downloadModalVisible}
         onCancel={() => setDownloadModalVisible(false)}
         onOk={handleDownload}
         confirmLoading={downloading}
-        okText="开始打包下载"
+        okText={t('dataset.export.start', '开始打包下载')}
         width={450}
       >
         <Descriptions column={1} size="small" bordered style={{ marginBottom: 20 }}>
-          <Descriptions.Item label="数据集">{currentDataset?.name}</Descriptions.Item>
-          <Descriptions.Item label="样本数量">{currentDataset?.num} 张</Descriptions.Item>
-          <Descriptions.Item label="图像尺寸">{currentDataset?.width} x {currentDataset?.height}</Descriptions.Item>
+          <Descriptions.Item label={t('dataset.detail.title', '数据集详情')}>{currentDataset?.name}</Descriptions.Item>
+          <Descriptions.Item label={t('dataset.totalSamples', '样本总数')}>{currentDataset?.num} 张</Descriptions.Item>
+          <Descriptions.Item label={t('dataset.imageSize', '图像尺寸')}>{currentDataset?.width} x {currentDataset?.height}</Descriptions.Item>
         </Descriptions>
 
-        <div style={{ fontWeight: 'bold', marginBottom: 10 }}>目标格式：</div>
+        <div style={{ fontWeight: 'bold', marginBottom: 10 }}>{t('dataset.export.targetFormat', '目标格式：')}</div>
         <Radio.Group onChange={(e) => setExportFormat(e.target.value)} value={exportFormat} style={{ width: '100%' }}>
           <Space direction="vertical">
-            <Radio value="COCO">COCO 格式 (.json) <Tag style={{marginLeft:10}}>原生</Tag></Radio>
-            <Radio value="YOLO">YOLO 格式 (.txt) <Tag color="orange" style={{marginLeft:10}}>自动转换</Tag></Radio>
-            <Radio value="VOC">VOC 格式 (.xml) <Tag color="orange" style={{marginLeft:10}}>自动转换</Tag></Radio>
-            <Radio value="DML">Training-DML-AI (.json) <Tag color="green" style={{marginLeft:10}}>国产标准</Tag></Radio>
+            <Radio value="COCO">COCO (.json) <Tag style={{marginLeft:10}}>{t('dataset.export.native', '原生')}</Tag></Radio>
+            <Radio value="YOLO">YOLO (.txt) <Tag color="orange" style={{marginLeft:10}}>{t('dataset.export.auto', '自动转换')}</Tag></Radio>
+            <Radio value="VOC">VOC (.xml) <Tag color="orange" style={{marginLeft:10}}>{t('dataset.export.auto', '自动转换')}</Tag></Radio>
+            <Radio value="DML">Training-DML-AI (.json) <Tag color="green" style={{marginLeft:10}}>{t('dataset.export.cnStandard', '国产标准')}</Tag></Radio>
           </Space>
         </Radio.Group>
       </Modal>

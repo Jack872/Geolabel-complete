@@ -26,6 +26,7 @@ const Login = () => {
   const [type, setType] = useState('account');
   const { initialState, setInitialState } = useModel('@@initialState');
   const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
 
   const fetchUserInfo = async () => {
     try {
@@ -55,7 +56,7 @@ const Login = () => {
         setUserLoginState(result);
       }
     } catch (error) {
-      const defaultLoginFailureMessage = '登录失败，请重试！';
+      const defaultLoginFailureMessage = t('pages.login.failure', '登录失败，请重试！');
       message.error(defaultLoginFailureMessage);
       console.log(error);
     }
@@ -74,12 +75,12 @@ const Login = () => {
       <div className={styles.leftSection}>
         <div className={styles.leftContent}>
           <div className={styles.title}>RS-Labeler</div>
-          <div className={styles.subtitle}>AI辅助的遥感样本协作标注平台</div>
+          <div className={styles.subtitle}>{t('pages.login.hero.subtitle', 'AI辅助的遥感样本协作标注平台')}</div>
           <ul className={styles.features}>
-            <li>智能AI辅助标注，提升标注效率</li>
-            <li>多人协作标注，实时同步进度</li>
-            <li>遥感影像专业处理工具</li>
-            <li>高精度样本质量控制</li>
+            <li>{t('pages.login.feature.ai', '智能AI辅助标注，提升标注效率')}</li>
+            <li>{t('pages.login.feature.collab', '多人协作标注，实时同步进度')}</li>
+            <li>{t('pages.login.feature.remote', '遥感影像专业处理工具')}</li>
+            <li>{t('pages.login.feature.quality', '高精度样本质量控制')}</li>
           </ul>
         </div>
       </div>
@@ -91,7 +92,7 @@ const Login = () => {
           <LoginForm
             title="RS-Labeler"
             logo={<img alt="logo" src={logoSVG} />}
-            subTitle={'欢迎登录遥感样本标注平台'}
+            subTitle={t('pages.login.subtitle', '欢迎登录遥感样本标注平台')}
             initialValues={{
               autoLogin: true,
             }}
@@ -102,10 +103,10 @@ const Login = () => {
             <Tabs
               activeKey={type}
               onChange={setType}
-              items={[{ label: '账号密码登录', key: 'account' }]}
+              items={[{ label: t('pages.login.tab.account', '账号密码登录'), key: 'account' }]}
             />
 
-            {code === 403 && <LoginMessage content={'账户或密码错误'} />}
+            {code === 403 && <LoginMessage content={t('pages.login.account.error', '账户或密码错误')} />}
             {type === 'account' && (
               <>
                 <ProFormText
@@ -114,7 +115,7 @@ const Login = () => {
                     size: 'large',
                     prefix: <UserOutlined className={styles.prefixIcon} />,
                   }}
-                  placeholder={'请输入账号'}
+                  placeholder={t('pages.login.username.placeholder', '请输入账号')}
                   rules={[
                     {
                       required: true,
@@ -133,7 +134,7 @@ const Login = () => {
                     size: 'large',
                     prefix: <LockOutlined className={styles.prefixIcon} />,
                   }}
-                  placeholder={'请输入密码'}
+                  placeholder={t('pages.login.password.placeholder', '请输入密码')}
                   rules={[
                     {
                       required: true,
@@ -154,7 +155,7 @@ const Login = () => {
               }}
             >
               <ProFormCheckbox noStyle name="autoLogin">
-                自动登录
+                {t('pages.login.autoLogin', '自动登录')}
               </ProFormCheckbox>
               <Link
                 to="/user/register"
@@ -162,7 +163,7 @@ const Login = () => {
                   float: 'right',
                 }}
               >
-                新用户注册
+                {t('pages.login.register', '新用户注册')}
               </Link>
             </div>
           </LoginForm>

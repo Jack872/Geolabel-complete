@@ -6,6 +6,7 @@ import cn.hutool.core.util.ObjectUtil;
 import com.example.labelMark.domain.SysUser;
 import com.example.labelMark.service.LoginService;
 import com.example.labelMark.utils.JwtUtil;
+import com.example.labelMark.utils.I18n;
 import com.example.labelMark.utils.RedisCache;
 import com.example.labelMark.utils.ResultGenerator;
 import com.example.labelMark.vo.LoginUser;
@@ -39,7 +40,7 @@ public class LoginServiceImpl implements LoginService {
         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(user.getUsername(), user.getUserpassword());
         Authentication authenticate = authenticationManager.authenticate(authenticationToken);
         if (ObjectUtil.isNull(authenticate)) {
-            throw new RuntimeException("用户名或密码错误");
+            throw new RuntimeException(I18n.msg("common.unauthorized"));
         }
         //使用userid生成token
         LoginUser loginUser = (LoginUser) authenticate.getPrincipal();
@@ -52,7 +53,7 @@ public class LoginServiceImpl implements LoginService {
         HashMap<String, Object> map = new HashMap<>();
         map.put("token", jwt);
 //        map.put("expirationDate", DateUtil.offsetHour(new Date(), 5));
-        return ResultGenerator.getSuccessResult(StatusEnum.SUCCESS, "登陆成功", map);
+        return ResultGenerator.getSuccessResult(StatusEnum.SUCCESS, I18n.msg("login.success"), map);
     }
 
     @Override
@@ -61,6 +62,6 @@ public class LoginServiceImpl implements LoginService {
         LoginUser loginUser = (LoginUser) authentication.getPrincipal();
         Integer userid = loginUser.getSysUser().getUserid();
         redisCache.deleteObject("login:" + userid);
-        return ResultGenerator.getSuccessResult("登出成功");
+        return ResultGenerator.getSuccessResultByCode("logout.success");
     }
 }

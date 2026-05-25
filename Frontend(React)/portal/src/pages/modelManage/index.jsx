@@ -6,7 +6,7 @@ import { Button, message, Modal, Form, Input, Select, Upload, Popconfirm, Drawer
 // 【新增】引入 RobotOutlined 图标
 import { PlusOutlined, UploadOutlined, RobotOutlined, EyeOutlined } from '@ant-design/icons';
 import { getModels, deleteModel, uploadModel } from './service';
-import { useModel } from 'umi';
+import { useModel, useIntl } from 'umi';
 // 【新增】引入获取任务列表的 API (根据你的实际路径调整)
 import { reqGetTaskList } from '@/services/taskManage/api.js';
 import { currentState, getUserByUsername } from '@/services/login/api';
@@ -18,6 +18,8 @@ import ModelDetailsDrawer from './components/ModelDetailsDrawer';
 import './style.less';
 
 const ModelManage = () => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
   const [createModalVisible, handleModalVisible] = useState(false);
   // 【新增】状态：控制训练抽屉的显示隐藏
   const [trainDrawerVisible, setTrainDrawerVisible] = useState(false);
@@ -119,7 +121,7 @@ const ModelManage = () => {
         }
       } catch (error) {
         console.error('Error fetching current state:', error);
-        message.warning('未检测到登录信息，请重新登录');
+        message.warning(t('model.login.missing', '未检测到登录信息，请重新登录'));
       }
     };
 
@@ -141,7 +143,7 @@ const ModelManage = () => {
     }
   };
 
-  const parseJsonInput = (value, fallback = {}, label = 'JSON 字段') => {
+  const parseJsonInput = (value, fallback = {}, label = t('model.json.field', 'JSON 字段')) => {
     const text = (value || '').trim();
     if (!text) {
       return fallback;
@@ -151,9 +153,9 @@ const ModelManage = () => {
       if (parsed && typeof parsed === 'object') {
         return parsed;
       }
-      throw new Error(`${label} 必须是 JSON 对象`);
+      throw new Error(t('model.json.object.required', '{label} 必须是 JSON 对象', { label }));
     } catch (error) {
-      throw new Error(`${label} 格式错误: ${error.message}`);
+      throw new Error(t('model.json.invalid', '{label} 格式错误: {message}', { label, message: error.message }));
     }
   };
 
@@ -169,9 +171,9 @@ const ModelManage = () => {
       weightFormat: values.weightFormat?.trim() || (selectedFile?.name?.split('.').pop() || '').toLowerCase(),
       inputChannels: Number(values.inputChannels),
       numClasses: Number(values.numClasses),
-      constructorArgs: parseJsonInput(values.constructorArgsJson, {}, '构造参数 constructorArgs'),
-      inferParams: parseJsonInput(values.inferParamsJson, {}, '默认推理参数 inferParams'),
-      classMapping: parseJsonInput(values.classMappingJson, {}, '类别映射 classMapping'),
+      constructorArgs: parseJsonInput(values.constructorArgsJson, {}, t('model.json.constructorArgs', '构造参数 constructorArgs')),
+      inferParams: parseJsonInput(values.inferParamsJson, {}, t('model.json.inferParams', '默认推理参数 inferParams')),
+      classMapping: parseJsonInput(values.classMappingJson, {}, t('model.json.classMapping', '类别映射 classMapping')),
       applicableTypeIds: values.extraApplicableTypeIds || [],
       supports: {
         preAnnotation: supports.includes('preAnnotation'),
@@ -217,7 +219,7 @@ const ModelManage = () => {
       }
     } catch (error) {
       console.error('获取审核任务失败:', error);
-      message.error('无法获取待训练样本');
+      message.error(t('model.samples.fetch.failed', '无法获取待训练样本'));
     }
   };
 
@@ -282,19 +284,19 @@ const ModelManage = () => {
   // 表单提交处理
   const handleSubmit = () => {
     if (!userId) {
-      message.error('无法获取用户ID，请重新登录');
+      message.error(t('model.userId.missing', '无法获取用户ID，请重新登录'));
       return;
     }
 
     // 验证文件是否已上传
     if (!fileList || fileList.length === 0) {
-      message.error('请选择模型文件');
+      message.error(t('model.file.required', '请选择模型文件'));
       return;
     }
 
     // 获取表单数据
     form.validateFields().then(async (values) => {
-      const hide = message.loading('正在上传模型文件，请稍候...');
+      const hide = message.loading(t('model.upload.loading', '正在上传模型文件，请稍候...'));
       try {
         const formData = new FormData();
         const file = fileList[0].originFileObj || fileList[0];
@@ -326,7 +328,7 @@ const ModelManage = () => {
 
         hide();
         if (result && result.success) {
-          message.success('模型上传成功');
+          message.success(t('model.upload.success', '模型上传成功'));
           handleModalVisible(false);
           // 重新加载数据
           if (actionRef.current) {
@@ -337,18 +339,18 @@ const ModelManage = () => {
           setFileList([]);
           setFileUploaded(false);
         } else {
-          const errorMsg = (result && result.message) || '上传失败，请确保已正确登录并填写所有必填字段';
+          const errorMsg = (result && result.message) || t('model.upload.form.failed', '上传失败，请确保已正确登录并填写所有必填字段');
           message.error(errorMsg);
           console.error('Upload failed with response:', result);
         }
       } catch (error) {
         console.error('Error uploading model:', error);
         hide();
-        message.error(`上传失败: ${error.message || '未知错误'}`);
+        message.error(t('model.upload.failed', '上传失败: {message}', { message: error.message || t('model.unknown.error', '未知错误') }));
       }
     }).catch(errorInfo => {
       console.log('Validation failed:', errorInfo);
-      message.error('表单验证失败，请检查输入');
+      message.error(t('model.validation.failed', '表单验证失败，请检查输入'));
     });
   };
 
@@ -358,7 +360,7 @@ const ModelManage = () => {
     console.log('批量训练任务已提交:', result);
 
     // 1. 弹出成功提示
-    message.success('批量训练任务已成功启动，请留意系统通知');
+    message.success(t('model.train.started', '批量训练任务已成功启动，请留意系统通知'));
 
     // 2. 刷新 ProTable 模型列表（如果有新模型产生）
     if (actionRef.current) {
@@ -394,68 +396,68 @@ const ModelManage = () => {
   };
 
   const handleDelete = async (id) => {
-    const hide = message.loading('正在删除...');
+    const hide = message.loading(t('common.loading.delete', '正在删除...'));
     try {
       const result = await deleteModel(id);
       console.log('Delete model result:', result);
       hide();
       if (result.success) {
-        message.success('删除成功');
+        message.success(t('model.delete.success', '删除成功'));
         // 重新加载数据
         if (actionRef.current) {
           actionRef.current.reload();
         }
       } else {
-        message.error(result.message || '删除失败');
+        message.error(result.message || t('model.delete.failed', '删除失败'));
       }
     } catch (error) {
       console.error('Error deleting model:', error);
       hide();
-      message.error('删除失败，请重试');
+      message.error(t('model.delete.retry', '删除失败，请重试'));
     }
   };
 
   const columns = [
     {
-      title: '模型名称',
+      title: t('model.name', '模型名称'),
       dataIndex: 'modelName',
       sorter: true,
       align: 'center',
     },
     {
-      title: '模型描述',
+      title: t('model.description', '模型描述'),
       dataIndex: 'modelDes',
       ellipsis: true,
       align: 'center',
     },
     {
-      title: '任务类型',
+      title: t('model.taskType', '任务类型'),
       dataIndex: 'taskType',
       valueEnum: {
-        '目标检测': { text: '目标检测' },
-        '地物分类': { text: '地物分类' },
+        '目标检测': { text: t('task.type.detect', '目标检测') },
+        '地物分类': { text: t('task.type.landcover', '地物分类') },
       },
       align: 'center',
     },
     {
-      title: '算法类型',
+      title: t('model.algorithmType', '算法类型'),
       dataIndex: 'modelType',
       align: 'center',
     },
     {
-      title: '输入通道数',
+      title: t('model.inputChannels.short', '输入通道数'),
       dataIndex: 'inputNum',
       sorter: true,
       align: 'center',
     },
     {
-      title: '输出通道数',
+      title: t('model.outputChannels.short', '输出通道数'),
       dataIndex: 'outputNum',
       sorter: true,
       align: 'center',
     },
     {
-      title: '操作',
+      title: t('common.operation', '操作'),
       dataIndex: 'option',
       valueType: 'option',
       align: 'center',
@@ -474,11 +476,11 @@ const ModelManage = () => {
             setDetailsDrawerVisible(true);
           }}
         >
-          查看详情
+          {t('model.detail.view', '查看详情')}
         </Button>,
         <Popconfirm
           key="delete"
-          title="确定删除此模型吗？"
+          title={t('model.delete.confirm', '确定删除此模型吗？')}
           onConfirm={() => handleDelete(record.modelId)}
         >
           <Button
@@ -486,7 +488,7 @@ const ModelManage = () => {
             danger
             size="small"
           >
-            删除
+            {t('common.delete', '删除')}
           </Button>
         </Popconfirm>,
       ],
@@ -515,7 +517,7 @@ const ModelManage = () => {
       {userId ? (
         <>
         <ProTable
-          headerTitle="模型列表"
+          headerTitle={t('model.list', '模型列表')}
           actionRef={actionRef}
           rowKey="modelId"
           search={false}
@@ -527,14 +529,14 @@ const ModelManage = () => {
               icon={<RobotOutlined />}
               onClick={() => setTrainDrawerVisible(true)}
             >
-              启动模型训练 (样本库)
+              {t('model.train.start', '启动模型训练 (样本库)')}
             </Button>,
             <Button
               type="primary"
               key="primary"
               onClick={() => handleModalVisible(true)}
             >
-              <PlusOutlined /> 新建
+              <PlusOutlined /> {t('model.new', '新建')}
             </Button>,
           ]}
           dataSource={modelData}
@@ -548,7 +550,7 @@ const ModelManage = () => {
         {/* 【新增】训练管理抽屉 */}
         <Drawer
         className="train-drawer"
-        title="🚀 高质量样本训练控制台"
+        title={t('model.train.console', '高质量样本训练控制台')}
         width={850}
         open={trainDrawerVisible}
         onClose={() => {
@@ -558,28 +560,28 @@ const ModelManage = () => {
         destroyOnClose // 关闭时销毁子组件，确保状态重置
         extra={
         <Space>
-        <Button onClick={() => setTrainDrawerVisible(false)}>关闭</Button>
+        <Button onClick={() => setTrainDrawerVisible(false)}>{t('common.close', '关闭')}</Button>
         </Space>
       }
         >
         <div className="step-section">
         <div className="step-title">
           <span className="step-number">1</span>
-          从已审核样本中勾选训练数据
+          {t('model.train.step.samples', '从已审核样本中勾选训练数据')}
         </div>
         <div className="step-description">
-          当前可选: {reviewedTasks.length} 个已审核任务
+          {t('model.train.available', '当前可选: {count} 个已审核任务', { count: reviewedTasks.length })}
         </div>
         <ProTable
         size="small"
         rowKey="taskid"
         columns={[
-      { title: '任务名称', dataIndex: 'taskname' },
-      { title: '任务类型', dataIndex: 'type' },
+      { title: t('task.name', '任务名称'), dataIndex: 'taskname' },
+      { title: t('task.type', '标注类型'), dataIndex: 'type' },
       {
-        title: '状态',
+        title: t('task.status', '状态'),
         dataIndex: 'status',
-        render: () => <Tag color="green">已审核</Tag>
+        render: () => <Tag color="green">{t('model.reviewed', '已审核')}</Tag>
       },
         ]}
         dataSource={reviewedTasks}
@@ -604,10 +606,10 @@ const ModelManage = () => {
         <div className="step-section">
         <div className="step-title">
           <span className="step-number">2</span>
-          配置并启动训练
+          {t('model.train.configure', '配置并启动训练')}
         </div>
         <div className="step-description">
-          已选择: {selectedTasksForTrain.length} 个样本
+          {t('model.train.selected', '已选择: {count} 个样本', { count: selectedTasksForTrain.length })}
         </div>
       {/* 【关键点】引入原来的工具面板，并传入选中的已审核任务 */}
         <ModelToolPanel
@@ -630,7 +632,7 @@ const ModelManage = () => {
         </>
       ) : (
         <div style={{ textAlign: 'center', padding: '50px' }}>
-          <h3>无法获取用户信息，请重新登录后尝试</h3>
+          <h3>{t('model.login.retry', '无法获取用户信息，请重新登录后尝试')}</h3>
         </div>
       )}
 
@@ -638,7 +640,7 @@ const ModelManage = () => {
 
       <Modal
         className="model-upload-modal"
-        title="📦 新增模型"
+        title={t('model.add.title', '新增模型')}
         visible={createModalVisible}
         onCancel={() => {
           handleModalVisible(false);
@@ -653,10 +655,10 @@ const ModelManage = () => {
             setFileList([]);
             setFileUploaded(false);
           }}>
-            取消
+            {t('model.cancel', '取消')}
           </Button>,
           <Button key="submit" type="primary" onClick={handleSubmit} disabled={fileList.length === 0}>
-            提交
+            {t('model.submit', '提交')}
           </Button>
         ]}
       >
@@ -666,27 +668,27 @@ const ModelManage = () => {
         >
           <Form.Item
             name="modelName"
-            label="模型名称"
-            rules={[{ required: true, message: '请输入模型名称' }]}
+            label={t('model.name', '模型名称')}
+            rules={[{ required: true, message: t('model.name.required', '请输入模型名称') }]}
           >
-            <Input placeholder="请输入模型名称" />
+            <Input placeholder={t('model.name.placeholder', '请输入模型名称')} />
           </Form.Item>
           <Form.Item
             name="taskType"
-            label="任务类型"
-            rules={[{ required: true, message: '请选择任务类型' }]}
+            label={t('model.taskType', '任务类型')}
+            rules={[{ required: true, message: t('model.taskType.required', '请选择任务类型') }]}
           >
-            <Select placeholder="请选择任务类型">
-              <Select.Option value="目标检测">目标检测</Select.Option>
-              <Select.Option value="地物分类">地物分类</Select.Option>
+            <Select placeholder={t('model.taskType.placeholder', '请选择任务类型')}>
+              <Select.Option value="目标检测">{t('task.type.detect', '目标检测')}</Select.Option>
+              <Select.Option value="地物分类">{t('task.type.landcover', '地物分类')}</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item
             name="modelType"
-            label="模型类型标签（model_type，仅展示/筛选）"
-            rules={[{ required: true, message: '请选择模型类型标签' }]}
+            label={t('model.typeTag', '模型类型标签（model_type，仅展示/筛选）')}
+            rules={[{ required: true, message: t('model.typeTag.required', '请选择模型类型标签') }]}
           >
-            <Select placeholder="请选择模型类型标签">
+            <Select placeholder={t('model.typeTag.placeholder', '请选择模型类型标签')}>
               <Select.Option value="yolo">YOLO</Select.Option>
               <Select.Option value="deeplab">DeepLab</Select.Option>
               <Select.Option value="unet">UNet</Select.Option>
@@ -698,42 +700,42 @@ const ModelManage = () => {
           </Form.Item>
           <Form.Item
             name="framework"
-            label="框架（framework）"
-            rules={[{ required: true, message: '请输入框架名称' }]}
+            label={t('model.framework', '框架（framework）')}
+            rules={[{ required: true, message: t('model.framework.required', '请输入框架名称') }]}
           >
-            <Input placeholder="例如：pytorch / transformers / ultralytics / mmseg / sklearn" />
+            <Input placeholder={t('model.framework.placeholder', '例如：pytorch / transformers / ultralytics / mmseg / sklearn')} />
           </Form.Item>
           <Form.Item
             name="arch"
-            label="网络架构（arch）"
-            rules={[{ required: true, message: '请输入网络架构' }]}
+            label={t('model.arch', '网络架构（arch）')}
+            rules={[{ required: true, message: t('model.arch.required', '请输入网络架构') }]}
           >
-            <Input placeholder="例如：yolo / unet / deeplab / fast_scnn / segformer" />
+            <Input placeholder={t('model.arch.placeholder', '例如：yolo / unet / deeplab / fast_scnn / segformer')} />
           </Form.Item>
           <Form.Item
             name="variant"
-            label="架构变体（variant）"
+            label={t('model.variant', '架构变体（variant）')}
           >
-            <Input placeholder="例如：unetplusplus / deeplabv3plus / yolov8-seg" />
+            <Input placeholder={t('model.variant.placeholder', '例如：unetplusplus / deeplabv3plus / yolov8-seg')} />
           </Form.Item>
           <Form.Item
             name="backbone"
-            label="主干网络（backbone）"
+            label={t('model.backbone', '主干网络（backbone）')}
           >
-            <Input placeholder="例如：resnet50 / efficientnet-b3" />
+            <Input placeholder={t('model.backbone.placeholder', '例如：resnet50 / efficientnet-b3')} />
           </Form.Item>
           <Form.Item
             name="encoder"
-            label="编码器（encoder）"
+            label={t('model.encoder', '编码器（encoder）')}
           >
-            <Input placeholder="例如：efficientnet-b4" />
+            <Input placeholder={t('model.encoder.placeholder', '例如：efficientnet-b4')} />
           </Form.Item>
           <Form.Item
             name="checkpointFormat"
-            label="检查点格式（checkpointFormat）"
-            rules={[{ required: true, message: '请选择检查点格式' }]}
+            label={t('model.checkpointFormat', '检查点格式（checkpointFormat）')}
+            rules={[{ required: true, message: t('model.checkpointFormat.required', '请选择检查点格式') }]}
           >
-            <Select placeholder="请选择检查点格式">
+            <Select placeholder={t('model.checkpointFormat.placeholder', '请选择检查点格式')}>
               <Select.Option value="state_dict">state_dict</Select.Option>
               <Select.Option value="torchscript">torchscript</Select.Option>
               <Select.Option value="full_model">full_model</Select.Option>
@@ -743,100 +745,100 @@ const ModelManage = () => {
           </Form.Item>
           <Form.Item
             name="weightFormat"
-            label="权重文件格式（weightFormat）"
+            label={t('model.weightFormat', '权重文件格式（weightFormat）')}
           >
-            <Input placeholder="例如：pth / pt / onnx / joblib（不填则自动推断）" />
+            <Input placeholder={t('model.weightFormat.placeholder', '例如：pth / pt / onnx / joblib（不填则自动推断）')} />
           </Form.Item>
           <Form.Item
             name="inputChannels"
-            label="输入通道数（inputChannels）"
-            rules={[{ required: true, message: '请输入输入通道数' }]}
+            label={t('model.inputChannels', '输入通道数（inputChannels）')}
+            rules={[{ required: true, message: t('model.inputChannels.required', '请输入输入通道数') }]}
             initialValue={3}
           >
-            <Input type="number" min={1} placeholder="例如：3 / 4 / 8" />
+            <Input type="number" min={1} placeholder={t('model.inputChannels.placeholder', '例如：3 / 4 / 8')} />
           </Form.Item>
           <Form.Item
             name="numClasses"
-            label="类别数（numClasses）"
-            rules={[{ required: true, message: '请输入类别数' }]}
+            label={t('model.numClasses', '类别数（numClasses）')}
+            rules={[{ required: true, message: t('model.numClasses.required', '请输入类别数') }]}
             initialValue={2}
           >
-            <Input type="number" min={1} placeholder="例如：2 / 6 / 20" />
+            <Input type="number" min={1} placeholder={t('model.numClasses.placeholder', '例如：2 / 6 / 20')} />
           </Form.Item>
           <Form.Item
             name="classMappingJson"
-            label="类别映射（classMapping JSON）"
+            label={t('model.classMapping', '类别映射（classMapping JSON）')}
             initialValue='{"0":2}'
             rules={[
-              { required: true, message: '请输入类别映射 JSON' },
+              { required: true, message: t('model.classMapping.required', '请输入类别映射 JSON') },
               {
                 validator: async (_, value) => {
-                  parseJsonInput(value, {}, '类别映射 classMapping');
+                  parseJsonInput(value, {}, t('model.json.classMapping', '类别映射 classMapping'));
                 }
               }
             ]}
           >
-            <Input.TextArea rows={3} placeholder='例如: {"0":2,"1":5}' />
+            <Input.TextArea rows={3} placeholder={t('model.classMapping.placeholder', '例如: {"0":2,"1":5}')} />
           </Form.Item>
           <Form.Item
             name="constructorArgsJson"
-            label="构造参数（constructorArgs JSON）"
+            label={t('model.constructorArgs', '构造参数（constructorArgs JSON）')}
             initialValue="{}"
             rules={[
               {
                 validator: async (_, value) => {
-                  parseJsonInput(value, {}, '构造参数 constructorArgs');
+                  parseJsonInput(value, {}, t('model.json.constructorArgs', '构造参数 constructorArgs'));
                 }
               }
             ]}
           >
-            <Input.TextArea rows={3} placeholder='例如: {"decoder_channels":[256,128,64,32,16]}' />
+            <Input.TextArea rows={3} placeholder={t('model.constructorArgs.placeholder', '例如: {"decoder_channels":[256,128,64,32,16]}')} />
           </Form.Item>
           <Form.Item
             name="inferParamsJson"
-            label="默认推理参数（inferParams JSON）"
+            label={t('model.inferParams', '默认推理参数（inferParams JSON）')}
             initialValue='{"conf_threshold":0.3,"slice_size":640,"min_object_size":50,"hole_size_threshold":10,"boundary_smoothing":1}'
             rules={[
               {
                 validator: async (_, value) => {
-                  parseJsonInput(value, {}, '默认推理参数 inferParams');
+                  parseJsonInput(value, {}, t('model.json.inferParams', '默认推理参数 inferParams'));
                 }
               }
             ]}
           >
-            <Input.TextArea rows={4} placeholder='例如: {"conf_threshold":0.25,"slice_size":640}' />
+            <Input.TextArea rows={4} placeholder={t('model.inferParams.placeholder', '例如: {"conf_threshold":0.25,"slice_size":640}')} />
           </Form.Item>
           <Form.Item
             name="supports"
-            label="能力开关（supports）"
+            label={t('model.supports', '能力开关（supports）')}
             initialValue={['preAnnotation', 'qualityReference']}
           >
             <Checkbox.Group
               options={[
-                { label: '预标注（preAnnotation）', value: 'preAnnotation' },
-                { label: '质量参考（qualityReference）', value: 'qualityReference' },
-                { label: '批量推理（batchInference）', value: 'batchInference' },
+                { label: t('model.supports.preAnnotation', '预标注（preAnnotation）'), value: 'preAnnotation' },
+                { label: t('model.supports.qualityReference', '质量参考（qualityReference）'), value: 'qualityReference' },
+                { label: t('model.supports.batchInference', '批量推理（batchInference）'), value: 'batchInference' },
               ]}
             />
           </Form.Item>
           <Form.Item
             name="versionTag"
-            label="版本标签（versionTag）"
+            label={t('model.versionTag', '版本标签（versionTag）')}
           >
-            <Input placeholder="例如：v1.0.0 / 2026-04-08" />
+            <Input placeholder={t('model.versionTag.placeholder', '例如：v1.0.0 / 2026-04-08')} />
           </Form.Item>
           <Form.Item
             name="description"
-            label="模型说明（description）"
-            rules={[{ required: true, message: '请输入模型说明' }]}
+            label={t('model.description.detail', '模型说明（description）')}
+            rules={[{ required: true, message: t('model.description.required', '请输入模型说明') }]}
           >
-            <Input.TextArea rows={3} placeholder="说明该模型训练数据、适用场景和注意事项" />
+            <Input.TextArea rows={3} placeholder={t('model.description.placeholder', '说明该模型训练数据、适用场景和注意事项')} />
           </Form.Item>
           <Form.Item
             name="extraApplicableTypeIds"
-            label="适用类别（可选备注，不参与核心识别）"
+            label={t('model.applicableTypes', '适用类别（可选备注，不参与核心识别）')}
           >
-            <Select mode="multiple" placeholder="可选：用于备注模型适用目标类别" optionFilterProp="children" showSearch>
+            <Select mode="multiple" placeholder={t('model.applicableTypes.placeholder', '可选：用于备注模型适用目标类别')} optionFilterProp="children" showSearch>
               {categoryOptions.map((item) => (
                 <Select.Option key={item.typeId} value={item.typeId}>
                   {item.typeName}({item.typeId})
@@ -845,14 +847,14 @@ const ModelManage = () => {
             </Select>
           </Form.Item>
           <Form.Item
-            label="模型文件"
+            label={t('model.file', '模型文件')}
             required
-            help={fileList.length === 0 ? "请上传模型文件" : null}
+            help={fileList.length === 0 ? t('model.file.help', '请上传模型文件') : null}
             validateStatus={fileList.length === 0 ? "error" : "success"}
           >
             <Upload {...uploadProps}>
               <Button icon={<UploadOutlined />} disabled={fileList.length >= 1}>
-                {fileList.length >= 1 ? `已选择: ${fileList[0].name}` : '选择文件'}
+                {fileList.length >= 1 ? t('model.file.selected', '已选择: {name}', { name: fileList[0].name }) : t('model.file.select', '选择文件')}
               </Button>
             </Upload>
           </Form.Item>

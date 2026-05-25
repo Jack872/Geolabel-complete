@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, Descriptions, Tag, Divider, Empty, Tooltip, Space } from 'antd';
 import { ClockCircleOutlined, UserOutlined, InfoCircleOutlined, DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
+import { useIntl } from 'umi';
 import moment from 'moment';
 
 // PROV模型实体类型信息
@@ -65,14 +66,52 @@ const ENTITY_TRANSLATIONS = {
   'RESULT': '结果文件'
 };
 
+const ACTION_TRANSLATIONS_EN = {
+  'UPLOAD': 'File Upload',
+  'ANNOTATE': 'Annotation',
+  'AUDIT_PASS': 'Audit Passed',
+  'AUDIT_REJECT': 'Audit Rejected',
+  'DATASET_GENERATE': 'Dataset Generation',
+  'DATASET_EXPORT': 'Dataset Export',
+  'PUBLISH_SERVICE': 'Publish Service',
+  'DATASET_IMPORT': 'Dataset Import',
+  'DATASET_CREATE': 'Dataset Creation',
+  'DATASET_UPDATE': 'Dataset Update',
+  'DATASET_DELETE': 'Dataset Deletion',
+  'MODEL_TRAIN': 'Model Training',
+  'MODEL_INFERENCE': 'Model Inference',
+  'DATA_VALIDATION': 'Data Validation',
+  'DATA_PREPROCESSING': 'Data Preprocessing',
+  'QUALITY_CHECK': 'Quality Check',
+  'AUDIT_LOG': 'Audit Log',
+  'USER_OPERATION': 'User Operation',
+  'SYSTEM_OPERATION': 'System Operation'
+};
+
+const ENTITY_TRANSLATIONS_EN = {
+  'TASK': 'Annotation Task',
+  'RAW_IMAGE': 'Raw Image',
+  'SAMPLE_SET': 'Sample Set',
+  'ANNOTATION_REVISION': 'Annotation Revision',
+  'AUDIT_REJECT': 'Audit Record',
+  'DATASET': 'Dataset',
+  'MODEL': 'Model File',
+  'ANNOTATION': 'Annotation Data',
+  'IMAGE': 'Image File',
+  'LABEL': 'Label File',
+  'CONFIG': 'Config File',
+  'LOG': 'Log File',
+  'RESULT': 'Result File'
+};
+
 // 格式化时间
-const formatDateTime = (dateTimeStr) => {
-  if (!dateTimeStr) return '未知时间';
+const formatDateTime = (dateTimeStr, locale = 'zh-CN') => {
+  if (!dateTimeStr) return locale.startsWith('en') ? 'Unknown time' : '未知时间';
   
   try {
     const date = moment(dateTimeStr);
     if (date.isValid()) {
-      return date.format('YYYY年MM月DD日 HH:mm:ss');
+      return locale.startsWith('en') ? date.format('YYYY-MM-DD HH:mm:ss') : date.format('YYYY年MM月DD日 HH:mm:ss');
     }
     return dateTimeStr;
   } catch (error) {
@@ -94,12 +133,35 @@ const formatJsonValue = (obj) => {
 };
 
 const DetailsPanel = ({ detail, className }) => {
+  const intl = useIntl();
+  const t = (id, defaultMessage, values) => intl.formatMessage({ id, defaultMessage }, values);
+  const isEn = String(intl.locale || '').startsWith('en');
+  const actionLabels = isEn ? ACTION_TRANSLATIONS_EN : ACTION_TRANSLATIONS;
+  const entityLabels = isEn ? ENTITY_TRANSLATIONS_EN : ENTITY_TRANSLATIONS;
+  const provModelInfo = {
+    'ACTIVITY': {
+      ...PROV_MODEL_INFO.ACTIVITY,
+      label: t('prov.model.activity', '活动 (Activity)'),
+      description: t('prov.model.activity.desc', 'PROV模型中的核心概念，表示数据处理、转换或生成的过程'),
+    },
+    'ENTITY': {
+      ...PROV_MODEL_INFO.ENTITY,
+      label: t('prov.model.entity', '实体 (Entity)'),
+      description: t('prov.model.entity.desc', 'PROV模型中的数据对象，可以是文件、数据集、模型等'),
+    },
+    'AGENT': {
+      ...PROV_MODEL_INFO.AGENT,
+      label: t('prov.model.agent', '代理 (Agent)'),
+      description: t('prov.model.agent.desc', 'PROV模型中负责执行活动的主体，可以是人员、系统或服务'),
+    }
+  };
+
   if (!detail) {
     return (
-      <Card title="节点详情" className={`details-panel ${className || ''}`}>
+      <Card title={t('prov.detail.title', '节点详情')} className={`details-panel ${className || ''}`}>
         <div className="empty-detail">
           <Empty 
-            description="点击图谱或时间轴中的节点查看详细信息" 
+            description={t('prov.detail.empty', '点击图谱或时间轴中的节点查看详细信息')} 
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         </div>
@@ -110,19 +172,19 @@ const DetailsPanel = ({ detail, className }) => {
   const { originType, rawData, agentData } = detail;
   const isActivity = originType === 'ACTIVITY';
   const isAgent = originType === 'AGENT';
-  const provInfo = PROV_MODEL_INFO[originType] || PROV_MODEL_INFO['ENTITY'];
+  const provInfo = provModelInfo[originType] || provModelInfo['ENTITY'];
 
   // 获取显示标题
   const getDisplayTitle = () => {
     if (isActivity) {
-      return ACTION_TRANSLATIONS[rawData.actType] || rawData.actType;
+      return actionLabels[rawData.actType] || rawData.actType;
     } else if (isAgent) {
-      if (rawData.agentType === 'PERSON') return '用户';
-      if (rawData.agentType === 'SOFTWARE') return '软件系统';
-      if (rawData.agentType === 'ORGANIZATION') return '组织机构';
-      return rawData.agentType || '代理';
+      if (rawData.agentType === 'PERSON') return isEn ? 'User' : '用户';
+      if (rawData.agentType === 'SOFTWARE') return isEn ? 'Software System' : '软件系统';
+      if (rawData.agentType === 'ORGANIZATION') return isEn ? 'Organization' : '组织机构';
+      return rawData.agentType || t('prov.model.agent', '代理 (Agent)');
     } else {
-      return ENTITY_TRANSLATIONS[rawData.entityType] || rawData.entityType;
+      return entityLabels[rawData.entityType] || rawData.entityType;
     }
   };
 
@@ -135,7 +197,7 @@ const DetailsPanel = ({ detail, className }) => {
       title={
         <Space>
           {provInfo.icon}
-          <span>节点详情</span>
+          <span>{t('prov.detail.title', '节点详情')}</span>
           <Tooltip title={provInfo.description}>
             <InfoCircleOutlined style={{ color: '#999', fontSize: '14px' }} />
           </Tooltip>
@@ -159,7 +221,7 @@ const DetailsPanel = ({ detail, className }) => {
           label={
             <Space>
               <DatabaseOutlined />
-              系统ID
+              {t('prov.systemId', '系统ID')}
             </Space>
           }
         >
@@ -173,7 +235,7 @@ const DetailsPanel = ({ detail, className }) => {
             label={
               <Space>
                 <InfoCircleOutlined />
-                业务ID
+                {t('prov.businessId', '业务ID')}
               </Space>
             }
           >
@@ -182,36 +244,36 @@ const DetailsPanel = ({ detail, className }) => {
         )}
         
         {rawData.label && (
-          <Descriptions.Item label="标签名称">
+          <Descriptions.Item label={t('prov.labelName', '标签名称')}>
             {rawData.label}
           </Descriptions.Item>
         )}
 
         {isAgent && rawData.agentName && (
-          <Descriptions.Item label="代理名称">
+          <Descriptions.Item label={t('prov.agentName', '代理名称')}>
             {rawData.agentName}
           </Descriptions.Item>
         )}
 
         {isAgent && rawData.externalId && (
-          <Descriptions.Item label="外部业务ID">
+          <Descriptions.Item label={t('prov.externalId', '外部业务ID')}>
             {rawData.externalId}
           </Descriptions.Item>
         )}
         
-        <Descriptions.Item label="描述信息">
-          {rawData.description || '无描述信息'}
+        <Descriptions.Item label={t('prov.description', '描述信息')}>
+          {rawData.description || t('prov.noDescription', '无描述信息')}
         </Descriptions.Item>
         
         <Descriptions.Item 
           label={
             <Space>
               <ClockCircleOutlined />
-              {isActivity ? '开始时间' : '创建时间'}
+              {isActivity ? t('prov.startTime', '开始时间') : t('prov.createTime', '创建时间')}
             </Space>
           }
         >
-          {formatDateTime(rawData.startTime || rawData.createdAt)}
+          {formatDateTime(rawData.startTime || rawData.createdAt, intl.locale)}
         </Descriptions.Item>
         
         {isActivity && rawData.endTime && (
@@ -219,18 +281,18 @@ const DetailsPanel = ({ detail, className }) => {
             label={
               <Space>
                 <ClockCircleOutlined />
-                结束时间
+                {t('prov.endTime', '结束时间')}
               </Space>
             }
           >
-            {formatDateTime(rawData.endTime)}
+            {formatDateTime(rawData.endTime, intl.locale)}
           </Descriptions.Item>
         )}
         
         {isActivity && rawData.endTime && rawData.startTime && (
-          <Descriptions.Item label="执行时长">
+          <Descriptions.Item label={t('prov.duration', '执行时长')}>
             <Tag color="blue">
-              {moment(rawData.endTime).diff(moment(rawData.startTime), 'seconds')}秒
+              {t('prov.seconds', '{seconds}秒', { seconds: moment(rawData.endTime).diff(moment(rawData.startTime), 'seconds') })}
             </Tag>
           </Descriptions.Item>
         )}
@@ -241,7 +303,7 @@ const DetailsPanel = ({ detail, className }) => {
             label={
               <Space>
                 <UserOutlined />
-                执行主体
+                {t('prov.executor', '执行主体')}
               </Space>
             }
           >
@@ -251,9 +313,9 @@ const DetailsPanel = ({ detail, className }) => {
               </Tag>
               {agentData && (
                 <Tag color="blue" size="small">
-                  {agentData.agentType === 'PERSON' ? '👤 用户' : 
-                   agentData.agentType === 'SOFTWARE' ? '🤖 软件' : 
-                   agentData.agentType === 'ORGANIZATION' ? '🏢 组织' : agentData.agentType}
+                  {agentData.agentType === 'PERSON' ? (isEn ? 'User' : '用户') : 
+                   agentData.agentType === 'SOFTWARE' ? (isEn ? 'Software' : '软件') : 
+                   agentData.agentType === 'ORGANIZATION' ? (isEn ? 'Organization' : '组织') : agentData.agentType}
                 </Tag>
               )}
             </Space>
@@ -262,7 +324,7 @@ const DetailsPanel = ({ detail, className }) => {
 
         {/* 实体位置信息 */}
         {!isActivity && !isAgent && rawData.location && (
-          <Descriptions.Item label="数据位置">
+          <Descriptions.Item label={t('prov.location', '数据位置')}>
             <code style={{ background: '#f5f5f5', padding: '2px 6px', borderRadius: '3px', fontSize: '11px' }}>
               {rawData.location}
             </code>
@@ -271,22 +333,22 @@ const DetailsPanel = ({ detail, className }) => {
 
         {/* 实体类型 */}
         {!isActivity && !isAgent && rawData.entityType && (
-          <Descriptions.Item label="实体类型">
+          <Descriptions.Item label={t('prov.entityType', '实体类型')}>
             <Tag color="purple">{rawData.entityType}</Tag>
           </Descriptions.Item>
         )}
 
         {isAgent && rawData.agentType && (
-          <Descriptions.Item label="代理类型">
+          <Descriptions.Item label={t('prov.agentType', '代理类型')}>
             <Tag color="green">{rawData.agentType}</Tag>
           </Descriptions.Item>
         )}
 
         {/* 活动状态 */}
         {isActivity && rawData.status && (
-          <Descriptions.Item label="执行状态">
+          <Descriptions.Item label={t('prov.status', '执行状态')}>
             <Tag color={rawData.status === 'SUCCESS' ? 'green' : 'red'}>
-              {rawData.status === 'SUCCESS' ? '✅ 成功' : '❌ 失败'}
+              {rawData.status === 'SUCCESS' ? t('prov.status.success', '成功') : t('prov.status.fail', '失败')}
             </Tag>
           </Descriptions.Item>
         )}
@@ -295,7 +357,7 @@ const DetailsPanel = ({ detail, className }) => {
       {/* PROV模型说明 */}
       <div className="attributes-section">
         <Divider orientation="left" style={{ fontSize: '12px', color: '#666' }}>
-          PROV模型信息
+          {t('prov.modelInfo', 'PROV模型信息')}
         </Divider>
         <div style={{ 
           background: '#f0f9ff', 
@@ -313,12 +375,12 @@ const DetailsPanel = ({ detail, className }) => {
           </div>
           {isActivity && (
             <div style={{ marginTop: '8px', color: '#0284c7' }}>
-              <strong>关系类型:</strong> 可通过 used/wasGeneratedBy 关系与实体连接
+              <strong>{t('prov.relationType', '关系类型:')}</strong> {t('prov.activityRelation', '可通过 used/wasGeneratedBy 关系与实体连接')}
             </div>
           )}
           {!isActivity && (
             <div style={{ marginTop: '8px', color: '#0284c7' }}>
-              <strong>关系类型:</strong> 可被活动使用(used)或由活动生成(wasGeneratedBy)
+              <strong>{t('prov.relationType', '关系类型:')}</strong> {t('prov.entityRelation', '可被活动使用(used)或由活动生成(wasGeneratedBy)')}
             </div>
           )}
         </div>
@@ -328,8 +390,8 @@ const DetailsPanel = ({ detail, className }) => {
       {hasExtraProps && (
         <div className="attributes-section">
           <Divider orientation="left" style={{ fontSize: '12px', color: '#666' }}>
-            {isActivity ? '执行参数' : '扩展属性'}
-            <Tooltip title={isActivity ? '活动执行时的配置参数' : '实体的附加属性信息'}>
+            {isActivity ? t('prov.params', '执行参数') : t('prov.attributes', '扩展属性')}
+            <Tooltip title={isActivity ? t('prov.params.tip', '活动执行时的配置参数') : t('prov.attributes.tip', '实体的附加属性信息')}>
               <InfoCircleOutlined style={{ marginLeft: '4px', fontSize: '11px' }} />
             </Tooltip>
           </Divider>
@@ -349,7 +411,7 @@ const DetailsPanel = ({ detail, className }) => {
         fontSize: '11px',
         color: '#389e0d'
       }}>
-        💡 提示: 在关系图谱中点击其他节点可查看相关联的溯源信息
+        {t('prov.detail.tip', '提示: 在关系图谱中点击其他节点可查看相关联的溯源信息')}
       </div>
     </Card>
   );
