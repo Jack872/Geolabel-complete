@@ -187,7 +187,7 @@ def train_function(argv=None):
     IMG_SIZE = int(argv[6]) if argv[6] else None# 输入图像尺寸
 
     # 获取地图服务器路径
-    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, None, fallback_path=resolve_image_path(MAPFILE_PATH))
+    IMAGE_PATH = ensure_task_image_local(conn, TASK_ID, None, fallback_path=MAPFILE_PATH)
 
 
     # 获取标签数据

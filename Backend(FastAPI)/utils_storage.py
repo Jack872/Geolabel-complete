@@ -114,6 +114,8 @@ def fetch_task_file_record(conn, task_id: int, task_item_id=None):
               ti.task_item_id,
               ti.file_id,
               ti.local_image_path,
+              ti.map_server,
+              ti.task_source,
               f.storage_type,
               f.bucket_name,
               f.object_key,
@@ -130,16 +132,114 @@ def fetch_task_file_record(conn, task_id: int, task_item_id=None):
         query += " ORDER BY ti.item_index ASC NULLS LAST, ti.task_item_id ASC LIMIT 1"
         cursor.execute(query, tuple(args))
         row = cursor.fetchone()
-        if row is None:
+        if row is not None:
+            columns = [desc[0] for desc in cursor.description]
+            return dict(zip(columns, row))
+
+        cursor.execute(
+            """
+            SELECT
+              NULL AS task_item_id,
+              NULL AS file_id,
+              t.local_image_path,
+              t.map_server,
+              t.task_source,
+              NULL AS storage_type,
+              NULL AS bucket_name,
+              NULL AS object_key,
+              NULL AS file_name,
+              NULL AS original_filename
+            FROM task t
+            WHERE t.task_id = %s
+            LIMIT 1
+            """,
+            (task_id,),
+        )
+        fallback_row = cursor.fetchone()
+        if fallback_row is None:
             return None
         columns = [desc[0] for desc in cursor.description]
-        return dict(zip(columns, row))
+        return dict(zip(columns, fallback_row))
+
+
+def _append_image_candidates(candidates, raw_path: str):
+    text = str(raw_path or "").strip()
+    if not text:
+        return
+    normalized = os.path.normpath(text.replace("\\", os.sep).replace("/", os.sep))
+    entries = [text, normalized]
+    for entry in entries:
+        lower = entry.lower()
+        if lower.endswith((".tif", ".tiff")):
+            candidates.append(entry)
+            stem, _ = os.path.splitext(entry)
+            candidates.append(stem)
+        else:
+            candidates.append(entry + ".tif")
+            candidates.append(entry + ".tiff")
+            candidates.append(entry)
+
+
+def _collect_image_candidates(base_path: str):
+    text = str(base_path or "").strip()
+    if not text:
+        return []
+
+    candidates = []
+    _append_image_candidates(candidates, text)
+
+    normalized = os.path.normpath(text.replace("\\", os.sep).replace("/", os.sep))
+    base_name = os.path.basename(normalized.rstrip("\\/"))
+    extra_dirs = [
+        _get_env("MINIO_UPLOAD_DIR", ""),
+        _get_env("GEOSERVER_LOCAL_COVERAGE_DIR", ""),
+    ]
+    for root_dir in extra_dirs:
+        if not root_dir:
+            continue
+        if not os.path.isabs(normalized):
+            _append_image_candidates(candidates, os.path.join(root_dir, normalized))
+        if base_name:
+            _append_image_candidates(candidates, os.path.join(root_dir, base_name))
+
+    return list(dict.fromkeys([item for item in candidates if item]))
+
+
+def _resolve_existing_image_path(base_path: str):
+    candidates = _collect_image_candidates(base_path)
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.R_OK):
+            return candidate, candidates
+    return "", candidates
 
 
 def ensure_task_image_local(conn, task_id: int, task_item_id, fallback_path: str = "") -> str:
     record = fetch_task_file_record(conn, task_id, task_item_id)
     cache_dir = get_cache_dir("imagery")
-    return resolve_storage_to_local(record or {}, cache_dir, fallback_path=fallback_path)
+    unresolved_candidates = []
+
+    if record:
+        storage_type = str(record.get("storage_type") or "").strip().lower()
+        if record.get("object_key") or storage_type == "minio":
+            return resolve_storage_to_local(record, cache_dir, fallback_path="")
+
+        for path_value in (
+            record.get("local_image_path"),
+            record.get("map_server"),
+            fallback_path,
+        ):
+            resolved_path, candidates = _resolve_existing_image_path(path_value)
+            unresolved_candidates.extend(candidates)
+            if resolved_path:
+                return resolved_path
+
+    resolved_fallback, fallback_candidates = _resolve_existing_image_path(fallback_path)
+    unresolved_candidates.extend(fallback_candidates)
+    if resolved_fallback:
+        return resolved_fallback
+
+    dedup_candidates = list(dict.fromkeys([item for item in unresolved_candidates if item]))
+    raise FileNotFoundError(f"未找到可读取影像文件，候选路径: {dedup_candidates}")
 
 
 def ensure_model_local(record: dict) -> str:
