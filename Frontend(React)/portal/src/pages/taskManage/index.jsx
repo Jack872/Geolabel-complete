@@ -63,6 +63,7 @@ const TaskManage = () => {
   const { initialState } = useModel('@@initialState');
   const { currentState } = initialState || {};
   const isAdmin = currentState?.isAdmin === 1;
+  const currentTeamId = currentState?.teamId;
   const currentUserScore = currentState?.score || 0; // 直接从currentState获取积分
 
 
@@ -400,7 +401,11 @@ const TaskManage = () => {
     // 每次打开窗口都获取最新类别数据
     getTypeInfo();
 
-    getUserList({ isAdmin: 0, current: 1, pageSize: 10000 });
+    const userQuery = { isAdmin: 0, current: 1, pageSize: 10000 };
+    if (currentTeamId != null) {
+      userQuery.teamId = currentTeamId;
+    }
+    getUserList(userQuery);
 
     getServerListBySetName();
     loadSelectableImageOptions();
@@ -415,12 +420,17 @@ const TaskManage = () => {
     }
   };
   // 新建任务获取机构下拉框
-  const renderUserList = userList.map(({ userid, username }) => {
-    return {
-      value: username,
-      label: username,
-    };
-  });
+  const renderUserList = userList
+    .filter(({ teamId, isadmin, isAdmin: userIsAdmin }) => {
+      const isNormalUser = Number(isadmin ?? userIsAdmin) === 0;
+      return isNormalUser && currentTeamId != null && String(teamId) === String(currentTeamId);
+    })
+    .map(({ userid, username }) => {
+      return {
+        value: username,
+        label: username,
+      };
+    });
   // 新建任务获取影像下拉框（服务影像 + 本地影像）
   let renderServiceList = selectableImageOptions.map((item) => {
     return (

@@ -1878,6 +1878,16 @@ public class TaskController {
             }
             for (Map<String, Object> assignment : specificUserAssignments) {
                 String username = String.valueOf(assignment.get("username"));
+                SysUser assignedUser = sysUserService.findByUsername(username);
+                if (assignedUser == null) {
+                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不存在");
+                }
+                if (assignedUser.getIsadmin() == null || assignedUser.getIsadmin() != 0) {
+                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不是普通用户");
+                }
+                if (teamId == null || !Objects.equals(assignedUser.getTeamId(), teamId)) {
+                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不属于当前团队");
+                }
                 List<?> rawTypeArr = (List<?>) assignment.get("typeArr");
                 Set<Integer> typeIds = normalizeTypeIds(rawTypeArr);
                 String typeStr = toTypeString(new ArrayList<>(typeIds));
