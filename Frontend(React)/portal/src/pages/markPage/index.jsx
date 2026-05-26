@@ -346,6 +346,8 @@ export default function () {
   const taskCoordinateSystem = normalizeCoordinateCode(
     taskInfo?.data?.[0]?.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857'
   );
+  const currentTaskType = taskInfo?.data?.[0]?.type || '';
+  const isTargetRecognitionTask = currentTaskType === '目标检测' || currentTaskType === '目标识别';
   const access = useAccess(); // access 实例的成员: canAdmin, canUser
   let select, modify, shapeDraw; // 将交互变量声明在组件顶层
   const selectRef = useRef(null);
@@ -1074,6 +1076,12 @@ export default function () {
       }
 
       if (shapeSelect.current.value != 'None' && !isCurrentUserReadOnly) {
+        if (isTargetRecognitionTask && shapeSelect.current.value === 'Polygon') {
+          message.warning('目标识别任务中禁止绘制多边形');
+          shapeSelect.current.value = 'None';
+          setActiveShape('None');
+          return;
+        }
         if (!toolbarState.currentLayer) {
           message.warning('请先选择图层再绘制');
           shapeSelect.current.value = 'None';
@@ -1226,6 +1234,7 @@ export default function () {
     isPolygonFeature,
     getOuterRingCoordinates,
     featureToGeoJsonObject,
+    isTargetRecognitionTask,
   ]);
 
   // 获取当前标注的数据源
@@ -1964,7 +1973,6 @@ export default function () {
     }
     return taskInfo?.data?.[0]?.mapserver || '';
   };
-  const currentTaskType = taskInfo?.data?.[0]?.type || '';
   const currentLayerTypeId = toolbarState?.sourceKey == null ? null : Number(toolbarState.sourceKey);
   const isYoloSamTaskType = currentTaskType === '地物提取' || currentTaskType === '地物分类';
   const availableTaskTypes = currentUserTaskTypes;
@@ -2638,31 +2646,39 @@ const navigateTask = useCallback(async (direction) => {
             { value: 'Box',                icon: '▭', title: '矩形' },
             { value: 'RotatableRectangle', icon: '⬡', title: '旋转矩形' },
             { value: 'Polygon',            icon: '⬠', title: '多边形' },
-          ].map(({ value, icon, title }) => (
-            <Tooltip key={value} title={title}>
-              <button
-                className={`shape-icon-btn${activeShape === value ? ' active' : ''}${(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None' ? ' disabled' : ''}`}
-                disabled={(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None'}
-                onClick={() => {
-                  if (isCurrentUserReadOnly) {
-                    message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再绘制' : '当前影像为只读状态');
-                    return;
-                  }
-                  if (!toolbarState.currentLayer && value !== 'None') {
-                    message.warn('请先选择图层再绘制');
-                    return;
-                  }
-                  if (shapeSelect.current) {
-                    shapeSelect.current.value = value;
-                    setActiveShape(value);
-                    shapeSelect.current.dispatchEvent(new Event('change', { bubbles: true }));
-                  }
-                }}
-              >
-                {icon}
-              </button>
-            </Tooltip>
-          ))}
+          ].map(({ value, icon, title }) => {
+            const polygonForbidden = isTargetRecognitionTask && value === 'Polygon';
+            const disabled = polygonForbidden || ((toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None');
+            return (
+              <Tooltip key={value} title={polygonForbidden ? '目标识别任务中禁止绘制多边形' : title}>
+                <button
+                  className={`shape-icon-btn${activeShape === value ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (polygonForbidden) {
+                      message.warning('目标识别任务中禁止绘制多边形');
+                      return;
+                    }
+                    if (isCurrentUserReadOnly) {
+                      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再绘制' : '当前影像为只读状态');
+                      return;
+                    }
+                    if (!toolbarState.currentLayer && value !== 'None') {
+                      message.warn('请先选择图层再绘制');
+                      return;
+                    }
+                    if (shapeSelect.current) {
+                      shapeSelect.current.value = value;
+                      setActiveShape(value);
+                      shapeSelect.current.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                  }}
+                >
+                  {icon}
+                </button>
+              </Tooltip>
+            );
+          })}
 
           {/* 隐藏的原生 select，保持原有逻辑不变 */}
           <select style={{ display: 'none' }} ref={shapeSelect} defaultValue={'None'}>
