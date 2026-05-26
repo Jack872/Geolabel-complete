@@ -13,6 +13,7 @@ import Draw, { createBox, createRegularPolygon } from 'ol/interaction/Draw';
 import { GeoJSON } from 'ol/format';
 import './style.less';
 import {Modify, Select as OlSelect} from 'ol/interaction';
+import { altKeyOnly, singleClick } from 'ol/events/condition';
 import DragBox from 'ol/interaction/DragBox';
 import {
   CheckOutlined, CloseOutlined, DeleteOutlined, RollbackOutlined, UpOutlined,
@@ -91,6 +92,225 @@ const createRotatableRectangle = () => {
   };
 };
 
+const RECTANGLE_SHAPE_KEY = 'shapeKind';
+const RECTANGLE_SHAPE = 'rectangle';
+const ROTATED_RECTANGLE_SHAPE = 'rotatedRectangle';
+
+const getPolygonCorners = (feature) => {
+  const geometry = feature?.getGeometry?.();
+  if (geometry?.getType?.() !== 'Polygon') {
+    return [];
+  }
+  const ring = geometry.getCoordinates?.()?.[0] || [];
+  if (ring.length < 4) {
+    return [];
+  }
+  const corners = ring.slice();
+  const first = corners[0];
+  const last = corners[corners.length - 1];
+  if (first && last && first[0] === last[0] && first[1] === last[1]) {
+    corners.pop();
+  }
+  return corners.length === 4 ? corners : [];
+};
+
+const distance = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+const isAxisAlignedRectangle = (corners) => {
+  if (corners.length !== 4) return false;
+  const xs = [...new Set(corners.map(([x]) => Number(x.toFixed(8))))];
+  const ys = [...new Set(corners.map(([, y]) => Number(y.toFixed(8))))];
+  return xs.length === 2 && ys.length === 2;
+};
+
+const isRectangleLike = (corners) => {
+  if (corners.length !== 4) return false;
+  const edges = corners.map((point, index) => {
+    const next = corners[(index + 1) % corners.length];
+    return [next[0] - point[0], next[1] - point[1]];
+  });
+  const lengths = edges.map(([x, y]) => Math.hypot(x, y));
+  const maxLength = Math.max(...lengths);
+  if (!maxLength || lengths.some((length) => length < maxLength * 0.02)) {
+    return false;
+  }
+  const dotTolerance = maxLength * maxLength * 0.08;
+  for (let index = 0; index < edges.length; index += 1) {
+    const edge = edges[index];
+    const nextEdge = edges[(index + 1) % edges.length];
+    const dot = edge[0] * nextEdge[0] + edge[1] * nextEdge[1];
+    if (Math.abs(dot) > dotTolerance) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const resolveRectangleShapeKind = (feature) => {
+  const savedKind = feature?.get?.(RECTANGLE_SHAPE_KEY);
+  if ([RECTANGLE_SHAPE, ROTATED_RECTANGLE_SHAPE].includes(savedKind)) {
+    return savedKind;
+  }
+  const corners = getPolygonCorners(feature);
+  if (isAxisAlignedRectangle(corners)) {
+    return RECTANGLE_SHAPE;
+  }
+  if (isRectangleLike(corners)) {
+    return ROTATED_RECTANGLE_SHAPE;
+  }
+  return null;
+};
+
+const getMovedCornerIndex = (beforeCorners, afterCorners) => {
+  if (!beforeCorners || beforeCorners.length !== 4 || afterCorners.length !== 4) {
+    return -1;
+  }
+  let movedIndex = -1;
+  let maxDistance = 0;
+  afterCorners.forEach((corner, index) => {
+    const currentDistance = distance(beforeCorners[index], corner);
+    if (currentDistance > maxDistance) {
+      maxDistance = currentDistance;
+      movedIndex = index;
+    }
+  });
+  return maxDistance > 0 ? movedIndex : -1;
+};
+
+const projectPoint = ([x, y], ux, uy) => ({
+  u: x * ux[0] + y * ux[1],
+  v: x * uy[0] + y * uy[1],
+});
+
+const setAxisAlignedRectangleGeometry = (feature, corners, beforeCorners = null) => {
+  let referenceCorners = corners;
+  const movedIndex = getMovedCornerIndex(beforeCorners, corners);
+  if (movedIndex >= 0) {
+    const movedCorner = corners[movedIndex];
+    const oppositeCorner = beforeCorners[(movedIndex + 2) % 4];
+    referenceCorners = [movedCorner, oppositeCorner];
+  }
+
+  const xs = referenceCorners.map(([x]) => x);
+  const ys = referenceCorners.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  if (minX === maxX || minY === maxY) {
+    return false;
+  }
+  feature.getGeometry().setCoordinates([[
+    [minX, minY],
+    [maxX, minY],
+    [maxX, maxY],
+    [minX, maxY],
+    [minX, minY],
+  ]]);
+  return true;
+};
+
+const setOrientedRectangleGeometryFromBaseline = (feature, corners, beforeCorners) => {
+  const movedIndex = getMovedCornerIndex(beforeCorners, corners);
+  if (movedIndex < 0) {
+    return false;
+  }
+  const movedCorner = corners[movedIndex];
+  const oppositeCorner = beforeCorners[(movedIndex + 2) % 4];
+  const nextCorner = beforeCorners[(movedIndex + 1) % 4];
+  const previousCorner = beforeCorners[(movedIndex + 3) % 4];
+  const uLength = distance(beforeCorners[movedIndex], nextCorner);
+  const vLength = distance(beforeCorners[movedIndex], previousCorner);
+  if (!uLength || !vLength) {
+    return false;
+  }
+  const ux = [
+    (nextCorner[0] - beforeCorners[movedIndex][0]) / uLength,
+    (nextCorner[1] - beforeCorners[movedIndex][1]) / uLength,
+  ];
+  const uy = [
+    (previousCorner[0] - beforeCorners[movedIndex][0]) / vLength,
+    (previousCorner[1] - beforeCorners[movedIndex][1]) / vLength,
+  ];
+  const movedProjection = projectPoint(movedCorner, ux, uy);
+  const oppositeProjection = projectPoint(oppositeCorner, ux, uy);
+  const toCoordinate = (u, v) => [u * ux[0] + v * uy[0], u * ux[1] + v * uy[1]];
+  const nextProjection = { u: oppositeProjection.u, v: movedProjection.v };
+  const previousProjection = { u: movedProjection.u, v: oppositeProjection.v };
+  const orderedCorners = [];
+  orderedCorners[movedIndex] = movedCorner;
+  orderedCorners[(movedIndex + 1) % 4] = toCoordinate(nextProjection.u, nextProjection.v);
+  orderedCorners[(movedIndex + 2) % 4] = toCoordinate(oppositeProjection.u, oppositeProjection.v);
+  orderedCorners[(movedIndex + 3) % 4] = toCoordinate(previousProjection.u, previousProjection.v);
+  if (distance(orderedCorners[movedIndex], orderedCorners[(movedIndex + 1) % 4]) === 0
+      || distance(orderedCorners[movedIndex], orderedCorners[(movedIndex + 3) % 4]) === 0) {
+    return false;
+  }
+  feature.getGeometry().setCoordinates([[...orderedCorners, orderedCorners[0]]]);
+  return true;
+};
+
+const setOrientedRectangleGeometry = (feature, corners, beforeCorners = null) => {
+  if (beforeCorners?.length === 4 && setOrientedRectangleGeometryFromBaseline(feature, corners, beforeCorners)) {
+    return true;
+  }
+
+  const edges = corners.map((point, index) => {
+    const next = corners[(index + 1) % corners.length];
+    return { start: point, end: next, length: distance(point, next) };
+  });
+  const majorEdge = edges.reduce((best, edge) => (edge.length > best.length ? edge : best), edges[0]);
+  if (!majorEdge?.length) {
+    return false;
+  }
+  const ux = [(majorEdge.end[0] - majorEdge.start[0]) / majorEdge.length, (majorEdge.end[1] - majorEdge.start[1]) / majorEdge.length];
+  const uy = [-ux[1], ux[0]];
+  const projections = corners.map(([x, y]) => ({
+    u: x * ux[0] + y * ux[1],
+    v: x * uy[0] + y * uy[1],
+  }));
+  const uValues = projections.map(({ u }) => u);
+  const vValues = projections.map(({ v }) => v);
+  const minU = Math.min(...uValues);
+  const maxU = Math.max(...uValues);
+  const minV = Math.min(...vValues);
+  const maxV = Math.max(...vValues);
+  if (minU === maxU || minV === maxV) {
+    return false;
+  }
+  const toCoordinate = (u, v) => [u * ux[0] + v * uy[0], u * ux[1] + v * uy[1]];
+  feature.getGeometry().setCoordinates([[
+    toCoordinate(minU, minV),
+    toCoordinate(maxU, minV),
+    toCoordinate(maxU, maxV),
+    toCoordinate(minU, maxV),
+    toCoordinate(minU, minV),
+  ]]);
+  return true;
+};
+
+const constrainRectangleFeature = (feature, beforeCorners = null) => {
+  const kind = resolveRectangleShapeKind(feature);
+  if (!kind) {
+    return false;
+  }
+  const corners = getPolygonCorners(feature);
+  if (corners.length !== 4) {
+    return false;
+  }
+  const updated = kind === RECTANGLE_SHAPE
+    ? setAxisAlignedRectangleGeometry(feature, corners, beforeCorners)
+    : setOrientedRectangleGeometry(feature, corners, beforeCorners);
+  if (updated) {
+    feature.set(RECTANGLE_SHAPE_KEY, kind);
+  }
+  return updated;
+};
+
+const selectionContainsRectangle = (features) => {
+  return (features?.getArray?.() || []).some((feature) => !!resolveRectangleShapeKind(feature));
+};
+
 export default function () {
   const shapeSelect = useRef();
   const layerSelect = useRef();
@@ -126,6 +346,8 @@ export default function () {
   const taskCoordinateSystem = normalizeCoordinateCode(
     taskInfo?.data?.[0]?.coordinateSystem || taskInfo?.coordinateSystem || 'EPSG:3857'
   );
+  const currentTaskType = taskInfo?.data?.[0]?.type || '';
+  const isTargetRecognitionTask = currentTaskType === '目标检测' || currentTaskType === '目标识别';
   const access = useAccess(); // access 实例的成员: canAdmin, canUser
   let select, modify, shapeDraw; // 将交互变量声明在组件顶层
   const selectRef = useRef(null);
@@ -142,6 +364,7 @@ export default function () {
   const undoStackRef = useRef([]);
   const redoStackRef = useRef([]);
   const pendingHistorySnapshotRef = useRef(null);
+  const rectangleModifyStartRef = useRef(new Map());
   const [toolMode, setToolMode] = useState('none'); // none | split | union | boxDelete
   const [deletedMarkIds, setDeletedMarkIds] = useState([]);
   const [selectedFeature, setSelectedFeature] = useState(null);
@@ -519,6 +742,7 @@ export default function () {
 
     const addDrawInteraction = () => {
       let value = shapeSelect.current.value;
+      const selectedShapeValue = value;
       let geometryFunction;
       let cursorStyle = 'crosshair'; // 默认十字光标
 
@@ -613,6 +837,11 @@ export default function () {
         // 保持与绘制时一致的填充/描边，确保未保存面要素也有命中区域可被选择
         feature.setStyle(drawStyle);
         feature.set('typeId', toolbarState.sourceKey);
+        if (selectedShapeValue === 'Box') {
+          feature.set(RECTANGLE_SHAPE_KEY, RECTANGLE_SHAPE);
+        } else if (selectedShapeValue === 'RotatableRectangle') {
+          feature.set(RECTANGLE_SHAPE_KEY, ROTATED_RECTANGLE_SHAPE);
+        }
         if (!feature.get('attrJson')) {
           feature.set('attrJson', {});
         }
@@ -649,7 +878,13 @@ export default function () {
       });
       selectRef.current = select;
       select.on('select', async (evt) => {
-        (evt.selected || []).forEach((feature) => applyFeatureHighlight(feature));
+        (evt.selected || []).forEach((feature) => {
+          const rectangleKind = resolveRectangleShapeKind(feature);
+          if (rectangleKind) {
+            feature.set(RECTANGLE_SHAPE_KEY, rectangleKind);
+          }
+          applyFeatureHighlight(feature);
+        });
         (evt.deselected || []).forEach((feature) => restoreFeatureStyle(feature));
         if (evt.selected && evt.selected.length > 0) {
           setSelectedFeature(evt.selected[evt.selected.length - 1]);
@@ -787,10 +1022,29 @@ export default function () {
 
     if (select && !isCurrentUserReadOnly) {
       // 仅修改“已选中要素”，避免边缘点击被 Modify 抢占导致 Select 失效
-      modify = new Modify({ features: select.getFeatures() });
+      const selectedFeatures = select.getFeatures();
+      modify = new Modify({
+        features: selectedFeatures,
+        insertVertexCondition: () => !selectionContainsRectangle(selectedFeatures),
+        deleteCondition: (event) => (
+          !selectionContainsRectangle(selectedFeatures)
+          && altKeyOnly(event)
+          && singleClick(event)
+        ),
+      });
       modifyRef.current = modify;
-      modify.on('modifystart', () => {
+      modify.on('modifystart', (event) => {
         pendingHistorySnapshotRef.current = captureHistorySnapshot();
+        const rectangleMap = new Map();
+        event.features?.getArray?.().forEach((item) => {
+          const kind = resolveRectangleShapeKind(item);
+          const corners = getPolygonCorners(item);
+          if (kind && corners.length === 4) {
+            item.set(RECTANGLE_SHAPE_KEY, kind);
+            rectangleMap.set(item, corners.map((corner) => [...corner]));
+          }
+        });
+        rectangleModifyStartRef.current = rectangleMap;
       });
       //查看修改后的feature信息
       modify.on('modifyend', (event) => {
@@ -800,6 +1054,10 @@ export default function () {
         console.log(feature)
         console.log(event)
         console.log(toolbarState.currentLayer)
+        event.features?.getArray?.().forEach((item) => {
+          constrainRectangleFeature(item, rectangleModifyStartRef.current.get(item));
+        });
+        rectangleModifyStartRef.current = new Map();
         recordHistoryChange(pendingHistorySnapshotRef.current, captureHistorySnapshot());
         pendingHistorySnapshotRef.current = null;
         setFeaturePanelVersion((prev) => prev + 1);
@@ -818,6 +1076,12 @@ export default function () {
       }
 
       if (shapeSelect.current.value != 'None' && !isCurrentUserReadOnly) {
+        if (isTargetRecognitionTask && shapeSelect.current.value === 'Polygon') {
+          message.warning('目标识别任务中禁止绘制多边形');
+          shapeSelect.current.value = 'None';
+          setActiveShape('None');
+          return;
+        }
         if (!toolbarState.currentLayer) {
           message.warning('请先选择图层再绘制');
           shapeSelect.current.value = 'None';
@@ -970,6 +1234,7 @@ export default function () {
     isPolygonFeature,
     getOuterRingCoordinates,
     featureToGeoJsonObject,
+    isTargetRecognitionTask,
   ]);
 
   // 获取当前标注的数据源
@@ -1708,7 +1973,6 @@ export default function () {
     }
     return taskInfo?.data?.[0]?.mapserver || '';
   };
-  const currentTaskType = taskInfo?.data?.[0]?.type || '';
   const currentLayerTypeId = toolbarState?.sourceKey == null ? null : Number(toolbarState.sourceKey);
   const isYoloSamTaskType = currentTaskType === '地物提取' || currentTaskType === '地物分类';
   const availableTaskTypes = currentUserTaskTypes;
@@ -2382,31 +2646,39 @@ const navigateTask = useCallback(async (direction) => {
             { value: 'Box',                icon: '▭', title: '矩形' },
             { value: 'RotatableRectangle', icon: '⬡', title: '旋转矩形' },
             { value: 'Polygon',            icon: '⬠', title: '多边形' },
-          ].map(({ value, icon, title }) => (
-            <Tooltip key={value} title={title}>
-              <button
-                className={`shape-icon-btn${activeShape === value ? ' active' : ''}${(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None' ? ' disabled' : ''}`}
-                disabled={(toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None'}
-                onClick={() => {
-                  if (isCurrentUserReadOnly) {
-                    message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再绘制' : '当前影像为只读状态');
-                    return;
-                  }
-                  if (!toolbarState.currentLayer && value !== 'None') {
-                    message.warn('请先选择图层再绘制');
-                    return;
-                  }
-                  if (shapeSelect.current) {
-                    shapeSelect.current.value = value;
-                    setActiveShape(value);
-                    shapeSelect.current.dispatchEvent(new Event('change', { bubbles: true }));
-                  }
-                }}
-              >
-                {icon}
-              </button>
-            </Tooltip>
-          ))}
+          ].map(({ value, icon, title }) => {
+            const polygonForbidden = isTargetRecognitionTask && value === 'Polygon';
+            const disabled = polygonForbidden || ((toolbarState.drawState || isCurrentUserReadOnly) && value !== 'None');
+            return (
+              <Tooltip key={value} title={polygonForbidden ? '目标识别任务中禁止绘制多边形' : title}>
+                <button
+                  className={`shape-icon-btn${activeShape === value ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (polygonForbidden) {
+                      message.warning('目标识别任务中禁止绘制多边形');
+                      return;
+                    }
+                    if (isCurrentUserReadOnly) {
+                      message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再绘制' : '当前影像为只读状态');
+                      return;
+                    }
+                    if (!toolbarState.currentLayer && value !== 'None') {
+                      message.warn('请先选择图层再绘制');
+                      return;
+                    }
+                    if (shapeSelect.current) {
+                      shapeSelect.current.value = value;
+                      setActiveShape(value);
+                      shapeSelect.current.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                  }}
+                >
+                  {icon}
+                </button>
+              </Tooltip>
+            );
+          })}
 
           {/* 隐藏的原生 select，保持原有逻辑不变 */}
           <select style={{ display: 'none' }} ref={shapeSelect} defaultValue={'None'}>
