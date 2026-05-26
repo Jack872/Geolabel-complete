@@ -1,7 +1,6 @@
 package com.example.labelMark.controller;
 
 import com.example.labelMark.service.TaskNotificationService;
-import com.example.labelMark.service.QualityEvalJobService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -24,8 +23,6 @@ public class TaskCallbackController {
 
     @Resource
     private TaskNotificationService taskNotificationService;
-    @Resource
-    private QualityEvalJobService qualityEvalJobService;
 
     /**
      * 单个训练任务完成回调
@@ -146,34 +143,6 @@ public class TaskCallbackController {
 
         } catch (Exception e) {
             logger.error("处理批量推理完成回调失败", e);
-            Map<String, Object> response = new HashMap<>();
-            response.put("code", 500);
-            response.put("message", "回调处理失败: " + e.getMessage());
-            return response;
-        }
-    }
-
-    @PostMapping("/quality-progress")
-    public Map<String, Object> onQualityProgress(@RequestBody Map<String, Object> request) {
-        try {
-            Long jobId = request.get("jobId") == null ? null : Long.valueOf(String.valueOf(request.get("jobId")));
-            if (jobId == null) {
-                throw new IllegalArgumentException("jobId 不能为空");
-            }
-            String status = request.get("status") == null ? "RUNNING" : String.valueOf(request.get("status"));
-            String stage = request.get("stage") == null ? null : String.valueOf(request.get("stage"));
-            Integer progress = request.get("progress") == null ? null : Integer.valueOf(String.valueOf(request.get("progress")));
-            Integer processedCount = request.get("processedCount") == null ? null : Integer.valueOf(String.valueOf(request.get("processedCount")));
-            Integer totalCount = request.get("totalCount") == null ? null : Integer.valueOf(String.valueOf(request.get("totalCount")));
-            String message = request.get("message") == null ? null : String.valueOf(request.get("message"));
-            qualityEvalJobService.updateJobProgress(jobId, status, stage, progress, processedCount, totalCount, message);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("code", 200);
-            response.put("message", "质量评价进度回调处理成功");
-            return response;
-        } catch (Exception e) {
-            logger.error("处理质量评价进度回调失败", e);
             Map<String, Object> response = new HashMap<>();
             response.put("code", 500);
             response.put("message", "回调处理失败: " + e.getMessage());

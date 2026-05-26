@@ -87,19 +87,6 @@ export default [
     component: './prov',
   },
   {
-    icon: 'crown',
-    path: '/quality/report/:reportId',
-    name: 'list.qualityReport',
-    component: './quality/report',
-    hideInMenu: true,
-  },
-  {
-    icon: 'crown',
-    path: '/quality',
-    name: 'list.quality',
-    component: './quality',
-  },
-  {
     // access: 'canUser',
     path: '/modelManage',
     name: 'list.modelManage',

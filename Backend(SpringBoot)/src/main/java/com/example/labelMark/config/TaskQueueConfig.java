@@ -31,11 +31,6 @@ public class TaskQueueConfig {
         return new LinkedBlockingQueue<>(50);
     }
 
-    @Bean
-    public BlockingQueue<Runnable> qualityEvaluationQueue() {
-        return new LinkedBlockingQueue<>(30);
-    }
-
     /**
      * 辅助功能线程池
      */
@@ -63,18 +58,6 @@ public class TaskQueueConfig {
                 TimeUnit.SECONDS,
                 inferenceFunctionQueue(),
                 new ThreadPoolExecutor.CallerRunsPolicy() // 拒绝策略：由调用者线程执行
-        );
-    }
-
-    @Bean
-    public ThreadPoolExecutor qualityEvaluationExecutor() {
-        return new ThreadPoolExecutor(
-                1,
-                2,
-                60,
-                TimeUnit.SECONDS,
-                qualityEvaluationQueue(),
-                new ThreadPoolExecutor.CallerRunsPolicy()
         );
     }
 }
