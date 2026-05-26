@@ -21,12 +21,9 @@ export default ({
   const [form] = Form.useForm();
   const [userList, setUserList] = useState([]);
   const [typeList, setTypeList] = useState(renderTypeList);
-  const [selectedItems, setSelectedItems] = useState([]);
+  const [, setAssignmentVersion] = useState(0);
   const safeTypeList = useMemo(() => (Array.isArray(typeList) ? typeList : []), [typeList]);
-  const filteredOptions = safeTypeList.filter(({ typeName, typename }) => {
-    const name = typeName || typename;
-    return !selectedItems.includes(name);
-  });
+  const filteredOptions = safeTypeList;
 
   // 获取当前用户信息和影像集分组信息
   const { initialState } = useModel('@@initialState');
@@ -295,6 +292,28 @@ export default ({
     });
 
     return payload;
+  };
+
+  const getUserTypeOptions = (currentUserName) => {
+    const formValues = form.getFieldsValue();
+    const assignedTypeIds = new Set();
+
+    userList?.forEach(({ userName }) => {
+      if (userName === currentUserName) {
+        return;
+      }
+      const selectedTypeIds = formValues[userName] || [];
+      selectedTypeIds.forEach((typeId) => {
+        assignedTypeIds.add(String(typeId));
+      });
+    });
+
+    return safeTypeList
+      .filter((item) => !assignedTypeIds.has(String(item.typeId)))
+      .map((item) => ({
+        value: item.typeId,
+        label: item.typeName,
+      }));
   };
 
   return (
@@ -596,8 +615,8 @@ export default ({
               />
             </Form.Item>
 
-            {userList?.map(({ userName, typestring }) => {
-              return (
+            <Form.Item noStyle shouldUpdate>
+              {() => userList?.map(({ userName, typestring }) => (
                 <Form.Item
                   key={userName}
                   label={userName}
@@ -610,18 +629,14 @@ export default ({
                     showArrow
                     allowClear
                     disabled={isEdit}
-                    value={selectedItems}
-                    onChange={(value) => {
-                      console.log(value);
+                    onChange={() => {
+                      setAssignmentVersion((version) => version + 1);
                     }}
-                    options={filteredOptions.map((item) => ({
-                      value: item.typeId,
-                      label: item.typeName,
-                    }))}
+                    options={getUserTypeOptions(userName)}
                   />
                 </Form.Item>
-              );
-            })}
+              ))}
+            </Form.Item>
           </>
         )}
 

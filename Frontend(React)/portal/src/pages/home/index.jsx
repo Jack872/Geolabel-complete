@@ -1,13 +1,11 @@
-import { Avatar, Card, Col, Skeleton, Row, Statistic, Tag, Typography, Tabs, Button, message } from 'antd';
+import { Avatar, Card, Col, Skeleton, Row, Tag, Typography, Tabs } from 'antd';
 import { Pie } from '@ant-design/charts';
 import { Link, useModel } from 'umi';
 import { PageContainer } from '@ant-design/pro-layout';
-import { ReloadOutlined } from '@ant-design/icons';
 import moment from 'moment';
 import styles from './style.less';
 import { useEffect, useState } from 'react';
 import { reqGetPersonalTaskList, reqGetTaskList } from '@/services/taskManage/api';
-import { currentState as getCurrentUserInfo } from '@/services/login/api';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -36,94 +34,9 @@ const PageHeaderContent = ({ currentUser }) => {
   );
 };
 
-const ExtraContent = ({ currentUser, onRefreshScore }) => {
-  const [refreshing, setRefreshing] = useState(false);
-
-  const handleRefreshScore = async () => {
-    setRefreshing(true);
-    try {
-      await onRefreshScore();
-      message.success('积分刷新成功');
-    } catch (error) {
-      message.error('积分刷新失败，请重试');
-      console.error('刷新积分失败:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  return (
-    <div className={styles.extraContent}>
-      <div className={styles.statItem} style={{ padding: '0 40px' }}>
-        <Statistic
-          title={
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              fontSize: '16px',
-              fontWeight: '500',
-              flexWrap: 'wrap'
-            }}>
-              <span>我的积分</span>
-              <Button
-                type="text"
-                size="middle"
-                icon={<ReloadOutlined style={{ fontSize: '14px' }} />}
-                loading={refreshing}
-                onClick={handleRefreshScore}
-                style={{
-                  padding: '4px 8px',
-                  height: '32px',
-                  fontSize: '14px',
-                  color: '#1890ff',
-                  border: '1px solid #d9d9d9',
-                  borderRadius: '6px',
-                  backgroundColor: '#fafafa',
-                  transition: 'all 0.3s ease',
-                  minWidth: '70px'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = '#e6f7ff';
-                  e.target.style.borderColor = '#1890ff';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.backgroundColor = '#fafafa';
-                  e.target.style.borderColor = '#d9d9d9';
-                }}
-                title="刷新积分"
-              >
-                刷新
-              </Button>
-            </div>
-          }
-          value={typeof currentUser?.score === 'number' ? currentUser.score : 0}
-          valueStyle={{
-            fontSize: '36px',
-            fontWeight: 'bold',
-            color: '#1890ff',
-            lineHeight: '44px'
-          }}
-          suffix={
-            <span style={{
-              fontSize: '18px',
-              color: '#8c8c8c',
-              marginLeft: '8px',
-              fontWeight: 'normal'
-            }}>
-              分
-            </span>
-          }
-        />
-      </div>
-    </div>
-  );
-};
-
 const Workplace = () => {
   const {
     initialState: { currentState },
-    setInitialState,
   } = useModel('@@initialState');
   const [taskList, setTaskList] = useState([]);
   const [taskStatusData, setTaskStatusData] = useState([]);
@@ -151,23 +64,6 @@ const Workplace = () => {
   // 确保获取到currentUser和isAdmin
   const currentUser = currentState?.currentUser || '';
   const isAdmin = currentState?.isAdmin || false;
-
-  // 刷新积分功能
-  const refreshUserScore = async () => {
-    try {
-      const userInfo = await getCurrentUserInfo();
-      if (userInfo) {
-        // 更新全局状态中的用户信息
-        setInitialState((s) => ({
-          ...s,
-          currentState: userInfo
-        }));
-      }
-    } catch (error) {
-      console.error('获取用户信息失败:', error);
-      throw error;
-    }
-  };
 
   // 处理任务状态统计的通用函数
   const processTaskStatusData = (taskData) => {
@@ -477,6 +373,7 @@ const Workplace = () => {
   ];
   return (
     <PageContainer
+      className={styles.homePageContainer}
       breadcrumbRender={false}
       title={false}
       content={
@@ -487,10 +384,6 @@ const Workplace = () => {
           }}
         />
       }
-      extraContent={<ExtraContent
-        currentUser={{ score: parseInt(currentState?.score) || 0 }}
-        onRefreshScore={refreshUserScore}
-      />}
     >
       <Row gutter={[24, 24]} style={{ minHeight: 'calc(100vh - 250px)' }}>
         {/* 进行中的项目 */}

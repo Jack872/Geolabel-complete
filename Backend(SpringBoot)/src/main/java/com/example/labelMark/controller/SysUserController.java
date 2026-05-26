@@ -259,50 +259,21 @@ public class SysUserController {
         map.put("teamName", null);
 
         if (ObjectUtil.isNotNull(currentUser)) {
-            // 从数据库重新查询最新的用户信息，确保积分是最新的
-            SysUser latestUser = SysUserService.findByUserId(currentUser.getUserid());
-            if (latestUser != null) {
-                map.put("currentUser", latestUser.getUsername());
-                map.put("userid", latestUser.getUserid());
-                map.put("isAdmin", latestUser.getIsadmin());
-                map.put("score", latestUser.getScore() != null ? latestUser.getScore() : 0);
+            map.put("currentUser", currentUser.getUsername());
+            map.put("userid", currentUser.getUserid());
+            map.put("isAdmin", currentUser.getIsadmin());
+            map.put("score", currentUser.getScore() != null ? currentUser.getScore() : 0);
 
-                // 添加团队信息
-                if (latestUser.getTeamId() != null) {
-                    map.put("teamId", latestUser.getTeamId());
-                    // 获取团队名称
-                    try {
-                        TeamTable team = teamService.getById(latestUser.getTeamId());
-                        if (team != null) {
-                            map.put("teamName", team.getName());
-                        }
-                    } catch (Exception e) {
-                        System.out.println("获取团队信息失败: " + e.getMessage());
+            if (currentUser.getTeamId() != null) {
+                map.put("teamId", currentUser.getTeamId());
+                try {
+                    TeamTable team = teamService.getById(currentUser.getTeamId());
+                    if (team != null) {
+                        map.put("teamName", team.getName());
                     }
+                } catch (Exception e) {
+                    System.out.println("获取团队信息失败: " + e.getMessage());
                 }
-
-                // 添加日志输出，帮助调试
-                System.out.println("从数据库获取的最新用户积分: " + latestUser.getScore());
-                System.out.println("用户团队ID: " + latestUser.getTeamId());
-            } else {
-                // 如果从数据库查询失败，使用缓存的用户信息作为备用
-                map.put("currentUser", currentUser.getUsername());
-                map.put("isAdmin", currentUser.getIsadmin());
-                map.put("score", currentUser.getScore() != null ? currentUser.getScore() : 0);
-
-                if (currentUser.getTeamId() != null) {
-                    map.put("teamId", currentUser.getTeamId());
-                    try {
-                        TeamTable team = teamService.getById(currentUser.getTeamId());
-                        if (team != null) {
-                            map.put("teamName", team.getName());
-                        }
-                    } catch (Exception e) {
-                        System.out.println("获取团队信息失败: " + e.getMessage());
-                    }
-                }
-
-                System.out.println("使用缓存的用户积分: " + currentUser.getScore());
             }
         }
         return map;
