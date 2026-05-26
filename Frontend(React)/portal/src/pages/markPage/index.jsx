@@ -818,6 +818,12 @@ export default function () {
       }
 
       if (shapeSelect.current.value != 'None' && !isCurrentUserReadOnly) {
+        if (!toolbarState.currentLayer) {
+          message.warning('请先选择图层再绘制');
+          shapeSelect.current.value = 'None';
+          setActiveShape('None');
+          return;
+        }
         if (toolMode !== 'none') {
           setToolMode('none');
           unionFirstFeatureRef.current = null;
@@ -1706,6 +1712,9 @@ export default function () {
   const currentLayerTypeId = toolbarState?.sourceKey == null ? null : Number(toolbarState.sourceKey);
   const isYoloSamTaskType = currentTaskType === '地物提取' || currentTaskType === '地物分类';
   const availableTaskTypes = currentUserTaskTypes;
+  const hasSelectedAnnotationLayer = !!toolbarState.currentLayer
+    && toolbarState.sourceKey !== null
+    && toolbarState.sourceKey !== undefined;
 
   const getModelFamily = useCallback((model) => {
     const raw = `${model?.type || ''} ${model?.name || ''}`.toLowerCase();
@@ -1896,6 +1905,10 @@ const navigateTask = useCallback(async (direction) => {
       message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再预标注' : '当前影像为只读状态');
       return;
     }
+    if (!hasSelectedAnnotationLayer) {
+      message.warning('请先选择图层，再启动预标注');
+      return;
+    }
     if (!selectedPreAnnotateModel) {
       message.warning('请先选择预标注模型');
       return;
@@ -1974,6 +1987,10 @@ const navigateTask = useCallback(async (direction) => {
   const handleSamPreAnnotation = useCallback(async (options = {}) => {
     if (isCurrentUserReadOnly) {
       message.info(currentUserFinished ? '当前负责类别已标注完成，请先撤销完成后再使用SAM交互标注' : '当前影像为只读状态');
+      return;
+    }
+    if (!hasSelectedAnnotationLayer) {
+      message.warning('请先选择图层，再使用 SAM 交互标注');
       return;
     }
     const { silentNoPrompt = false } = options;
@@ -2089,7 +2106,7 @@ const navigateTask = useCallback(async (direction) => {
       console.error('SAM Error:', error);
       message.error('SAM 调用异常');
     }
-  }, [currentUserFinished, generateMarkLayer, getTaskId, getTaskItemId, isCurrentUserReadOnly, refreshMarkGeoJsonArr, samParam1, samParam2, samParam3, samParam4, save, taskInfo, toolbarState.markSource, toolbarState.sourceKey]);
+  }, [currentUserFinished, generateMarkLayer, getTaskId, getTaskItemId, hasSelectedAnnotationLayer, isCurrentUserReadOnly, refreshMarkGeoJsonArr, samParam1, samParam2, samParam3, samParam4, save, taskInfo, toolbarState.markSource, toolbarState.sourceKey]);
 
   useEffect(() => {
     triggerSamInteractiveRef.current = handleSamPreAnnotation;
