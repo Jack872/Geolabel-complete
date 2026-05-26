@@ -27,8 +27,6 @@ export default {
   'menu.list.user-list': '用户管理',
   'menu.list.datamanage': '影像管理',
   'menu.list.datasetStore': '样本集管理',
-  'menu.list.prov': '溯源管理',
-
   'menu.list.datamanage.rastermanage': '栅格数据管理',
   'menu.list.datamanage.vectormanage': '矢量数据管理',
   'menu.list.servicemanage': '服务管理',

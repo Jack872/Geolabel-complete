@@ -295,17 +295,6 @@ public class SampleSetController {
         }
     }
 
-    @GetMapping("/getProv/{id}")
-    public Result getDatasetProvenance(@PathVariable Integer id) {
-
-        try {
-            Map<String, Object> result = sampleSetService.getDatasetProvenance(id);
-            return ResultGenerator.getSuccessResult(result);
-        } catch (Exception e) {
-            return ResultGenerator.getFailResult(e.getMessage());
-        }
-    }
-
     /**
      * 获取样本集分页列表
      */

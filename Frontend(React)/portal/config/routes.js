@@ -81,12 +81,6 @@ export default [
     component: './datasetStore',
   },
   {
-    icon: 'crown',
-    path: '/prov',
-    name: 'list.prov',
-    component: './prov',
-  },
-  {
     // access: 'canUser',
     path: '/modelManage',
     name: 'list.modelManage',
