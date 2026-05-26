@@ -62,9 +62,7 @@ const TaskManage = () => {
   // 获取当前用户信息
   const { initialState } = useModel('@@initialState');
   const { currentState } = initialState || {};
-  const isAdmin = currentState?.isAdmin === 1;
   const currentTeamId = currentState?.teamId;
-  const currentUserScore = currentState?.score || 0; // 直接从currentState获取积分
 
 
   // 新增状态：控制数据集生成 Modal
@@ -128,10 +126,6 @@ const TaskManage = () => {
     }
   };
 
-  useEffect(() => {
-
-  }, [currentState, currentUserScore]);
-
   const loadSelectableImageOptions = async () => {
     try {
       const result = await reqGetSelectableImagesByName();
@@ -147,33 +141,27 @@ const TaskManage = () => {
     }
   };
 
-  const buildAssignmentRequestValues = (values, targetUserType) => {
-    if (isAdmin && targetUserType === 'specificTeamUsers') {
-      const specificUserAssignments = values.specificUserAssignments || [];
-      const userArr = [];
+  const buildAssignmentRequestValues = (values) => {
+    const specificUserAssignments = values.specificUserAssignments || [];
+    const userArr = [];
 
-      specificUserAssignments.forEach((assignment) => {
-        const username = assignment.username;
-        const typeArr = assignment.typeArr || [];
-        const typeIdArr = typeArr.map((typeItem) => {
-          const numberValue = Number(typeItem);
-          if (!Number.isNaN(numberValue)) {
-            return typeItem;
-          }
-          const typeObj = typeList.find((obj) => obj.typeName === typeItem);
-          return typeObj ? typeObj.typeId : typeItem;
-        });
-        userArr.push(`${username},${typeIdArr.join(',')}`);
+    specificUserAssignments.forEach((assignment) => {
+      const username = assignment.username;
+      const typeArr = assignment.typeArr || [];
+      const typeIdArr = typeArr.map((typeItem) => {
+        const numberValue = Number(typeItem);
+        if (!Number.isNaN(numberValue)) {
+          return typeItem;
+        }
+        const typeObj = typeList.find((obj) => obj.typeName === typeItem);
+        return typeObj ? typeObj.typeId : typeItem;
       });
-
-      return {
-        userArr,
-        specificUserAssignments,
-      };
-    }
+      userArr.push(`${username},${typeIdArr.join(',')}`);
+    });
 
     return {
-      selectedSampleTypes: values.selectedSampleTypes || values.uniformSampleTypes || [],
+      userArr,
+      specificUserAssignments,
     };
   };
 
@@ -183,8 +171,6 @@ const TaskManage = () => {
     daterange,
     taskid,
     type,
-    targetUserType,
-    score,
     mapserver,
     localImagePath,
   }) => {
@@ -192,17 +178,11 @@ const TaskManage = () => {
       daterange: daterange.map((item) => item.format('YYYY-MM-DD')),
       taskname: currentTaskName,
       type,
-      targetUserType: isAdmin ? targetUserType : 'allNonAdminUsers',
-      ...buildAssignmentRequestValues(values, targetUserType),
+      targetUserType: 'specificTeamUsers',
+      ...buildAssignmentRequestValues(values),
     };
     if (values.taskTypeAttributes !== undefined) {
       requestValues.taskTypeAttributes = values.taskTypeAttributes;
-    }
-
-    const isNonTeamTaskLogic =
-      targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
-    if (isNonTeamTaskLogic && score > 0) {
-      requestValues.score = score;
     }
     if (taskid) {
       requestValues.taskid = taskid;
@@ -219,7 +199,7 @@ const TaskManage = () => {
 
   // 新建参数收集
   const onCreate = async (values) => {
-    let { daterange, taskid, taskname, type, mapserver, targetUserType, score, mapSelectMode } = values;
+    let { daterange, taskid, taskname, type, mapserver, mapSelectMode } = values;
 
     // 编辑模式：只更新任务名称和任务期限
     if (taskid && !type && !mapSelectMode) {
@@ -248,9 +228,6 @@ const TaskManage = () => {
       return;
     }
 
-    const isNonTeamTaskLogic =
-      targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
-
     // 按影像集批量创建（自动识别 service/local）
     if (mapSelectMode === 'bySetName') {
       const setNames = values.setNames || [];
@@ -258,9 +235,6 @@ const TaskManage = () => {
         message.error('请至少选择一个影像集');
         return;
       }
-
-      // 确保score是数字
-      score = typeof score === 'number' ? score : Number(score) || 0;
       const hide = message.loading(`正在按影像集创建任务...`);
       try {
         const map = daterange.map(item => item.format('YYYY-MM-DD'));
@@ -269,18 +243,12 @@ const TaskManage = () => {
           taskname,
           type,
           setNames,
-          score,
-          targetUserType: isAdmin ? targetUserType : 'allNonAdminUsers',
+          targetUserType: 'specificTeamUsers',
         };
         if (values.taskTypeAttributes !== undefined) {
           requestValues.taskTypeAttributes = values.taskTypeAttributes;
         }
-
-        if (isAdmin && targetUserType === "specificTeamUsers") {
-          requestValues.specificUserAssignments = values.specificUserAssignments || [];
-        } else {
-          requestValues.selectedSampleTypes = values.selectedSampleTypes || values.uniformSampleTypes || [];
-        }
+        requestValues.specificUserAssignments = values.specificUserAssignments || [];
 
         const result = await reqPublishTaskBySet(requestValues);
         hide();
@@ -299,9 +267,6 @@ const TaskManage = () => {
       }
       return;
     }
-
-    // 确保score是数字
-    score = typeof score === 'number' ? score : Number(score) || 0;
 
     const selectedImages = [].concat(mapserver || []).filter(Boolean);
     if (selectedImages.length === 0) {
@@ -331,15 +296,6 @@ const TaskManage = () => {
       message.error('编辑任务暂不支持切换为本地影像，请新建任务');
       return;
     }
-
-    // 如果是非团队任务且设置了积分，进行积分检查
-    if (isNonTeamTaskLogic && score > 0) {
-      if (currentUserScore < score) {
-        message.error(`积分不足！您需要 ${score} 积分来发布该任务，但您只有 ${currentUserScore} 积分。`);
-        return; // 终止操作
-      }
-    }
-
     if (taskid && selectedImages.length > 1) {
       message.error('编辑任务暂不支持一次修改多张影像，请新建任务');
       return;
@@ -367,8 +323,6 @@ const TaskManage = () => {
           daterange,
           taskid,
           type,
-          targetUserType,
-          score,
           mapserver: serviceImages[0]?.mapserver,
           localImagePath: localImages[0]?.localImagePath,
         }),

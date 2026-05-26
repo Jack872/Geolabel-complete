@@ -564,11 +564,7 @@ export default function DatasetReleaseManage({ currentState = {} }) {
 
             <Divider orientation="left" style={{margin: '16px 0'}}>
               切片随机预览 (Top 8)
-              {isSegmentationDataset(currentDataset.taskType) && (
-                <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>
-                  完整切片 + 半透明彩色标注掩膜
-                </span>
-              )}
+              {isSegmentationDataset(currentDataset.taskType)}
             </Divider>
 
             <div style={{ minHeight: 120 }}>

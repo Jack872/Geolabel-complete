@@ -99,13 +99,6 @@ export default [
     name: 'list.quality',
     component: './quality',
   },
-  //暂时不需要数据社区
-  // {
-  //   icon: 'team',
-  //   path: '/dataCommunity',
-  //   name: 'list.dataCommunity',
-  //   component: './dataCommunity',
-  // },
   {
     // access: 'canUser',
     path: '/modelManage',

@@ -53,7 +53,4 @@ public class SysUser implements Serializable {
     @TableField("team_id")
     private Integer teamId;
 
-    @ApiModelProperty("积分")
-    @TableField("score")
-    private Integer score;
 }

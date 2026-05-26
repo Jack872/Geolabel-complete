@@ -236,28 +236,6 @@ const Category = () => {
     },
 
     {
-      title: '任务积分',
-      dataIndex: 'score',
-      key: 'score',
-      align: 'center',
-      search: false,
-      width: 100,
-      render: (score, record) => {
-        // 只在非团队任务中显示积分
-        const taskClass = record.taskClass === null || record.taskClass === undefined ? 0 : record.taskClass;
-        const isNonTeamTask = Number(taskClass) === 1;
-
-        if (isNonTeamTask) {
-          return (
-            <Tag color="gold" style={{ fontSize: '12px' }}>
-              {score || 0} 分
-            </Tag>
-          );
-        }
-        return '-';
-      },
-    },
-    {
       disable: true,
       width: 150,
       align: 'center',

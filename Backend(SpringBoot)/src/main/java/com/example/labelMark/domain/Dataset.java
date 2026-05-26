@@ -65,10 +65,6 @@ public class Dataset implements Serializable {
     @TableField("user_id")
     private Integer userId;
 
-    @ApiModelProperty("兑换该数据集需要的积分")
-    @TableField("score")
-    private Integer score;
-
     @ApiModelProperty("任务类型")
     @TableField("task_type")
     private String taskType;

@@ -113,30 +113,4 @@ public interface SysUserService extends IService<SysUser> {
      */
     boolean updateUserTeamId(Integer userId, Integer teamId);
 
-    /**
-     * 更新用户积分
-     *
-     * @param userId 用户ID
-     * @param score  新的积分值
-     * @return 更新是否成功
-     */
-    boolean updateUserScore(Integer userId, Integer score);
-
-    /**
-     * 增加用户积分
-     *
-     * @param userId 用户ID
-     * @param score 积分
-     * @return 更新是否成功
-     */
-    boolean addUserScore(Integer userId, Integer score);
-
-    /**
-     * 扣除用户积分
-     *
-     * @param userId 用户ID
-     * @param score 积分
-     * @return 更新是否成功
-     */
-    boolean subtractUserScore(Integer userId, Integer score);
 }

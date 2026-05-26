@@ -24,12 +24,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/geoserver")
 public class GeoServerController {
     private static final Logger logger = LoggerFactory.getLogger(GeoServerController.class);
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Resource
     private GeoServerService geoServerService;
@@ -164,7 +166,7 @@ public class GeoServerController {
             server.setSerDesc(serdesc);
             server.setPublisher(username);
             server.setUserId(userId);
-            server.setPublishTime(String.valueOf(LocalDateTime.now()));
+            server.setPublishTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
             server.setPublishUrl(publishUrl);
             server.setSetName(setName);
             serverService.createServer(server);

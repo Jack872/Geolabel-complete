@@ -6,8 +6,6 @@ import com.example.labelMark.domain.Mark;
 import com.example.labelMark.domain.Task;
 import com.example.labelMark.domain.Dataset;
 import com.example.labelMark.domain.SysUser;
-import com.example.labelMark.domain.MyDataset;
-import com.example.labelMark.vo.LoginUser;
 
 import com.example.labelMark.service.*;
 import com.example.labelMark.utils.*;
@@ -22,9 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletResponse;
@@ -76,9 +72,6 @@ public class DatasetStoreController {
 
     @Resource
     private SysUserService sysUserService;
-
-    @Resource
-    private MyDatasetService myDatasetService;
 
     @Resource
     private CoordinateSystemUtils coordinateSystemUtils;
@@ -1066,11 +1059,6 @@ public class DatasetStoreController {
     @PostMapping("/downloadBySampleIds")
     public Result downloadBySampleIds(@RequestBody Map<String,Object> map, HttpServletResponse response) {
         try {
-            // 获取当前下载用户
-            LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            SysUser downloader = loginUser.getSysUser();
-            Integer downloaderId = downloader.getUserid();
-
             String sampleIdsStr = (String) map.get("sampleIds");
             if (sampleIdsStr == null || sampleIdsStr.isEmpty()) {
                 return ResultGenerator.getFailResult("样本ID不能为空");
@@ -1079,30 +1067,17 @@ public class DatasetStoreController {
             List<String> sampleIdStrList = Arrays.asList(sampleIdsStr.split(","));
             List<Integer> taskIdsForDownload = new ArrayList<>();
 
-            // 存储每个sampleId对应的Dataset信息，避免重复查询
-            Map<Integer, Dataset> sampleToDatasetMap = new HashMap<>();
-
-            // 预检查和积分操作的准备
             for (String sampleIdSingleStr : sampleIdStrList) {
                 try {
                     Integer currentSampleStoreId = Integer.parseInt(sampleIdSingleStr.trim());
-
                     Dataset targetDataset = datasetService.findDatasetByContainedSampleStoreId(currentSampleStoreId);
-
                     if (targetDataset == null) {
                         return ResultGenerator.getFailResult("未找到样本ID " + currentSampleStoreId + " 对应的共享数据集信息");
                     }
 
-                    sampleToDatasetMap.put(currentSampleStoreId, targetDataset);
-
-                    Integer pointsToDeduct = targetDataset.getScore();
-                    // Integer datasetOwnerId = targetDataset.getUserId(); // datasetOwnerId 在实际扣费时才需要
-
-                    if (pointsToDeduct != null && pointsToDeduct > 0) {
-                        SysUser currentDownloaderState = sysUserService.getById(downloaderId);
-                        if (currentDownloaderState.getScore() == null || currentDownloaderState.getScore() < pointsToDeduct) {
-                            return ResultGenerator.getFailResult("积分不足以下载样本ID " + currentSampleStoreId + "，需要 " + pointsToDeduct + " 积分");
-                        }
+                    DatasetStore datasetStore = datasetStoreService.getById(currentSampleStoreId);
+                    if (datasetStore != null && datasetStore.getTaskId() != null && !taskIdsForDownload.contains(datasetStore.getTaskId())) {
+                        taskIdsForDownload.add(datasetStore.getTaskId());
                     }
                 } catch (NumberFormatException e) {
                     System.out.println("无效的样本ID (格式错误): " + sampleIdSingleStr);
@@ -1113,69 +1088,15 @@ public class DatasetStoreController {
                 }
             }
 
-            // 如果所有检查通过，执行实际的积分扣除和增加，然后收集 taskIds
-            List<Runnable> successfulScoreOperations = new ArrayList<>(); // 用于记录成功的积分操作，以便回滚
-
-            for (String sampleIdSingleStr : sampleIdStrList) {
-                Integer currentSampleStoreId = Integer.parseInt(sampleIdSingleStr.trim());
-                Dataset targetDataset = sampleToDatasetMap.get(currentSampleStoreId);
-
-                Integer pointsToDeduct = targetDataset.getScore();
-                Integer datasetOwnerId = targetDataset.getUserId();
-
-                if (pointsToDeduct != null && pointsToDeduct > 0) {
-                    // 扣除下载者积分
-                    boolean subtractSuccess = sysUserService.subtractUserScore(downloaderId, pointsToDeduct);
-                    if (!subtractSuccess) {
-                        // 回滚之前成功的积分操作
-                        for (Runnable undo : successfulScoreOperations) {
-                            undo.run();
-                        }
-                        return ResultGenerator.getFailResult("扣除积分失败，样本ID " + currentSampleStoreId);
-                    }
-                    successfulScoreOperations.add(() -> sysUserService.addUserScore(downloaderId, pointsToDeduct)); // 添加回滚操作
-
-                    // 为数据集发布者增加积分
-                    if (datasetOwnerId != null) {
-                        boolean addSuccess = sysUserService.addUserScore(datasetOwnerId, pointsToDeduct);
-                        if(!addSuccess){
-                            // 回滚之前成功的积分操作 (包括当前下载者的扣分)
-                            for (Runnable undo : successfulScoreOperations) {
-                                undo.run();
-                            }
-                            // sysUserService.addUserScore(downloaderId, pointsToDeduct); // 已包含在回滚操作列表中
-                            return ResultGenerator.getFailResult("为发布者增加积分失败，样本ID " + currentSampleStoreId);
-                        }
-                        successfulScoreOperations.add(() -> sysUserService.subtractUserScore(datasetOwnerId, pointsToDeduct)); // 添加回滚操作
-                    }
-                }
-
-                DatasetStore datasetStore = datasetStoreService.getById(currentSampleStoreId);
-                if (datasetStore != null && datasetStore.getTaskId() != null) {
-                    if (!taskIdsForDownload.contains(datasetStore.getTaskId())) {
-                        taskIdsForDownload.add(datasetStore.getTaskId());
-                    }
-                } else {
-                     System.out.println("警告: 未找到 DatasetStore 记录，ID: " + currentSampleStoreId + "，在积分操作之后。");
-                }
-            }
-
             if (taskIdsForDownload.isEmpty()) {
-                 // 如果没有任务ID，但积分操作已执行，需要回滚
-                for (Runnable undo : successfulScoreOperations) {
-                    undo.run();
-                }
                 return ResultGenerator.getFailResult("根据提供的样本ID未能找到有效的任务进行下载");
             }
 
             Map<String, Object> taskIdsMap = new HashMap<>();
             taskIdsMap.put("taskIds", taskIdsForDownload);
             return downloadMultipleDatasets(taskIdsMap, response);
-
         } catch (Exception e) {
             e.printStackTrace();
-            // 注意：这里的通用异常捕获可能无法回滚积分，因为 successfulScoreOperations 列表在此作用域外
-            // 更健壮的事务管理可能需要将整个积分操作和下载逻辑包装在一个服务层方法中，并使用 @Transactional
             return ResultGenerator.getFailResult("下载失败：" + e.getMessage());
         }
     }
@@ -1318,230 +1239,4 @@ public class DatasetStoreController {
         }
     }
 
-    /**
-     * 兑换数据集
-     *
-     * @param map 请求参数，包含sampleIds
-     * @return 兑换结果
-     */
-    @PostMapping("/exchangeBySampleIds")
-    @Transactional
-    public Result exchangeBySampleIds(@RequestBody Map<String,Object> map) {
-        try {
-            // 获取当前用户
-            LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            SysUser currentUser = loginUser.getSysUser();
-            Integer userId = currentUser.getUserid();
-
-            String sampleIdsStr = (String) map.get("sampleIds");
-            if (sampleIdsStr == null || sampleIdsStr.isEmpty()) {
-                return ResultGenerator.getFailResult("样本ID不能为空");
-            }
-
-            List<String> sampleIdStrList = Arrays.asList(sampleIdsStr.split(","));
-
-            // 存储每个sampleId对应的Dataset信息，避免重复查询
-            Map<Integer, Dataset> sampleToDatasetMap = new HashMap<>();
-            // 存储需要兑换的数据集，按数据集ID去重
-            Map<Integer, Dataset> datasetsToExchange = new HashMap<>();
-
-            // 预检查和积分操作的准备
-            for (String sampleIdSingleStr : sampleIdStrList) {
-                try {
-                    Integer currentSampleStoreId = Integer.parseInt(sampleIdSingleStr.trim());
-
-                    Dataset targetDataset = datasetService.findDatasetByContainedSampleStoreId(currentSampleStoreId);
-
-                    if (targetDataset == null) {
-                        return ResultGenerator.getFailResult("未找到样本ID " + currentSampleStoreId + " 对应的共享数据集信息");
-                    }
-
-                    sampleToDatasetMap.put(currentSampleStoreId, targetDataset);
-
-                    // 按数据集ID去重，避免重复处理同一个数据集
-                    if (!datasetsToExchange.containsKey(targetDataset.getId())) {
-                        datasetsToExchange.put(targetDataset.getId(), targetDataset);
-
-                        // 检查是否已经兑换过
-                        Boolean hasExchanged = myDatasetService.checkUserHasDataset(userId, targetDataset.getId());
-                        if (hasExchanged) {
-                            return ResultGenerator.getFailResult("您已经兑换过数据集: " + targetDataset.getName());
-                        }
-                    }
-                } catch (NumberFormatException e) {
-                    System.out.println("无效的样本ID (格式错误): " + sampleIdSingleStr);
-                    return ResultGenerator.getFailResult("无效的样本ID格式: " + sampleIdSingleStr);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    return ResultGenerator.getFailResult("处理样本ID " + sampleIdSingleStr + " 时发生错误: " + e.getMessage());
-                }
-            }
-
-            // 计算总积分需求并检查用户积分是否足够
-            int totalPointsNeeded = 0;
-            for (Dataset dataset : datasetsToExchange.values()) {
-                Integer pointsToDeduct = dataset.getScore();
-                if (pointsToDeduct != null && pointsToDeduct > 0) {
-                    totalPointsNeeded += pointsToDeduct;
-                }
-            }
-
-            if (totalPointsNeeded > 0) {
-                SysUser currentUserState = sysUserService.getById(userId);
-                if (currentUserState.getScore() == null || currentUserState.getScore() < totalPointsNeeded) {
-                    return ResultGenerator.getFailResult("积分不足以兑换所选数据集，需要 " + totalPointsNeeded + " 积分，当前积分: " + (currentUserState.getScore() != null ? currentUserState.getScore() : 0));
-                }
-            }
-
-            // 如果所有检查通过，执行实际的积分扣除和增加，然后记录兑换
-            List<Runnable> successfulOperations = new ArrayList<>(); // 用于记录成功的操作，以便回滚
-
-            // 按数据集处理，而不是按样本处理
-            for (Dataset targetDataset : datasetsToExchange.values()) {
-                Integer pointsToDeduct = targetDataset.getScore();
-                Integer datasetOwnerId = targetDataset.getUserId();
-
-                if (pointsToDeduct != null && pointsToDeduct > 0) {
-                    // 扣除兑换者积分
-                    System.out.println("准备扣除用户积分，用户ID: " + userId + ", 扣除积分: " + pointsToDeduct);
-                    boolean subtractSuccess = sysUserService.subtractUserScore(userId, pointsToDeduct);
-                    System.out.println("扣除积分结果: " + subtractSuccess);
-                    if (!subtractSuccess) {
-                        // 回滚之前成功的积分操作
-                        for (Runnable undo : successfulOperations) {
-                            undo.run();
-                        }
-                        return ResultGenerator.getFailResult("扣除积分失败，样本ID " + targetDataset.getId());
-                    }
-                    successfulOperations.add(() -> sysUserService.addUserScore(userId, pointsToDeduct)); // 添加回滚操作
-
-                    // 为数据集发布者增加积分
-                    if (datasetOwnerId != null) {
-                        System.out.println("准备为发布者增加积分，发布者ID: " + datasetOwnerId + ", 增加积分: " + pointsToDeduct);
-                        boolean addSuccess = sysUserService.addUserScore(datasetOwnerId, pointsToDeduct);
-                        System.out.println("为发布者增加积分结果: " + addSuccess);
-                        if(!addSuccess){
-                            // 回滚之前成功的积分操作 (包括当前用户的扣分)
-                            for (Runnable undo : successfulOperations) {
-                                undo.run();
-                            }
-                            return ResultGenerator.getFailResult("为发布者增加积分失败，样本ID " + targetDataset.getId());
-                        }
-                        successfulOperations.add(() -> sysUserService.subtractUserScore(datasetOwnerId, pointsToDeduct)); // 添加回滚操作
-                    }
-                } else {
-                    System.out.println("该数据集不需要积分，样本ID: " + targetDataset.getId());
-                }
-
-                // 记录兑换
-                System.out.println("准备记录兑换，用户ID: " + userId + ", 数据集ID: " + targetDataset.getId());
-                Boolean exchangeSuccess = myDatasetService.exchangeDataset(userId, targetDataset.getId());
-                System.out.println("兑换记录结果: " + exchangeSuccess);
-                if (!exchangeSuccess) {
-                    // 回滚之前成功的操作
-                    System.out.println("兑换记录失败，开始回滚操作");
-                    for (Runnable undo : successfulOperations) {
-                        undo.run();
-                    }
-                    return ResultGenerator.getFailResult("兑换记录失败，样本ID " + targetDataset.getId());
-                }
-            }
-
-            return ResultGenerator.getSuccessResult("兑换成功");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResultGenerator.getFailResult("兑换失败：" + e.getMessage());
-        }
-    }
-
-    /**
-     * 获取用户已兑换的数据集
-     *
-     * @return 用户已兑换的数据集列表
-     */
-    @GetMapping("/getMyDatasets")
-    public Result getMyDatasets() {
-        try {
-            // 获取当前用户
-            LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            SysUser currentUser = loginUser.getSysUser();
-            Integer userId = currentUser.getUserid();
-
-            List<Map<String, Object>> myDatasets = myDatasetService.findMyDatasetsByUserId(userId);
-            return ResultGenerator.getSuccessResult(myDatasets);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResultGenerator.getFailResult("获取已兑换数据集失败：" + e.getMessage());
-        }
-    }
-
-    /**
-     * 下载已兑换的数据集（不扣除积分）
-     *
-     * @param map 请求参数，包含sampleIds
-     * @param response HTTP响应
-     * @return 下载结果
-     */
-    @PostMapping("/downloadMyDatasets")
-    public Result downloadMyDatasets(@RequestBody Map<String,Object> map, HttpServletResponse response) {
-        try {
-            // 获取当前用户
-            LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-            SysUser currentUser = loginUser.getSysUser();
-            Integer userId = currentUser.getUserid();
-
-            String sampleIdsStr = (String) map.get("sampleIds");
-            if (sampleIdsStr == null || sampleIdsStr.isEmpty()) {
-                return ResultGenerator.getFailResult("样本ID不能为空");
-            }
-
-            List<String> sampleIdStrList = Arrays.asList(sampleIdsStr.split(","));
-            List<Integer> taskIdsForDownload = new ArrayList<>();
-
-            // 验证用户是否已兑换这些数据集
-            for (String sampleIdSingleStr : sampleIdStrList) {
-                try {
-                    Integer currentSampleStoreId = Integer.parseInt(sampleIdSingleStr.trim());
-
-                    Dataset targetDataset = datasetService.findDatasetByContainedSampleStoreId(currentSampleStoreId);
-                    if (targetDataset == null) {
-                        return ResultGenerator.getFailResult("未找到样本ID " + currentSampleStoreId + " 对应的共享数据集信息");
-                    }
-
-                    // 检查用户是否已兑换该数据集
-                    Boolean hasExchanged = myDatasetService.checkUserHasDataset(userId, targetDataset.getId());
-                    if (!hasExchanged) {
-                        return ResultGenerator.getFailResult("您尚未兑换数据集: " + targetDataset.getName() + "，请先兑换后再下载");
-                    }
-
-                    DatasetStore datasetStore = datasetStoreService.getById(currentSampleStoreId);
-                    if (datasetStore != null && datasetStore.getTaskId() != null) {
-                        if (!taskIdsForDownload.contains(datasetStore.getTaskId())) {
-                            taskIdsForDownload.add(datasetStore.getTaskId());
-                        }
-                    }
-                } catch (NumberFormatException e) {
-                    return ResultGenerator.getFailResult("无效的样本ID格式: " + sampleIdSingleStr);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    return ResultGenerator.getFailResult("处理样本ID " + sampleIdSingleStr + " 时发生错误: " + e.getMessage());
-                }
-            }
-
-            if (taskIdsForDownload.isEmpty()) {
-                return ResultGenerator.getFailResult("根据提供的样本ID未能找到有效的任务进行下载");
-            }
-
-            // 调用现有的下载方法（不扣除积分）
-            Map<String, Object> taskIdsMap = new HashMap<>();
-            taskIdsMap.put("taskIds", taskIdsForDownload);
-            return downloadMultipleDatasets(taskIdsMap, response);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResultGenerator.getFailResult("下载失败：" + e.getMessage());
-        }
-    }
 }

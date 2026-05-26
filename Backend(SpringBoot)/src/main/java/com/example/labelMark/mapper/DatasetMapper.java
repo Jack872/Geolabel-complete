@@ -23,9 +23,9 @@ public interface DatasetMapper extends BaseMapper<Dataset> {
      *
      * @param dataset 数据集对象
      */
-    @Insert("INSERT INTO dataset (name, set_dess, thumb_url, num, cont, email, sorts, user_id, goal, task_type, sample_id) " +
-            "VALUES (#{name}, #{setDess}, #{thumbUrl}, #{num}, #{cont}, #{email}, #{sorts}, #{userId}, #{goal}, #{taskType}, #{sampleId})")
-    @Options(useGeneratedKeys = true, keyProperty = "datasetId")
+    @Insert("INSERT INTO dataset (name, description, thumb_url, sample_num, contact, email, sorts, user_id, task_type, set_type) " +
+            "VALUES (#{name}, #{description}, #{thumbUrl}, #{sampleNum}, #{contact}, #{email}, #{sorts}, #{userId}, #{taskType}, #{setType})")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
     void createDataset(Dataset dataset);
 
     /**

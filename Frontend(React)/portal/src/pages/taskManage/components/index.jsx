@@ -1,6 +1,5 @@
-import { Modal, Form, Input, Select, DatePicker, message, Radio, InputNumber, Button, Checkbox } from 'antd';
+import { Modal, Form, Input, Select, DatePicker, message, Radio, InputNumber, Checkbox } from 'antd';
 import moment from 'moment';
-import UserTransfer from './UserTransfer';
 import { useEffect, useMemo, useState } from 'react';
 import { useModel } from 'umi';
 import { reqGetDatasetList } from '@/services/dataset/api';
@@ -23,16 +22,9 @@ export default ({
   const [typeList, setTypeList] = useState(renderTypeList);
   const [, setAssignmentVersion] = useState(0);
   const safeTypeList = useMemo(() => (Array.isArray(typeList) ? typeList : []), [typeList]);
-  const filteredOptions = safeTypeList;
 
   // 获取当前用户信息和影像集分组信息
-  const { initialState } = useModel('@@initialState');
-  const { currentState } = initialState || {};
-  const isAdmin = currentState?.isAdmin === 1;
   const { serverListBySetName, getServerListBySetName } = useModel('serverModel');
-
-  // 初始化targetUserType状态
-  const [targetUserType, setTargetUserType] = useState(isAdmin ? 'specificTeamUsers' : 'allNonAdminUsers');
   const [mapSelectMode, setMapSelectMode] = useState('byName'); // 默认按影像名称选择
   const [userArrId, setUserArrId] = useState([]);
   const [datasetSetTypeMap, setDatasetSetTypeMap] = useState({});
@@ -93,13 +85,6 @@ export default ({
         };
       }),
     );
-
-    // 普通用户默认选择"所有非管理员用户"
-    if (!isAdmin) {
-      setTargetUserType('allNonAdminUsers');
-      form.setFieldsValue({ targetUserType: 'allNonAdminUsers' });
-    }
-
     // 获取影像集分组数据
     getServerListBySetName();
 
@@ -133,7 +118,7 @@ export default ({
         setAttributeDefs([]);
       }
     })();
-  }, [renderTypeList, isAdmin, form, getServerListBySetName]);
+  }, [renderTypeList, form, getServerListBySetName]);
 
   useEffect(() => {
     if (userArr && userArr.length > 0) {
@@ -164,30 +149,6 @@ export default ({
   };
   const onSearch = (value) => {
     console.log('search:', value);
-  };
-
-  // 处理目标用户类型变更
-  const handleTargetUserTypeChange = (value) => {
-    // 普通用户不允许更改目标用户类型
-    if (!isAdmin) {
-      return;
-    }
-
-    setTargetUserType(value);
-
-    // 清除之前可能选择的用户
-    if (value !== 'specificTeamUsers') {
-      form.setFieldsValue({ userArr: [] });
-      setUserList([]);
-    }
-
-    // 当切换到"所有团队成员"时，清空积分字段
-    if (value === 'allTeamMembers') {
-      form.setFieldsValue({ score: undefined });
-    } else if (value === 'allNonTeamUsers' || value === 'allNonAdminUsers') {
-      // 当切换到"所有非团队用户"或"所有非管理员用户"时，设置默认积分为0
-      form.setFieldsValue({ score: 0 });
-    }
   };
 
   // 处理地图选择模式变更
@@ -234,17 +195,6 @@ export default ({
     const selectedSetNames = form.getFieldValue('setNames') || [];
     if (!selectedSetNames.length) return false;
     return selectedSetNames.every((name) => datasetSetTypeMap[name] === 'local');
-  };
-
-  // 判断是否应该显示积分输入框
-  const shouldShowScoreInput = () => {
-    // 非管理员用户总是显示积分输入框
-    if (!isAdmin) {
-      return true;
-    }
-
-    // 管理员用户只有在选择"所有非团队用户"时显示积分输入框
-    return targetUserType === 'allNonTeamUsers';
   };
 
   const attrDefById = useMemo(() => {
@@ -336,39 +286,12 @@ export default ({
               });
               return;
             }
-            // 根据目标用户类型处理表单数据
             const formData = { ...values };
-
-            // 添加目标用户类型
-            formData.targetUserType = targetUserType;
-
-            // 如果是非团队任务 (targetUserType === 'allNonAdminUsers' 或者 isAdmin 为 false 且选择了 allNonTeamUsers)
-            // 并且 score 存在，则加入到 formData 中
-            const isNonTeamTask = targetUserType === 'allNonAdminUsers' || targetUserType === 'allNonTeamUsers';
-            if (isNonTeamTask && formData.score !== undefined) {
-                // score 已经由 Form 收集
-            } else if (isNonTeamTask) {
-                formData.score = 0; // 默认积分为0
-            }
-
-            if (targetUserType === 'specificTeamUsers') {
-              // 为特定用户分配任务时，构建userArr和specificUserAssignments
-              const specificUserAssignments = [];
-
-              // 准备特定用户的分配信息
-              userList?.forEach(({ userName }) => {
-                const typeArr = formData[userName] || [];
-                specificUserAssignments.push({
-                  username: userName,
-                  typeArr: typeArr
-                });
-              });
-
-              formData.specificUserAssignments = specificUserAssignments;
-            } else {
-              // 对于"所有团队成员"和"所有非团队用户"，收集统一的样本类型
-              formData.selectedSampleTypes = formData.uniformSampleTypes || [];
-            }
+            formData.targetUserType = 'specificTeamUsers';
+            formData.specificUserAssignments = userList?.map(({ userName }) => ({
+              username: userName,
+              typeArr: formData[userName] || [],
+            })) || [];
 
             formData.taskTypeAttributes = buildTaskTypeAttributesPayload(formData);
             if (
@@ -394,9 +317,7 @@ export default ({
         name="form_in_modal"
         initialValues={{
           modifier: 'public',
-          targetUserType: isAdmin ? 'specificTeamUsers' : 'allNonAdminUsers', // 普通用户默认且只能选择"所有非管理员用户"
           mapSelectMode: 'byName', // 默认按影像名称选择
-          score: 0, // 初始化 score
           ...defaultTaskTypeAttributeValues,
         }}
         labelCol={{ span: 6 }}
@@ -522,68 +443,7 @@ export default ({
           />
         </Form.Item>
 
-        {/* 目标用户类型选择 */}
-        <Form.Item
-          label="目标用户类型"
-          name="targetUserType"
-          initialValue={isAdmin ? targetUserType : 'allNonAdminUsers'}
-          rules={[{ required: !isEdit, message: '必须选择目标用户类型！' }]}
-        >
-          <Select
-            placeholder="请选择目标用户类型"
-            onChange={handleTargetUserTypeChange}
-            disabled={isEdit || !isAdmin} // 普通用户不能更改，编辑模式冻结
-          >
-            {isAdmin ? (
-              <>
-                <Select.Option value="allTeamMembers">所有团队成员</Select.Option>
-                <Select.Option value="specificTeamUsers">指定团队用户</Select.Option>
-                <Select.Option value="allNonTeamUsers">所有非团队用户</Select.Option>
-              </>
-            ) : (
-              <Select.Option value="allNonAdminUsers">所有非管理员用户</Select.Option>
-            )}
-          </Select>
-        </Form.Item>
-
-        {/* 根据shouldShowScoreInput()函数判断是否显示积分输入框 */}
-        {!isEdit && shouldShowScoreInput() && (
-          <Form.Item
-            label="每张影像积分"
-            name="score"
-            rules={[
-              { required: true, message: '请输入每张影像的积分!' },
-              { type: 'number', min: 0, message: '积分不能为负数!' }
-            ]}
-            tooltip="发布非团队任务时，设置标注每张影像完成后，标注者获得的积分。"
-          >
-            <InputNumber style={{ width: '100%' }} placeholder="请输入积分" />
-          </Form.Item>
-        )}
-
-        {/* 统一样本类型选择（当目标用户类型不是"指定团队用户"时显示） */}
-        {targetUserType !== 'specificTeamUsers' && (
-          <Form.Item
-            label="样本类型"
-            name="uniformSampleTypes"
-            rules={[{ required: !isEdit, message: '必须选择样本类型！' }]}
-          >
-            <Select
-              mode="multiple"
-              showArrow
-              allowClear
-              disabled={isEdit}
-              placeholder="请选择样本类型"
-              options={filteredOptions.map((item) => ({
-                value: item.typeId,
-                label: item.typeName,
-              }))}
-            />
-          </Form.Item>
-        )}
-
-        {/* 指定用户和对应的样本类型（当目标用户类型为"指定团队用户"时显示） */}
-        {targetUserType === 'specificTeamUsers' && isAdmin && (
+        {!isEdit && (
           <>
             <Form.Item
               label="任务受理人"

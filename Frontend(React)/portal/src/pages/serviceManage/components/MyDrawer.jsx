@@ -3,6 +3,34 @@ import { useState, useEffect } from 'react';
 import { reqGetServerThumbnail } from '@/services/serviceManage/api';
 import '../css.css';
 
+const formatMapYear = (value) => {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  const match = text.match(/\d{4}/);
+  return match ? match[0] : text;
+};
+
+const formatPublishTime = (value) => {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}` : text;
+};
+
+const getFileBaseName = (value) => {
+  if (!value) return '';
+  return String(value)
+    .trim()
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase();
+};
+
+const shouldShowDescription = (content) => {
+  if (!content?.serDesc) return false;
+  return getFileBaseName(content.serDesc) !== getFileBaseName(content.serName);
+};
+
 export default function MyDrawer(props) {
   const { visible, content, onClose } = props;
   const [thumbnailUrl, setThumbnailUrl] = useState(null);
@@ -96,10 +124,12 @@ export default function MyDrawer(props) {
         {/* 服务信息部分 */}
         <div>
           <h3 className="section-title">服务信息</h3>
-          <p style={{ fontSize: '16px', marginBottom: '15px' }}>服务描述：{content.serDesc}</p>
+          {shouldShowDescription(content) && (
+            <p style={{ fontSize: '16px', marginBottom: '15px' }}>服务描述：{content.serDesc}</p>
+          )}
           <p style={{ fontSize: '16px', marginBottom: '15px' }}>发布人：{content.publisher}</p>
-          <p style={{ fontSize: '16px', marginBottom: '15px' }}>地图年份：{content.serYear}</p>
-          <p style={{ fontSize: '16px', marginBottom: '15px' }}>发布时间：{content.publishTime}</p>
+          <p style={{ fontSize: '16px', marginBottom: '15px' }}>地图年份：{formatMapYear(content.serYear)}</p>
+          <p style={{ fontSize: '16px', marginBottom: '15px' }}>发布时间：{formatPublishTime(content.publishTime)}</p>
           <p style={{ fontSize: '16px', marginBottom: '15px' }}>发布地址：{content.publishUrl}</p>
         </div>
       </div>

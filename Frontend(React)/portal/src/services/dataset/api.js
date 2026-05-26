@@ -107,16 +107,6 @@ export async function reqGetSharedDatasets(params) {
   });
 }
 
-// 下载共享数据集
-export async function reqDownloadSharedDataset(params) {
-  return request(`/wegismarkapi/datasetStore/downloadBySampleIds`, {
-    method: 'post',
-    data: params,
-    skipErrorHandler: true,
-    // responseType: 'blob',
-  });
-}
-
 // 获取所有共享数据集列表
 export async function reqGetAllSharedDatasets() {
   return request(`/wegismarkapi/dataset/findAllDatasets`, {
@@ -125,26 +115,9 @@ export async function reqGetAllSharedDatasets() {
   });
 }
 
-// 兑换共享数据集
-export async function reqExchangeSharedDataset(params) {
-  return request(`/wegismarkapi/datasetStore/exchangeBySampleIds`, {
-    method: 'post',
-    data: params,
-    skipErrorHandler: true,
-  });
-}
-
-// 获取用户已兑换的数据集
-export async function reqGetMyDatasets() {
-  return request(`/wegismarkapi/datasetStore/getMyDatasets`, {
-    method: 'get',
-    skipErrorHandler: true,
-  });
-}
-
-// 下载已兑换的数据集
-export async function reqDownloadMyDatasets(params) {
-  return request(`/wegismarkapi/datasetStore/downloadMyDatasets`, {
+// 下载共享数据集
+export async function reqDownloadSharedDataset(params) {
+  return request(`/wegismarkapi/datasetStore/downloadBySampleIds`, {
     method: 'post',
     data: params,
     skipErrorHandler: true,

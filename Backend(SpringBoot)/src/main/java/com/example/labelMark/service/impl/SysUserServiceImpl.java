@@ -35,10 +35,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
      */
     @Override
     public int createUser(SysUser user) {
-        // 初始化用户积分为0
-        if (user.getScore() == null) {
-            user.setScore(0);
-        }
         return SysUserMapper.insert(user);
     }
 
@@ -234,56 +230,4 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         return updateById(user);
     }
 
-    /**
-     * 更新用户的积分
-     *
-     * @param userId 用户ID
-     * @param score 新的积分值
-     * @return 更新是否成功
-     */
-    @Override
-    public boolean updateUserScore(Integer userId, Integer score) {
-        SysUser user = new SysUser();
-        user.setUserid(userId);
-        user.setScore(score);
-        return updateById(user);
-    }
-
-    /**
-     * 为用户添加积分
-     *
-     * @param userId 用户ID
-     * @param score 要添加的积分值
-     * @return 更新是否成功
-     */
-    @Override
-    public boolean addUserScore(Integer userId, Integer score) {
-        SysUser user = getById(userId);
-        if (user != null && score != null && score > 0) {
-            Integer currentScore = user.getScore() != null ? user.getScore() : 0;
-            user.setScore(currentScore + score);
-            return updateById(user);
-        }
-        return false;
-    }
-
-    /**
-     * 为用户减去积分
-     *
-     * @param userId 用户ID
-     * @param score 要减去的积分值
-     * @return 更新是否成功
-     */
-    @Override
-    public boolean subtractUserScore(Integer userId, Integer score) {
-        SysUser user = getById(userId);
-        if (user != null && score != null && score > 0) {
-            Integer currentScore = user.getScore() != null ? user.getScore() : 0;
-            if (currentScore >= score) {
-                user.setScore(currentScore - score);
-                return updateById(user);
-            }
-        }
-        return false;
-    }
 }

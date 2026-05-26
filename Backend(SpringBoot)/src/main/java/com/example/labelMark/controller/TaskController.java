@@ -165,46 +165,14 @@ public class TaskController {
         if (taskItems.isEmpty()) {
             return ResultGenerator.getFailResult("请至少选择一张影像");
         }
-
-        Integer taskScore = parseScore(map.get("score"));
-        String targetUserType = map.get("targetUserType").toString();
+        String targetUserType = "specificTeamUsers";
         int taskClass = 0;
-
-        if (currentUser.getIsadmin() == 0) {
-            targetUserType = "allNonAdminUsers";
-            taskClass = 1;
-        } else {
-            if ("allNonTeamUsers".equals(targetUserType)) {
-                taskClass = 1;
-            } else if ("specificTeamUsers".equals(targetUserType) || "allTeamMembers".equals(targetUserType)) {
-                taskClass = 0;
-            } else {
-                return ResultGenerator.getFailResult("无效的目标用户类型");
-            }
-        }
-
-        if (taskClass == 1 && taskScore > 0) {
-            Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
-            if (creatorCurrentScore < taskScore) {
-                return ResultGenerator.getFailResult("积分不足，无法创建任务。您需要 " + taskScore + " 积分，当前拥有 " + creatorCurrentScore + " 积分。");
-            }
-            boolean subtractSuccess = sysUserService.subtractUserScore(creatorUserId, taskScore);
-            if (!subtractSuccess) {
-                return ResultGenerator.getFailResult("扣除发布者积分失败，请重试");
-            }
-        }
 
         int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
         if (taskId == -1) {
-            if (taskClass == 1 && taskScore > 0) {
-                sysUserService.addUserScore(creatorUserId, taskScore);
-            }
             return ResultGenerator.getFailResult("创建任务主体失败");
         }
 
-        if (taskScore > 0) {
-            taskService.updateTaskScore(taskId, taskScore);
-        }
         applyTaskAnnotationSchema(taskId, map);
         applyTaskTypeAttributes(taskId, map);
         recordTaskCreateProvenance(taskId, creatorUserId);
@@ -408,19 +376,6 @@ public class TaskController {
 
         taskService.auditTask(taskId, status, auditFeedback);
 
-        // 如果审核通过 (status == 1)，给提交者增加积分
-        if (status == 1) {
-            Task task = taskService.selectTaskById(taskId);
-            if (task != null && task.getSubmitterId() != null && task.getScore() != null && task.getScore() > 0) {
-                Integer submitterId = task.getSubmitterId();
-                Integer taskScore = task.getScore();
-                boolean addScoreSuccess = sysUserService.addUserScore(submitterId, taskScore);
-                if (!addScoreSuccess) {
-                    // 记录日志或进行其他错误处理，但通常不应阻止审核通过的流程
-                    System.err.println("为用户 " + submitterId + " 增加积分 " + taskScore + " 失败，任务ID: " + taskId);
-                }
-            }
-        }
         return ResultGenerator.getSuccessResult("审核成功");
     }
 
@@ -841,7 +796,6 @@ public class TaskController {
         taskInfo.setStatus(task.getStatus());
         taskInfo.setAuditfeedback(task.getAuditFeedback());
         taskInfo.setTaskClass(task.getTaskClass());
-        taskInfo.setScore(task.getScore());
         taskInfo.setTaskSource(currentTaskItem != null ? currentTaskItem.getTaskSource() : task.getTaskSource());
         taskInfo.setCoordinateSystem(resolveTaskCoordinateSystem(task, currentTaskItem));
         taskInfo.setAnnotationSchema(getCachedTaskAnnotationSchema(task));
@@ -1038,36 +992,14 @@ public class TaskController {
             taskItem.setServerId(0);
         }
 
-        String targetUserType = String.valueOf(map.getOrDefault("targetUserType", ""));
-        if (currentUser.getIsadmin() == 0) {
-            targetUserType = "allNonAdminUsers";
-        }
-        int taskClass = currentUser.getIsadmin() == 0 ? 1 :
-                ("allNonTeamUsers".equals(targetUserType) ? 1 : 0);
-        Integer scorePerTask = parseScore(map.get("score"));
-
-        if (taskClass == 1 && scorePerTask > 0) {
-            Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
-            if (creatorCurrentScore < scorePerTask) {
-                return ResultGenerator.getFailResult("积分不足，无法创建任务。您需要 " + scorePerTask + " 积分，当前拥有 " + creatorCurrentScore + " 积分。");
-            }
-            boolean subtractSuccess = sysUserService.subtractUserScore(creatorUserId, scorePerTask);
-            if (!subtractSuccess) {
-                return ResultGenerator.getFailResult("扣除发布者积分失败，请重试");
-            }
-        }
+        String targetUserType = "specificTeamUsers";
+        int taskClass = 0;
 
         int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
         if (taskId == -1) {
-            if (taskClass == 1 && scorePerTask > 0) {
-                sysUserService.addUserScore(creatorUserId, scorePerTask);
-            }
             return ResultGenerator.getFailResult("创建本地任务失败");
         }
 
-        if (scorePerTask > 0) {
-            taskService.updateTaskScore(taskId, scorePerTask);
-        }
         applyTaskAnnotationSchema(taskId, map);
         applyTaskTypeAttributes(taskId, map);
         recordTaskCreateProvenance(taskId, creatorUserId);
@@ -1104,13 +1036,8 @@ public class TaskController {
             return ResultGenerator.getFailResult("至少选择一个影像集");
         }
 
-        String targetUserType = String.valueOf(map.getOrDefault("targetUserType", ""));
-        if (currentUser.getIsadmin() == 0) {
-            targetUserType = "allNonAdminUsers";
-        }
-        int taskClass = currentUser.getIsadmin() == 0 ? 1 :
-                ("allNonTeamUsers".equals(targetUserType) ? 1 : 0);
-        Integer scorePerTask = parseScore(map.get("score"));
+        String targetUserType = "specificTeamUsers";
+        int taskClass = 0;
         List<String> failReasons = new ArrayList<>();
 
         // 仅用于定位“当前用户可访问的本地影像集”
@@ -1200,28 +1127,12 @@ public class TaskController {
             return ResultGenerator.getFailResult("所选影像集内没有可创建任务的影像");
         }
 
-        if (taskClass == 1 && scorePerTask > 0) {
-            Integer creatorCurrentScore = currentUser.getScore() != null ? currentUser.getScore() : 0;
-            if (creatorCurrentScore < scorePerTask) {
-                return ResultGenerator.getFailResult("积分不足，需 " + scorePerTask + "，当前 " + creatorCurrentScore);
-            }
-            boolean subtractSuccess = sysUserService.subtractUserScore(creatorUserId, scorePerTask);
-            if (!subtractSuccess) {
-                return ResultGenerator.getFailResult("扣除发布者积分失败，请重试");
-            }
-        }
 
         int taskId = taskService.createTaskWithItems(dateRangeStr, taskName, taskType, creatorUserId, taskClass, taskItems);
         if (taskId == -1) {
-            if (taskClass == 1 && scorePerTask > 0) {
-                sysUserService.addUserScore(creatorUserId, scorePerTask);
-            }
             return ResultGenerator.getFailResult("多影像任务创建失败");
         }
 
-        if (scorePerTask > 0) {
-            taskService.updateTaskScore(taskId, scorePerTask);
-        }
         applyTaskAnnotationSchema(taskId, map);
         applyTaskTypeAttributes(taskId, map);
         recordTaskCreateProvenance(taskId, creatorUserId);
@@ -1580,20 +1491,6 @@ public class TaskController {
         return ResultGenerator.getSuccessResult(options);
     }
 
-    private Integer parseScore(Object scoreObj) {
-        if (scoreObj == null) return 0;
-        try {
-            if (scoreObj instanceof Integer) return (Integer) scoreObj;
-            if (scoreObj instanceof Double) return ((Double) scoreObj).intValue();
-            String scoreStr = scoreObj.toString().trim();
-            if (scoreStr.isEmpty()) return 0;
-            int score = (int) Double.parseDouble(scoreStr);
-            return Math.max(score, 0);
-        } catch (Exception ignore) {
-            return 0;
-        }
-    }
-
     private List<TaskItem> buildTaskItemsFromRequest(Map<String, Object> requestMap, String taskName) {
         List<TaskItem> taskItems = new ArrayList<>();
         Object rawTaskItems = requestMap.get("taskItems");
@@ -1816,93 +1713,36 @@ public class TaskController {
 
     private Result assignUsersForTask(Integer taskId, Map<String, Object> map, SysUser currentUser,
                                       String targetUserType, Integer teamId, Integer creatorUserId) {
-        List<SysUser> targetUsers = new ArrayList<>();
         Set<String> assignedUsernames = new LinkedHashSet<>();
         Map<String, Set<Integer>> assignedTypeMap = new LinkedHashMap<>();
-        if (currentUser.getIsadmin() == 0) {
-            targetUsers = sysUserService.getAllNonAdminUsers();
-            targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
-            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
-            for (SysUser user : targetUsers) {
-                if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                    return ResultGenerator.getFailResult("为用户 '" + user.getUsername() + "' 分配任务失败");
-                }
-                assignedUsernames.add(user.getUsername());
-                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
-            }
-            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
-            recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
-            return ResultGenerator.getSuccessResult("OK");
+        List<Map<String, Object>> specificUserAssignments = (List<Map<String, Object>>) map.get("specificUserAssignments");
+        if (specificUserAssignments == null || specificUserAssignments.isEmpty()) {
+            return ResultGenerator.getFailResult("No specific users assigned");
         }
-
-        if ("allTeamMembers".equals(targetUserType)) {
-            if (teamId == null) return ResultGenerator.getFailResult("管理员无团队信息");
-            targetUsers = sysUserService.getUsersByTeamIdAndNotAdmin(teamId);
-            targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
-            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
-            for (SysUser user : targetUsers) {
-                if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                    return ResultGenerator.getFailResult("为团队成员 '" + user.getUsername() + "' 分配任务失败");
-                }
-                assignedUsernames.add(user.getUsername());
-                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
+        for (Map<String, Object> assignment : specificUserAssignments) {
+            String username = String.valueOf(assignment.get("username"));
+            SysUser assignedUser = sysUserService.findByUsername(username);
+            if (assignedUser == null) {
+                return ResultGenerator.getFailResult("Specified user '" + username + "' does not exist");
             }
-            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
-            recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
-            return ResultGenerator.getSuccessResult("OK");
+            if (assignedUser.getIsadmin() == null || assignedUser.getIsadmin() != 0) {
+                return ResultGenerator.getFailResult("Specified user '" + username + "' is not a normal user");
+            }
+            if (teamId == null || !Objects.equals(assignedUser.getTeamId(), teamId)) {
+                return ResultGenerator.getFailResult("Specified user '" + username + "' is not in current team");
+            }
+            List<?> rawTypeArr = (List<?>) assignment.get("typeArr");
+            Set<Integer> typeIds = normalizeTypeIds(rawTypeArr);
+            String typeStr = toTypeString(new ArrayList<>(typeIds));
+            if (!taskAcceptedService.createTaskAccept(taskId, username, typeStr)) {
+                return ResultGenerator.getFailResult("Failed to assign task to user '" + username + "'");
+            }
+            assignedUsernames.add(username);
+            assignedTypeMap.put(username, new LinkedHashSet<>(typeIds));
         }
-
-        if ("allNonTeamUsers".equals(targetUserType)) {
-            targetUsers = sysUserService.getNonTeamUsersAndNotAdmin(teamId);
-            targetUsers.removeIf(user -> user.getUserid().equals(creatorUserId));
-            Set<Integer> commonTypeIds = normalizeTypeIds((List<?>) map.get("selectedSampleTypes"));
-            String commonTypeStr = toTypeString(new ArrayList<>(commonTypeIds));
-            for (SysUser user : targetUsers) {
-                if (!taskAcceptedService.createTaskAccept(taskId, user.getUsername(), commonTypeStr)) {
-                    return ResultGenerator.getFailResult("为非团队用户 '" + user.getUsername() + "' 分配任务失败");
-                }
-                assignedUsernames.add(user.getUsername());
-                assignedTypeMap.put(user.getUsername(), new LinkedHashSet<>(commonTypeIds));
-            }
-            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
-            recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
-            return ResultGenerator.getSuccessResult("OK");
-        }
-
-        if ("specificTeamUsers".equals(targetUserType)) {
-            List<Map<String, Object>> specificUserAssignments = (List<Map<String, Object>>) map.get("specificUserAssignments");
-            if (specificUserAssignments == null || specificUserAssignments.isEmpty()) {
-                return ResultGenerator.getFailResult("未指定任何用户进行任务分配");
-            }
-            for (Map<String, Object> assignment : specificUserAssignments) {
-                String username = String.valueOf(assignment.get("username"));
-                SysUser assignedUser = sysUserService.findByUsername(username);
-                if (assignedUser == null) {
-                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不存在");
-                }
-                if (assignedUser.getIsadmin() == null || assignedUser.getIsadmin() != 0) {
-                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不是普通用户");
-                }
-                if (teamId == null || !Objects.equals(assignedUser.getTeamId(), teamId)) {
-                    return ResultGenerator.getFailResult("指定用户 '" + username + "' 不属于当前团队");
-                }
-                List<?> rawTypeArr = (List<?>) assignment.get("typeArr");
-                Set<Integer> typeIds = normalizeTypeIds(rawTypeArr);
-                String typeStr = toTypeString(new ArrayList<>(typeIds));
-                if (!taskAcceptedService.createTaskAccept(taskId, username, typeStr)) {
-                    return ResultGenerator.getFailResult("为特定用户 '" + username + "' 分配任务失败");
-                }
-                assignedUsernames.add(username);
-                assignedTypeMap.put(username, new LinkedHashSet<>(typeIds));
-            }
-            syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
-            recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
-            return ResultGenerator.getSuccessResult("OK");
-        }
-
-        return ResultGenerator.getFailResult("无效的目标用户类型");
+        syncTaskItemTypeAcceptedForTask(taskId, assignedTypeMap);
+        recordTaskAssignProvenance(taskId, creatorUserId, targetUserType, assignedUsernames);
+        return ResultGenerator.getSuccessResult("OK");
     }
 
     private String toTypeString(List<?> rawTypes) {

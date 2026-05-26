@@ -48,25 +48,6 @@ public class DatasetController {
             String setDess = (String) params.get("setDess");
             String cont = (String) params.get("cont");
             String email = (String) params.get("email");
-            Integer goal = 0; // 默认积分为0
-            if (params.containsKey("goal") && params.get("goal") != null) {
-                try {
-                    Object goalObj = params.get("goal");
-                    if (goalObj instanceof Integer) {
-                        goal = (Integer) goalObj;
-                    } else if (goalObj instanceof Double) {
-                        goal = ((Double) goalObj).intValue();
-                    } else {
-                        String goalStr = goalObj.toString().trim();
-                        if (!goalStr.isEmpty()) {
-                            goal = Integer.parseInt(goalStr);
-                        }
-                    }
-                    if (goal < 0) goal = 0; // 确保积分为非负
-                } catch (NumberFormatException e) {
-                    goal = 0; // 解析失败默认为0
-                }
-            }
 
             if (sampleIds == null || sampleIds.isEmpty()) {
                 return ResultGenerator.getFailResult("样本ID不能为空");
@@ -76,7 +57,7 @@ public class DatasetController {
                 return ResultGenerator.getFailResult("数据集名称不能为空");
             }
 
-            Integer datasetId = datasetService.publishSharedDataset(sampleIds, name, setDess, cont, email, goal);
+            Integer datasetId = datasetService.publishSharedDataset(sampleIds, name, setDess, cont, email);
 
             if (datasetId == null) {
                 return ResultGenerator.getFailResult("发布共享数据集失败");

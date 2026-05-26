@@ -69,7 +69,6 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
         task.setTaskType(taskType);
         task.setUserId(userId);
         task.setTaskClass(taskClass);
-        task.setScore(0);
         boolean isSaved = save(task);
         if (!isSaved) {
             return -1;
@@ -201,7 +200,6 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             taskInfoDTO.setId(Integer.valueOf(ObjectUtil.toString(map.get("id"))));
             taskInfoDTO.setTypeArr(ObjectUtil.toString(map.get("type_arr")));
             taskInfoDTO.setTaskClass(map.get("task_class") != null ? Integer.valueOf(ObjectUtil.toString(map.get("task_class"))) : 0);
-            taskInfoDTO.setScore(map.get("score") != null ? Integer.valueOf(ObjectUtil.toString(map.get("score"))) : 0);
             taskInfoDTO.setAnnotationSchema(parseAnnotationSchema(map.get("annotation_schema")));
             taskInfoDTO.setAnnotationSchemaVersion(parseIntegerValue(map.get("annotation_schema_version"), 1));
             list.add(taskInfoDTO);
@@ -335,7 +333,6 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
             taskInfoDTO.setStatus(Integer.valueOf(ObjectUtil.toString(map.get("status"))));
             taskInfoDTO.setAuditfeedback(map.get("audit_feedback") != null ? ObjectUtil.toString(map.get("audit_feedback")) : null);
             taskInfoDTO.setTaskClass(map.get("task_class") != null ? Integer.valueOf(ObjectUtil.toString(map.get("task_class"))) : 0);
-            taskInfoDTO.setScore(map.get("score") != null ? Integer.valueOf(ObjectUtil.toString(map.get("score"))) : 0);
             taskInfoDTO.setAnnotationSchema(parseAnnotationSchema(map.get("annotation_schema")));
             taskInfoDTO.setAnnotationSchemaVersion(parseIntegerValue(map.get("annotation_schema_version"), 1));
             list.add(taskInfoDTO);
@@ -352,17 +349,6 @@ public class TaskServiceImpl extends ServiceImpl<TaskMapper, Task> implements Ta
     @Override
     public void updateTaskSubmitter(Integer taskId, Integer userId) {
         taskMapper.updateTaskSubmitter(taskId, userId);
-    }
-
-    /**
-     * 更新任务的积分
-     *
-     * @param taskId 任务ID
-     * @param score  积分
-     */
-    @Override
-    public void updateTaskScore(Integer taskId, Integer score) {
-        taskMapper.updateTaskScore(taskId, score);
     }
 
     @Override

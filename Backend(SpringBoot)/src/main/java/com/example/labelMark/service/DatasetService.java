@@ -48,10 +48,9 @@ public interface DatasetService extends IService<Dataset> {
      * @param setDess 数据集描述
      * @param cont 联系人
      * @param email 联系邮箱
-     * @param goal 下载所需积分
      * @return 数据集ID
      */
-    Integer publishSharedDataset(List<String> sampleIds, String name, String setDess, String cont, String email, Integer goal);
+    Integer publishSharedDataset(List<String> sampleIds, String name, String setDess, String cont, String email);
 
 
 

@@ -108,12 +108,4 @@ public interface TaskMapper extends BaseMapper<Task> {
     @Update("UPDATE task SET submitter_id = #{userId} WHERE task_id = #{taskId}")
     void updateTaskSubmitter(Integer taskId, Integer userId);
 
-    /**
-     * 更新任务的积分
-     *
-     * @param taskId 任务ID
-     * @param score 积分
-     */
-    @Update("UPDATE task SET score = #{score} WHERE task_id = #{taskId}")
-    void updateTaskScore(Integer taskId, Integer score);
 }

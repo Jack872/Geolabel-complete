@@ -77,10 +77,6 @@ public class Task implements Serializable {
     @TableField("user_id")
     private Integer userId;
 
-    @ApiModelProperty("完成任务获得积分")
-    @TableField("score")
-    private Integer score;
-
     @ApiModelProperty("提交者ID")
     @TableField("submitter_id")
     private Integer submitterId;

@@ -9,7 +9,10 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 .list-total {
-  font-size: 13px;
+  margin-left: auto;
+  color: #000 !important;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* ===== ProList 样式优化 ===== */

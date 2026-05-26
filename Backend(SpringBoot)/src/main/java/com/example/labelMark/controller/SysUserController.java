@@ -254,7 +254,6 @@ public class SysUserController {
         Map<String, Object> map = new HashMap<>();
         map.put("currentUser", "");
         map.put("isAdmin", 0);
-        map.put("score", 0);
         map.put("teamId", null);
         map.put("teamName", null);
 
@@ -262,8 +261,6 @@ public class SysUserController {
             map.put("currentUser", currentUser.getUsername());
             map.put("userid", currentUser.getUserid());
             map.put("isAdmin", currentUser.getIsadmin());
-            map.put("score", currentUser.getScore() != null ? currentUser.getScore() : 0);
-
             if (currentUser.getTeamId() != null) {
                 map.put("teamId", currentUser.getTeamId());
                 try {

@@ -26,7 +26,6 @@ public class TaskInfoDTO {
     private String typeArr;
     private List<Map<String, Object>> userArr;
     private Integer taskClass; // 0为团队任务；1为非团队任务
-    private Integer score; // 任务积分
     private String taskSource; // geoserver/local
     private Integer serverId; // GeoServer服务ID
     private String coordinateSystem; // 当前任务影像坐标系

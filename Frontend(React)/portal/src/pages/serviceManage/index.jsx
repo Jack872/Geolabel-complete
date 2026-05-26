@@ -12,6 +12,34 @@ import './css.css';
 
 const { Text, Paragraph } = Typography;
 
+const formatMapYear = (value) => {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  const match = text.match(/\d{4}/);
+  return match ? match[0] : text;
+};
+
+const formatPublishTime = (value) => {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}` : text;
+};
+
+const getFileBaseName = (value) => {
+  if (!value) return '';
+  return String(value)
+    .trim()
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase();
+};
+
+const shouldShowDescription = (item) => {
+  if (!item.serDesc) return false;
+  return getFileBaseName(item.serDesc) !== getFileBaseName(item.serName);
+};
+
 export default () => {
   const [currentService, setCurrentService] = useState(null);
   const [visible, setVisible] = useState(false);
@@ -124,12 +152,12 @@ export default () => {
                   )}
                   {item.serYear && (
                     <Tag icon={<CalendarOutlined />} color="blue">
-                      {item.serYear}
+                      影像年份：{formatMapYear(item.serYear)}
                     </Tag>
                   )}
                   {item.publishTime && (
                     <Tag icon={<ClockCircleOutlined />} color="cyan">
-                      {item.publishTime}
+                      发布时间：{formatPublishTime(item.publishTime)}
                     </Tag>
                   )}
                 </div>
@@ -138,7 +166,7 @@ export default () => {
             content: {
               render: (_, item) => (
                 <div className="item-desc">
-                  {item.serDesc && (
+                  {shouldShowDescription(item) && (
                     <Paragraph
                       type="secondary"
                       ellipsis={{ rows: 2 }}

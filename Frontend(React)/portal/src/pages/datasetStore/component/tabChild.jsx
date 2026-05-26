@@ -1,4 +1,4 @@
-import { Button, Card, Col, Popconfirm, Row, Tag, message, Checkbox, Input, Modal, Form, InputNumber, Image } from 'antd';
+import { Button, Card, Col, Popconfirm, Row, Tag, message, Checkbox, Input, Modal, Form, Image } from 'antd';
 import '../style.less';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -327,8 +327,7 @@ export default function TabChild({
         name: values.name,
         setDess: values.description,
         cont: values.contact,
-        email: values.email,
-        goal: values.goal
+        email: values.email
       };
 
       // 添加用户ID或用户名
@@ -659,18 +658,6 @@ export default function TabChild({
             ]}
           >
             <Input placeholder="请输入联系邮箱" />
-          </Form.Item>
-          <Form.Item
-            name="goal"
-            label="下载所需积分"
-            initialValue={0}
-            rules={[
-              { required: true, message: '请输入下载数据集所需积分' },
-              { type: 'number', min: 0, message: '积分不能为负数' }
-            ]}
-            tooltip="其他用户下载此数据集时需要支付的积分。"
-          >
-            <InputNumber style={{ width: '100%' }} placeholder="请输入积分" />
           </Form.Item>
         </Form>
         <div style={{ marginTop: '16px', color: '#888' }}>

@@ -2,9 +2,8 @@ import { Button, Card, Col, Row, Tag, message, Checkbox, Input, Modal, Form, Ima
 import '../style.less';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  reqDownloadSharedDataset,
   reqGetAllSharedDatasets,
-  reqExchangeSharedDataset,
+  reqDownloadSharedDataset,
 } from '@/services/dataset/api';
 import { DownloadOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
 
@@ -114,38 +113,36 @@ export default function SharedDatasetTab({
     setSelectedDatasets(allDatasetIds);
   };
 
-  // 兑换选中的数据集
-  const exchangeSelected = async () => {
+  // 下载选中的数据集
+  const downloadSelected = async () => {
     if (selectedDatasets.length === 0) {
-      message.warning('请先选择要兑换的数据集');
+      message.warning('请先选择要下载的数据集');
       return;
     }
     
     setIsDownloading(true);
-    const hide = message.loading('正在兑换数据集');
+    const hide = message.loading('正在下载数据集');
     
     try {
-      // 获取选中数据集的sample_id字段
       const selectedItems = datasets.filter(dataset => selectedDatasets.includes(dataset.datasetId));
       const sampleIds = selectedItems.map(dataset => dataset.sampleId).join(',');
       
-      console.log('兑换数据集，样本IDs:', sampleIds);
+      console.log('下载共享数据集，样本IDs:', sampleIds);
       
-      const result = await reqExchangeSharedDataset({ sampleIds });
+      const result = await reqDownloadSharedDataset({ sampleIds });
       
       if (result.code === 200) {
         hide();
-        message.success('兑换成功！您可以在"已兑换的共享数据集"页面查看和下载');
-        // 清除选择
+        message.success('下载成功');
         setSelectedDatasets([]);
       } else {
         hide();
-        message.error(result.message || '兑换失败');
+        message.error(result.message || '下载失败');
       }
     } catch (error) {
       hide();
-      message.error('兑换失败，请联系管理员');
-      console.error('兑换错误:', error);
+      message.error('下载失败，请联系管理员');
+      console.error('下载错误:', error);
     } finally {
       setIsDownloading(false);
     }
@@ -231,12 +228,12 @@ export default function SharedDatasetTab({
             <Button 
               type="primary" 
               icon={<DownloadOutlined />} 
-              onClick={exchangeSelected}
+              onClick={downloadSelected}
               disabled={selectedDatasets.length === 0 || isDownloading}
               loading={isDownloading}
               style={{ marginRight: '8px' }}
             >
-              兑换COCO数据集
+              下载COCO数据集
             </Button>
             {selectedDatasets.length === 0 ? (
               <Button 
@@ -293,9 +290,6 @@ export default function SharedDatasetTab({
                     <span style={{ marginLeft: '8px', color: '#888' }}>
                       (包含 {dataset.num || 0} 个样本)
                     </span>
-                    <span style={{ marginLeft: '8px', color: '#ff6b35', fontWeight: 'bold' }}>
-                      需要积分: {dataset.goal || 0}
-                    </span>
                   </div>
                   <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
                     {dataset.setDess}
@@ -305,9 +299,6 @@ export default function SharedDatasetTab({
                     {dataset.sorts && dataset.sorts.split(',').map((sort, index) => (
                       <Tag key={index} color="#87d068">{sort}</Tag>
                     ))}
-                    <Tag color="#f50" style={{ marginLeft: '4px' }}>
-                      {dataset.goal || 0} 积分
-                    </Tag>
                   </div>
                 </div>
                 <div style={{ marginLeft: '8px' }}>
@@ -377,4 +368,4 @@ export default function SharedDatasetTab({
       </Modal>
     </div>
   );
-} 
+}

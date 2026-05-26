@@ -91,7 +91,7 @@ public class DatasetServiceImpl extends ServiceImpl<DatasetMapper, Dataset> impl
     }
 
     @Override
-    public Integer publishSharedDataset(List<String> sampleIds, String name, String setDess, String cont, String email, Integer goal) {
+    public Integer publishSharedDataset(List<String> sampleIds, String name, String setDess, String cont, String email) {
         if (sampleIds == null || sampleIds.isEmpty()) {
             return null;
         }
@@ -179,7 +179,6 @@ public class DatasetServiceImpl extends ServiceImpl<DatasetMapper, Dataset> impl
         dataset.setSorts(String.join(",", typeNames));
         dataset.setUserId(task.getUserId());
         dataset.setTaskType(task.getTaskType());
-        dataset.setScore(goal);
         dataset.setSetType("service");
 
         // 鍒涘缓鏁版嵁闆?

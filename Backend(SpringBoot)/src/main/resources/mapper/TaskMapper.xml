@@ -18,8 +18,7 @@
         task.date_range,
         task.status,
         task.audit_feedback,
-        task.task_class,
-        task.score
+        task.task_class
         FROM task
         JOIN task_accepted ON task.task_id = task_accepted.task_id
         JOIN sys_user ON task_accepted.username = sys_user.username

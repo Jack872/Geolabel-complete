@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -77,6 +78,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
     private MinioFileResolveService minioFileResolveService;
 
     private static final Logger logger = LoggerFactory.getLogger(ServerService.class);
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     @Override
     public List<Server> getServers(Integer userId) {
         if (userId == null) {
@@ -284,7 +286,7 @@ public class ServerServiceImpl extends ServiceImpl<ServerMapper, Server> impleme
                 server.setSerDesc(serdesc);
                 server.setPublisher(username);
                 server.setUserId(userId);
-                server.setPublishTime(String.valueOf(LocalDateTime.now()));
+                server.setPublishTime(LocalDateTime.now().format(DATE_TIME_FORMATTER));
                 server.setPublishUrl(publishUrl);
                 server.setSetName(setName);
 
