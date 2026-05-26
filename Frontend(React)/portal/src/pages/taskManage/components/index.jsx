@@ -271,6 +271,57 @@ export default ({
     return map;
   }, [safeTypeList]);
 
+  const buildAssignedTypeMap = (formData, excludeUserName = '') => {
+    const assignedTypeMap = {};
+    (userList || []).forEach(({ userName }) => {
+      if (!userName || userName === excludeUserName) {
+        return;
+      }
+      const selectedTypeIds = formData?.[userName] || [];
+      selectedTypeIds.forEach((typeId) => {
+        const typeKey = String(typeId);
+        if (!assignedTypeMap[typeKey]) {
+          assignedTypeMap[typeKey] = userName;
+        }
+      });
+    });
+    return assignedTypeMap;
+  };
+
+  const buildTypeOptionsForUser = (userName, formData) => {
+    const assignedTypeMap = buildAssignedTypeMap(formData, userName);
+    return filteredOptions.map((item) => {
+      const typeKey = String(item.typeId);
+      const assignedUserName = assignedTypeMap[typeKey];
+      return {
+        value: item.typeId,
+        label: assignedUserName
+          ? `${item.typeName}（已分配给${assignedUserName}）`
+          : item.typeName,
+        disabled: !!assignedUserName,
+      };
+    });
+  };
+
+  const findDuplicateTypeAssignments = (formData) => {
+    const ownerByTypeId = {};
+    for (const { userName } of userList || []) {
+      const selectedTypeIds = formData?.[userName] || [];
+      for (const typeId of selectedTypeIds) {
+        const typeKey = String(typeId);
+        if (ownerByTypeId[typeKey]) {
+          return {
+            typeName: typeNameById[typeKey] || typeKey,
+            firstUserName: ownerByTypeId[typeKey],
+            secondUserName: userName,
+          };
+        }
+        ownerByTypeId[typeKey] = userName;
+      }
+    }
+    return null;
+  };
+
   const buildTaskTypeAttributesPayload = (formData) => {
     const selectedTypeIds = formData.attributeTypeIds || [];
     const typeAttrSelections = formData.typeAttrSelections || {};
@@ -333,6 +384,14 @@ export default ({
             }
 
             if (targetUserType === 'specificTeamUsers') {
+              const duplicateAssignment = findDuplicateTypeAssignments(formData);
+              if (duplicateAssignment) {
+                message.error(
+                  `类别“${duplicateAssignment.typeName}”已分配给${duplicateAssignment.firstUserName}，不能再分配给${duplicateAssignment.secondUserName}`,
+                );
+                return;
+              }
+
               // 为特定用户分配任务时，构建userArr和specificUserAssignments
               const specificUserAssignments = [];
 
@@ -599,26 +658,32 @@ export default ({
             {userList?.map(({ userName, typestring }) => {
               return (
                 <Form.Item
+                  noStyle
                   key={userName}
-                  label={userName}
-                  name={userName}
-                  initialValue={typestring}
-                  rules={[{ required: !isEdit, message: '必须指定标签！' }]}
+                  shouldUpdate={(prevValues, currentValues) => (
+                    userList.some(({ userName: itemUserName }) => prevValues[itemUserName] !== currentValues[itemUserName])
+                  )}
                 >
-                  <Select
-                    mode="multiple"
-                    showArrow
-                    allowClear
-                    disabled={isEdit}
-                    value={selectedItems}
-                    onChange={(value) => {
-                      console.log(value);
-                    }}
-                    options={filteredOptions.map((item) => ({
-                      value: item.typeId,
-                      label: item.typeName,
-                    }))}
-                  />
+                  {({ getFieldsValue }) => (
+                    <Form.Item
+                      label={userName}
+                      name={userName}
+                      initialValue={typestring}
+                      rules={[{ required: !isEdit, message: '必须指定标签！' }]}
+                    >
+                      <Select
+                        mode="multiple"
+                        showArrow
+                        allowClear
+                        disabled={isEdit}
+                        value={selectedItems}
+                        onChange={(value) => {
+                          console.log(value);
+                        }}
+                        options={buildTypeOptionsForUser(userName, getFieldsValue())}
+                      />
+                    </Form.Item>
+                  )}
                 </Form.Item>
               );
             })}
