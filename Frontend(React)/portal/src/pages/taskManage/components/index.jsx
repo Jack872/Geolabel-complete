@@ -218,6 +218,57 @@ export default ({
     return map;
   }, [safeTypeList]);
 
+  const buildAssignedTypeMap = (formData, excludeUserName = '') => {
+    const assignedTypeMap = {};
+    (userList || []).forEach(({ userName }) => {
+      if (!userName || userName === excludeUserName) {
+        return;
+      }
+      const selectedTypeIds = formData?.[userName] || [];
+      selectedTypeIds.forEach((typeId) => {
+        const typeKey = String(typeId);
+        if (!assignedTypeMap[typeKey]) {
+          assignedTypeMap[typeKey] = userName;
+        }
+      });
+    });
+    return assignedTypeMap;
+  };
+
+  const buildTypeOptionsForUser = (userName, formData) => {
+    const assignedTypeMap = buildAssignedTypeMap(formData, userName);
+    return filteredOptions.map((item) => {
+      const typeKey = String(item.typeId);
+      const assignedUserName = assignedTypeMap[typeKey];
+      return {
+        value: item.typeId,
+        label: assignedUserName
+          ? `${item.typeName}（已分配给${assignedUserName}）`
+          : item.typeName,
+        disabled: !!assignedUserName,
+      };
+    });
+  };
+
+  const findDuplicateTypeAssignments = (formData) => {
+    const ownerByTypeId = {};
+    for (const { userName } of userList || []) {
+      const selectedTypeIds = formData?.[userName] || [];
+      for (const typeId of selectedTypeIds) {
+        const typeKey = String(typeId);
+        if (ownerByTypeId[typeKey]) {
+          return {
+            typeName: typeNameById[typeKey] || typeKey,
+            firstUserName: ownerByTypeId[typeKey],
+            secondUserName: userName,
+          };
+        }
+        ownerByTypeId[typeKey] = userName;
+      }
+    }
+    return null;
+  };
+
   const buildTaskTypeAttributesPayload = (formData) => {
     const selectedTypeIds = formData.attributeTypeIds || [];
     const typeAttrSelections = formData.typeAttrSelections || {};
@@ -478,11 +529,11 @@ export default ({
             <Form.Item noStyle shouldUpdate>
               {() => userList?.map(({ userName, typestring }) => (
                 <Form.Item
+                  noStyle
                   key={userName}
-                  label={userName}
-                  name={userName}
-                  initialValue={typestring}
-                  rules={[{ required: !isEdit, message: '必须指定标签！' }]}
+                  shouldUpdate={(prevValues, currentValues) => (
+                    userList.some(({ userName: itemUserName }) => prevValues[itemUserName] !== currentValues[itemUserName])
+                  )}
                 >
                   <Select
                     mode="multiple"

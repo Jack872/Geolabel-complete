@@ -166,16 +166,16 @@ def get_or_create_auto_yolo():
     try:
         global_yolo = build_auto_yolo(preferred_device)
         global_yolo_device = preferred_device
-        print(f"专用建筑分割模型已加载，device={preferred_device}")
+        print(f"专用 YOLO 预标注模型已加载，device={preferred_device}")
         return global_yolo
     except RuntimeError as exc:
         if preferred_device.startswith("cuda") and is_cuda_oom(exc):
-            print(f"专用建筑分割模型 GPU 加载失败，改为 CPU 模式: {exc}")
+            print(f"专用 YOLO 预标注模型 GPU 加载失败，改为 CPU 模式: {exc}")
             clear_cuda_cache()
             gc.collect()
             global_yolo = build_auto_yolo("cpu")
             global_yolo_device = "cpu"
-            print("专用建筑分割模型已降级到 CPU 模式")
+            print("专用 YOLO 预标注模型已降级到 CPU 模式")
             return global_yolo
         raise
 
@@ -341,9 +341,9 @@ async def lifespan(app: FastAPI):
         try:
             get_or_create_auto_yolo()
         except Exception as exc:
-            print(f"专用建筑分割模型预加载失败，服务继续启动，首次调用时再重试: {exc}")
+            print(f"专用 YOLO 预标注模型预加载失败，服务继续启动，首次调用时再重试: {exc}")
     else:
-        print("专用建筑分割模型采用懒加载，首次调用自动建筑分割时初始化")
+        print("专用 YOLO 预标注模型采用懒加载，首次调用预标注时初始化")
     yield
     global_sam = None
     global_sam_device = None
@@ -557,6 +557,9 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
     自动检测坐标系：有坐标系做地理转换，无坐标系直接用像素坐标。
     """
     global current_feature_cache
+    prompt_type_for_validation = params.get('promptType', 'point')
+    if prompt_type_for_validation != '_warmup_skip_' and params.get('currentTypeId') in (None, "", "None"):
+        raise ValueError("请先选择图层，再执行 SAM 标注")
     # 如果是批量模式且不是预热，我们不在函数内部管理数据库连接
     conn = None if is_batch else connect_db()
 
@@ -571,19 +574,6 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         PROMPT_TYPE = params.get('promptType', 'point')
         INTERACTIVE_COORDS = params.get('coordinates')
         TARGET_TYPE_ID = params.get('currentTypeId')
-
-        # 如果前端没传 currentTypeId，从数据库最新提示记录中获取
-        if TARGET_TYPE_ID is None:
-            try:
-                labels = fetch_labels_from_db(conn, TASK_ID, USER_ID, TASK_ITEM_ID)
-                if labels:
-                    TARGET_TYPE_ID = labels[-1][2]
-                    print(f"[SAM] currentTypeId 未传，从DB获取: {TARGET_TYPE_ID}")
-                else:
-                    TARGET_TYPE_ID = 2
-                    print(f"[SAM] currentTypeId 未传，默认值")
-            except Exception:
-                pass
 
         # ── 1. Encoder 缓存（只在图片切换时重跑）──────────────────────
         if current_feature_cache.get("image_path") != IMAGE_PATH:
@@ -728,7 +718,7 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
         processed_mask = post_process_mask_sam(
             binary_mask, # 修正：传入 binary_mask,
             min_object_size=_coerce_int_param(params.get('param2'), 100),  # 提高最小面积，过滤草地上的噪点
-            hole_size_threshold=_coerce_int_param(params.get('param3'), 20),  # 建筑通常没孔洞，设置小一点
+            hole_size_threshold=_coerce_int_param(params.get('param3'), 20),
             boundary_smoothing=_coerce_int_param(params.get('param4'), 3)  # 适当增加平滑度，减少锯齿
         )
         print(f"[SAM] 后处理mask: nonzero={np.count_nonzero(processed_mask)}")
@@ -782,7 +772,10 @@ def inference_sam_v1(params: dict, is_batch: bool = False):
 
 
 def auto_building_segmentation(params: dict):
-    """一键识别全图建筑并利用 SAM 分割"""
+    """一键识别全图目标并利用 SAM 分割"""
+    target_type_id = params.get('currentTypeId')
+    if target_type_id in (None, "", "None"):
+        raise ValueError("YOLO+SAM 预标注前请先选择图层")
     yolo_model, yolo_device, yolo_label = resolve_preannotation_yolo(params)
     TASK_ITEM_ID = params.get('taskItemId')
     raw_path = params['mapfile_path']
@@ -792,6 +785,8 @@ def auto_building_segmentation(params: dict):
     finally:
         if conn:
             conn.close()
+    resolved_params = params.copy()
+    resolved_params['mapfile_path'] = IMAGE_PATH
     with rasterio.open(IMAGE_PATH) as src:
         raw_read = src.read([1, 2, 3])
         img_array = raw_read.transpose(1, 2, 0)
@@ -819,15 +814,15 @@ def auto_building_segmentation(params: dict):
         device=yolo_device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
     det_boxes = results[0].boxes.xyxy.cpu().numpy()
-    print(f"[Auto] 检测到 {len(det_boxes)} 个潜在建筑目标")
+    print(f"[Auto] 检测到 {len(det_boxes)} 个潜在目标")
     if len(det_boxes) > 0:
         print(f"DEBUG - YOLO 原始像素框示例: {det_boxes[0]}")
     else:
-        print("DEBUG - YOLO 未检测到任何建筑")
+        print("DEBUG - YOLO 未检测到任何目标")
         return
 
     # 2. 预热 SAM encoder，同时填充 current_feature_cache（含真实宽高）
-    inference_sam_v1({**params, "promptType": "_warmup_skip_"})
+    inference_sam_v1({**resolved_params, "promptType": "_warmup_skip_"})
 
     # 3. 从缓存读取真实图片尺寸（encoder 预热后已写入）
     real_w = current_feature_cache.get("width", img_array.shape[1])
@@ -837,7 +832,7 @@ def auto_building_segmentation(params: dict):
     # 4. 循环收集所有多边形（不连数据库）
     raw_polygons_dict = {}  # 用于存储所有类别无关的原始多边形 {tid: [poly, ...]}
     padding = 2
-    print(f"[Auto] 开始批量处理 {len(det_boxes)} 个建筑...")
+    print(f"[Auto] 开始批量处理 {len(det_boxes)} 个目标...")
     for box in det_boxes:
         x1, y1, x2, y2 = box
         padded_box = [
@@ -847,7 +842,7 @@ def auto_building_segmentation(params: dict):
             min(real_h - 1, y2 + padding)
         ]
 
-        task_params = params.copy()
+        task_params = resolved_params.copy()
         task_params['promptType'] = 'bbox'
         task_params['coordinates'] = padded_box
         task_params['_pixel_bbox'] = True
@@ -887,7 +882,7 @@ def auto_building_segmentation(params: dict):
             # 只保留外轮廓 (Exterior)，舍弃所有内轮廓
             no_holes_poly = Polygon(poly.exterior)
 
-            # 4. 建筑直角化/简化 (Regularization)
+            # 4. 多边形简化 (Regularization)
             # 使用之前定义的 regularize_building_poly 或 simplify
             simplified_poly = no_holes_poly.simplify(0.5, preserve_topology=True)
 
@@ -896,8 +891,7 @@ def auto_building_segmentation(params: dict):
                 final_processed_polys.append(simplified_poly)
 
         # 重新构建存储格式
-        target_tid = params.get('currentTypeId') or 2
-        all_batch_polygons = {target_tid: final_processed_polys}
+        all_batch_polygons = {target_type_id: final_processed_polys}
 
     # 5. 统一一次性写入数据库
     if all_batch_polygons:
@@ -925,13 +919,11 @@ def auto_building_segmentation(params: dict):
 
 def regularize_building_poly(poly: Polygon, tolerance=0.5):
     """
-    对建筑多边形进行直角简化处理
+    对目标多边形进行简化处理
     """
     # 1. 基础简化：减少多余节点
     simplified = poly.simplify(tolerance, preserve_topology=True)
 
-    # 2. 如果建筑比较规整，可以考虑直接转为最小外接矩形（可选）
-    # 但为了支持 L 型建筑，通常使用多边形简化即可
     return simplified
 
 
@@ -1861,7 +1853,7 @@ async def assist_function(request: AssistFunctionRequest):
         # 新增的分支
         if request.functionName == "auto_building_sam":
             auto_building_segmentation(params)
-            return {"code": 200, "message": "全图建筑自动标注完成"}
+            return {"code": 200, "message": "全图自动预标注完成"}
         if request.functionName == "sam_inference":
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA 不可用")
