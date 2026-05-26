@@ -20,7 +20,6 @@ export default ({
   const [form] = Form.useForm();
   const [userList, setUserList] = useState([]);
   const [typeList, setTypeList] = useState(renderTypeList);
-  const [, setAssignmentVersion] = useState(0);
   const safeTypeList = useMemo(() => (Array.isArray(typeList) ? typeList : []), [typeList]);
 
   // 获取当前用户信息和影像集分组信息
@@ -529,20 +528,18 @@ export default ({
             <Form.Item noStyle shouldUpdate>
               {() => userList?.map(({ userName, typestring }) => (
                 <Form.Item
-                  noStyle
                   key={userName}
-                  shouldUpdate={(prevValues, currentValues) => (
-                    userList.some(({ userName: itemUserName }) => prevValues[itemUserName] !== currentValues[itemUserName])
-                  )}
+                  label={userName}
+                  name={userName}
+                  initialValue={typestring}
+                  rules={[{ required: !isEdit, message: '必须指定标签！' }]}
                 >
                   <Select
                     mode="multiple"
                     showArrow
                     allowClear
                     disabled={isEdit}
-                    onChange={() => {
-                      setAssignmentVersion((version) => version + 1);
-                    }}
+                    placeholder="请选择类别"
                     options={getUserTypeOptions(userName)}
                   />
                 </Form.Item>
